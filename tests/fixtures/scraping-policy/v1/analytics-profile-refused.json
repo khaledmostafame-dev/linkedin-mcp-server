@@ -1,0 +1,14 @@
+{
+  "call": {
+    "arguments": {
+      "sections": "bogus"
+    },
+    "method": "get_profile_analytics"
+  },
+  "events": [],
+  "result": {
+    "refused": "Unknown analytics sections: bogus. Valid: profile_viewers, search_appearances, followers, post_impressions."
+  },
+  "scenario": "get_profile_analytics__refused",
+  "schema_version": 1
+}

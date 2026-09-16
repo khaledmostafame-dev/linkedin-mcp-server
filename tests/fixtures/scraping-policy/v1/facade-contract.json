@@ -52,9 +52,17 @@
         "coroutine": true,
         "signature": "(self) -> 'str'"
       },
+      "get_post_analytics": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str') -> 'dict[str, Any]'"
+      },
       "get_post_comments": {
         "coroutine": true,
         "signature": "(self, post_url: 'str', max_comments: 'int' = 50, include_replies: 'bool' = True, sort: 'str' = 'relevant') -> 'dict[str, Any]'"
+      },
+      "get_profile_analytics": {
+        "coroutine": true,
+        "signature": "(self, sections: 'str | None' = None) -> 'dict[str, Any]'"
       },
       "get_saved_jobs": {
         "coroutine": true,
@@ -118,7 +126,9 @@
       "get_conversation",
       "get_inbox",
       "get_my_profile",
+      "get_post_analytics",
       "get_post_comments",
+      "get_profile_analytics",
       "get_saved_jobs",
       "get_sidebar_profiles",
       "react_to_comment",
@@ -468,6 +478,25 @@
           "type": "object"
         }
       },
+      "get_post_analytics": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "post_url": {
+              "description": "The post, as /feed/update/urn:li:activity:<id>/, a\n/posts/<slug> permalink, or urn:li:activity|ugcPost|share:<id>.\nA ugcPost or share URN costs one extra navigation to read the\npost's own analytics link.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_post_comments": {
         "input": {
           "additionalProperties": false,
@@ -501,6 +530,30 @@
           "required": [
             "post_url"
           ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_profile_analytics": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "sections": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Comma-separated sections; default is all four.\n- profile_viewers: who viewed your profile (/analytics/profile-views/)\n- search_appearances: search appearance counts and sources\n- followers: total followers, growth and follower demographics\n  (/analytics/creator/audience/)\n- post_impressions: impressions and engagement summary across\n  your posts (/analytics/creator/content/)"
+            }
+          },
           "type": "object"
         },
         "output": {

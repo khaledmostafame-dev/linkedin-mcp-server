@@ -38,9 +38,11 @@ PUBLIC_SIGNATURES = {
     "get_company_employees": "(self, company_name: 'str', keywords: 'str | None' = None) -> 'dict[str, Any]'",
     "get_conversation": "(self, linkedin_username: 'str | None' = None, thread_id: 'str | None' = None, index: 'int' = 0) -> 'dict[str, Any]'",
     "get_inbox": "(self, limit: 'int' = 20) -> 'dict[str, Any]'",
+    "get_profile_analytics": "(self, sections: 'str | None' = None) -> 'dict[str, Any]'",
     "get_post_comments": "(self, post_url: 'str', max_comments: 'int' = 50, include_replies: 'bool' = True, sort: 'str' = 'relevant') -> 'dict[str, Any]'",
     "get_my_profile": "(self, sections: 'set[str] | None' = None, callbacks: 'ProgressCallback | None' = None, max_scrolls: 'int | None' = None) -> 'dict[str, Any]'",
     "get_page_text": "(self) -> 'str'",
+    "get_post_analytics": "(self, post_url: 'str') -> 'dict[str, Any]'",
     "get_saved_jobs": "(self, max_pages: 'int' = 3) -> 'dict[str, Any]'",
     "get_sidebar_profiles": "(self, username: 'str') -> 'dict[str, Any]'",
     "react_to_comment": "(self, post_url: 'str', comment_urn: 'str', reaction: 'str' = 'like', *, confirm: 'bool') -> 'dict[str, Any]'",
@@ -66,7 +68,9 @@ DELEGATES = {
     "get_conversation": ("_conversations", "get_conversation"),
     "get_inbox": ("_conversations", "get_inbox"),
     "get_my_profile": ("_person", "get_my_profile"),
+    "get_post_analytics": ("_analytics", "get_post_analytics"),
     "get_post_comments": ("_comments", "get_post_comments"),
+    "get_profile_analytics": ("_analytics", "get_profile_analytics"),
     "get_page_text": ("_content", "get_page_text"),
     "get_saved_jobs": ("_jobs", "get_saved_jobs"),
     "get_sidebar_profiles": ("_person", "get_sidebar_profiles"),
@@ -93,6 +97,8 @@ DELEGATE_CALLS = {
     "get_conversation": "self._conversations.get_conversation(linkedin_username, thread_id, index)",
     "get_inbox": "self._conversations.get_inbox(limit)",
     "get_my_profile": "self._person.get_my_profile(sections, callbacks, max_scrolls)",
+    "get_post_analytics": "self._analytics.get_post_analytics(post_url)",
+    "get_profile_analytics": "self._analytics.get_profile_analytics(sections)",
     "get_post_comments": "self._comments.get_post_comments(post_url, max_comments=max_comments, include_replies=include_replies, sort=sort)",
     "get_page_text": "self._content.get_page_text()",
     "get_saved_jobs": "self._jobs.get_saved_jobs(max_pages)",
@@ -111,6 +117,7 @@ DELEGATE_CALLS = {
 }
 
 FACADE_STATE = {
+    "_analytics",
     "_capture",
     "_comments",
     "_company",
