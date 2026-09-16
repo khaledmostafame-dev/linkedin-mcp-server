@@ -11,6 +11,8 @@ from patchright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
 
+from linkedin_mcp_server.pacing_signals import report_if_challenge
+
 from .exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
@@ -274,6 +276,11 @@ async def resolve_remember_me_prompt(page: Page, *, timeout: int | None = None) 
 
 def _is_auth_blocker_url(url: str) -> bool:
     """Return True only for real auth routes, not arbitrary slug substrings."""
+    # The one funnel every URL-based barrier check passes through, so a
+    # checkpoint seen by any of them starts the pacing cooldown (a no-op outside
+    # a tool call). `/login` alone is not reported: an expired session lands
+    # there too.
+    report_if_challenge(url)
     path = urlparse(url).path or "/"
 
     if path in _AUTH_BLOCKER_URL_PATTERNS:
