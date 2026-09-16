@@ -16,10 +16,12 @@ from linkedin_mcp_server.error_diagnostics import build_issue_diagnostics
 from linkedin_mcp_server.scraping.capture import CaptureMode, SectionCapture
 from linkedin_mcp_server.scraping.contracts import (
     RATE_LIMITED_SECTION_TEXT,
+    FilterValidationError,
     rate_limited_section_error,
 )
 from linkedin_mcp_server.scraping.entity_search import paginated_entity_search
 from linkedin_mcp_server.scraping.fields import PERSON_SECTIONS, _person_section_specs
+from linkedin_mcp_server.scraping.geo_resolver import GeoLocationResolver
 from linkedin_mcp_server.scraping.identifiers import (
     normalize_person_identifier,
     person_profile_url,
@@ -185,11 +187,13 @@ class PersonScraper:
         navigator: PageNavigator,
         capture: SectionCapture,
         profile_page: ProfilePageReader,
+        geo_resolver: GeoLocationResolver | None = None,
     ):
         self._session = session
         self._navigator = navigator
         self._capture = capture
         self._profile_page = profile_page
+        self._geo_resolver = geo_resolver or GeoLocationResolver(session, navigator)
 
     async def scrape_person(
         self,
@@ -464,6 +468,63 @@ class PersonScraper:
             "sidebar_profiles": sidebar_profiles,
         }
 
+    async def resolve_geo_location(self, query: str) -> dict[str, Any]:
+        """Resolve a free-text place name to LinkedIn geo URN id candidates.
+
+        Read-only: drives LinkedIn's location typeahead but never selects a
+        location for a search itself. Useful to inspect what a name resolves
+        to before calling ``search_people``, or to pick among several
+        candidates when a query is ambiguous.
+
+        Returns:
+            {query, candidates: [{name, geo_urn_id}, ...], ambiguous: bool}.
+            ``candidates`` has zero entries for no match, exactly one for an
+            unambiguous name, and more than one when LinkedIn's own
+            typeahead offered several places for the query -- each entry's
+            id independently confirmed by selecting that specific
+            suggestion, never guessed from its position or label text.
+        """
+        resolution = await self._geo_resolver.resolve(query)
+        candidates = resolution.candidates or (
+            (resolution.resolved,) if resolution.resolved else ()
+        )
+        return {
+            "query": query,
+            "candidates": [
+                {"name": c.name, "geo_urn_id": c.geo_urn_id} for c in candidates
+            ],
+            "ambiguous": resolution.is_ambiguous,
+        }
+
+    async def _resolve_location(self, location: str | None) -> str | None:
+        """Pass a numeric geo URN id through untouched; resolve free text.
+
+        Zero navigation for the numeric fast path -- the whole point of
+        keeping it a distinct branch rather than always resolving. A
+        resolution that comes back ambiguous or with no match raises
+        ``FilterValidationError`` rather than guessing, naming the
+        candidates (if any) so a caller can retry with one of their ids.
+        """
+        if not location or re.fullmatch(r"[0-9]+", location):
+            return location
+
+        resolution = await self._geo_resolver.resolve(location)
+        if resolution.resolved is not None:
+            return resolution.resolved.geo_urn_id
+        if resolution.is_ambiguous:
+            names = [c.name for c in resolution.candidates]
+            raise FilterValidationError(
+                f"location {location!r} is ambiguous on LinkedIn's own "
+                f"typeahead; candidates: {names!r}. Call resolve_geo_location"
+                f"({location!r}) to see each candidate's geo_urn_id, then "
+                f"pass one back in as location."
+            )
+        raise FilterValidationError(
+            f"location {location!r} did not match any LinkedIn location "
+            f"suggestion. Try a different spelling, or pass a numeric geo "
+            f"URN id directly if you already have one."
+        )
+
     async def search_people(
         self,
         keywords: str,
@@ -482,11 +543,16 @@ class PersonScraper:
 
         Args:
             keywords: Free-text query ("software engineer", "recruiter at Google").
-            location: Optional location filter. LinkedIn's people-search
-                ``geoUrn`` facet only filters on the numeric geo URN id
-                (e.g. ``"103644278"`` for the United States); plain-text place
-                names are accepted by the URL but ignored by LinkedIn and
-                return the unfiltered result set.
+            location: Optional location filter. Either a numeric LinkedIn geo
+                URN id (e.g. ``"103644278"`` for the United States, zero extra
+                navigation) or a free-text place name (e.g. ``"Dubai"``,
+                ``"Saudi Arabia"``), resolved at call time against LinkedIn's
+                own location typeahead (see ``geo_resolver.py``). A free-text
+                name LinkedIn's typeahead considers ambiguous (more than one
+                match) raises ``FilterValidationError`` listing the
+                candidates rather than guessing among them -- call
+                ``resolve_geo_location`` first to see them and pass one
+                candidate's ``geo_urn_id`` back in as ``location``.
             network: Optional connection-degree filter. Each element is one of
                 ``"F"`` (1st-degree), ``"S"`` (2nd-degree), ``"O"`` (3rd-degree
                 and beyond). Example: ``["F"]`` to only return 1st-degree
@@ -523,6 +589,8 @@ class PersonScraper:
             stopped_reason: "max_pages"|"no_more_results"|"limit"|"error",
             truncated: bool, references?, section_errors?}
         """
+        location = await self._resolve_location(location)
+
         # Builds before it navigates, and the builder refuses a filter
         # LinkedIn would swallow, so an invalid token costs no page load.
         url = build_people_search_url(

@@ -26,6 +26,7 @@ from linkedin_mcp_server.scraping.contracts import (
     RATE_LIMITED_SECTION_TEXT,
     ExtractedSection,
 )
+from linkedin_mcp_server.scraping.geo_resolver import GeoCandidate, GeoResolution
 from linkedin_mcp_server.scraping.link_metadata import Reference
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.person import PersonScraper
@@ -1412,10 +1413,81 @@ class TestSearchPeople:
 
         assert "currentCompany" not in result["url"]
 
-    async def test_search_people_rejects_plain_text_location(self, mock_page):
+    async def test_search_people_numeric_location_skips_the_resolver(self, mock_page):
+        """The numeric fast path never touches the geo resolver at all."""
         scraper = _scraper(mock_page)
-        with pytest.raises(ValueError, match="must be a numeric"):
-            await scraper.search_people("engineer", location="Seattle")
+        with (
+            patch.object(
+                scraper._geo_resolver, "resolve", new_callable=AsyncMock
+            ) as mock_resolve,
+            patch.object(
+                scraper._capture,
+                "capture",
+                new_callable=AsyncMock,
+                return_value=extracted("Jane Doe"),
+            ),
+        ):
+            result = await scraper.search_people("engineer", location="103644278")
+
+        mock_resolve.assert_not_awaited()
+        assert "geoUrn=%5B%22103644278%22%5D" in result["url"]
+
+    async def test_search_people_resolves_free_text_location_when_unambiguous(
+        self, mock_page
+    ):
+        scraper = _scraper(mock_page)
+        resolution = GeoResolution(resolved=GeoCandidate("Dubai", "104246948"))
+        with (
+            patch.object(
+                scraper._geo_resolver,
+                "resolve",
+                new_callable=AsyncMock,
+                return_value=resolution,
+            ) as mock_resolve,
+            patch.object(
+                scraper._capture,
+                "capture",
+                new_callable=AsyncMock,
+                return_value=extracted("Jane Doe"),
+            ),
+        ):
+            result = await scraper.search_people("engineer", location="Dubai")
+
+        mock_resolve.assert_awaited_once_with("Dubai")
+        assert "geoUrn=%5B%22104246948%22%5D" in result["url"]
+
+    async def test_search_people_rejects_ambiguous_free_text_location(self, mock_page):
+        scraper = _scraper(mock_page)
+        resolution = GeoResolution(
+            candidates=(
+                GeoCandidate("Georgia", "101452733"),
+                GeoCandidate("Georgia, United States", "104081876"),
+            )
+        )
+        with patch.object(
+            scraper._geo_resolver,
+            "resolve",
+            new_callable=AsyncMock,
+            return_value=resolution,
+        ):
+            with pytest.raises(ValueError, match="ambiguous") as error:
+                await scraper.search_people("engineer", location="Georgia")
+
+        assert "Georgia" in str(error.value)
+        assert "United States" in str(error.value)
+        assert "resolve_geo_location" in str(error.value)
+        mock_page.goto.assert_not_awaited()
+
+    async def test_search_people_rejects_unmatched_free_text_location(self, mock_page):
+        scraper = _scraper(mock_page)
+        with patch.object(
+            scraper._geo_resolver,
+            "resolve",
+            new_callable=AsyncMock,
+            return_value=GeoResolution(),
+        ):
+            with pytest.raises(ValueError, match="did not match"):
+                await scraper.search_people("engineer", location="Nowhereville")
 
         mock_page.goto.assert_not_awaited()
 

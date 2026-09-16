@@ -264,6 +264,69 @@ def register_person_tools(
 
     @mcp.tool(
         timeout=tool_timeout,
+        title="Resolve Geo Location",
+        annotations={"readOnlyHint": True, "openWorldHint": True},
+        tags={"person", "search"},
+        exclude_args=["extractor"],
+    )
+    async def resolve_geo_location(
+        query: str,
+        ctx: Context,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Resolve a free-text place name to LinkedIn geo URN id candidates.
+
+        Drives LinkedIn's own location typeahead (the same one search_people
+        resolves free-text `location` values against internally) without
+        running a search. Use this to inspect what a name resolves to, or to
+        pick among candidates when search_people reports a location as
+        ambiguous.
+
+        Args:
+            query: Free-text place name (e.g. "Dubai", "Saudi Arabia",
+                "United Arab Emirates", "India"). Blank raises ToolError.
+            ctx: FastMCP context for progress reporting
+
+        Returns:
+            Dict with query, candidates (list of {name, geo_urn_id}; zero
+            entries for no match, more than one when LinkedIn's own
+            typeahead considers the name ambiguous), and ambiguous (bool).
+            Each candidate's geo_urn_id is confirmed by actually selecting
+            that specific suggestion -- never guessed from its position or
+            label text.
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="resolve_geo_location"
+            )
+            logger.info("Resolving geo location: query='%s'", query)
+
+            await ctx.report_progress(
+                progress=0, total=100, message="Resolving location"
+            )
+
+            try:
+                result = await extractor.resolve_geo_location(query)
+            except FilterValidationError as e:
+                raise ToolError(str(e)) from e
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            return result
+
+        except ToolError:
+            raise
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "resolve_geo_location")
+        except Exception as e:
+            raise_tool_error(e, "resolve_geo_location")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
         title="Connect With Person",
         annotations={"destructiveHint": True, "openWorldHint": True},
         tags={"person", "actions"},

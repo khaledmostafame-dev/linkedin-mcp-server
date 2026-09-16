@@ -35,6 +35,7 @@ def _make_mock_extractor(scrape_result: dict) -> MagicMock:
     mock.search_jobs = AsyncMock(return_value=scrape_result)
     mock.get_saved_jobs = AsyncMock(return_value=scrape_result)
     mock.search_people = AsyncMock(return_value=scrape_result)
+    mock.resolve_geo_location = AsyncMock(return_value=scrape_result)
     mock.get_sidebar_profiles = AsyncMock(return_value=scrape_result)
     mock.get_inbox = AsyncMock(return_value=scrape_result)
     mock.get_conversation = AsyncMock(return_value=scrape_result)
@@ -419,6 +420,47 @@ class TestPersonTool:
                 current_company="SAP",
                 extractor=mock_extractor,
             )
+
+    async def test_resolve_geo_location_success(self, mock_context):
+        expected = {
+            "query": "Dubai",
+            "candidates": [
+                {"name": "Dubai, United Arab Emirates", "geo_urn_id": "104246948"}
+            ],
+            "ambiguous": False,
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        mcp = FastMCP("test")
+        register_person_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "resolve_geo_location")
+        result = await tool_fn("Dubai", mock_context, extractor=mock_extractor)
+
+        assert result == expected
+        mock_extractor.resolve_geo_location.assert_awaited_once_with("Dubai")
+
+    async def test_resolve_geo_location_validation_error_surfaced_as_tool_error(
+        self, mock_context
+    ):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.scraping.contracts import FilterValidationError
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        mock_extractor = MagicMock()
+        mock_extractor.resolve_geo_location = AsyncMock(
+            side_effect=FilterValidationError("location query must not be blank")
+        )
+
+        mcp = FastMCP("test")
+        register_person_tools(mcp)
+        tool_fn = await get_tool_fn(mcp, "resolve_geo_location")
+
+        with pytest.raises(ToolError, match="must not be blank"):
+            await tool_fn("   ", mock_context, extractor=mock_extractor)
 
     async def test_connect_with_person(self, mock_context):
         expected = {

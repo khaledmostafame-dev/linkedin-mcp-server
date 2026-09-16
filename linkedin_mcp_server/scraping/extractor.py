@@ -228,6 +228,10 @@ class LinkedInExtractor:
             keywords, max_pages=max_pages, tool_timeout=tool_timeout
         )
 
+    async def resolve_geo_location(self, query: str) -> dict[str, Any]:
+        """Resolve a free-text place name to LinkedIn geo URN id candidates."""
+        return await self._person.resolve_geo_location(query)
+
     async def search_posts(
         self,
         keywords: str,
