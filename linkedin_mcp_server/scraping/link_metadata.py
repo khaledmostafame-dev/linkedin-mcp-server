@@ -47,34 +47,90 @@ class RawReference(TypedDict, total=False):
     in_footer: bool
 
 
-_GENERIC_LABELS = {
-    "show all",
-    "follow",
-    "following",
-    "connect",
-    "send",
-    "like",
-    "comment",
-    "repost",
-    "post",
-    "play",
-    "pause",
-    "fullscreen",
-    "close",
-    "manage notifications",
-    "view my newsletter",
-    "my newsletter",
+# Generic control/action words LinkedIn attaches to anchors as visible text,
+# aria-label or title. Never useful as a reference label, so a match
+# (case-insensitively, see `clean_label`) drops the label rather than
+# surfacing UI chrome as if it were a person's or a company's name.
+#
+# Keyed by locale per CLAUDE.md -> Scraping Rules ("where text is genuinely
+# the only signal, guard it behind an explicit per-locale table and document
+# the limitation in code"); this module reads no locale off the page, so
+# every locale's set is matched at once via the `_GENERIC_LABELS` union below
+# rather than picking one table. A label from a locale missing here, or a
+# mistranscribed entry, only makes the drop-list under-inclusive -- the
+# label leaks through as reference text instead of being dropped, never the
+# reverse (a section heading is never a UI control the fixture below claims
+# to model, so nothing legitimate is ever dropped by a false-positive match).
+# The "ar" entries are a best-effort transcription, not verified against a
+# live LinkedIn Arabic session -- see docs/i18n-audit.md.
+_GENERIC_LABELS_BY_LOCALE: dict[str, frozenset[str]] = {
+    "en": frozenset(
+        {
+            "show all",
+            "follow",
+            "following",
+            "connect",
+            "send",
+            "like",
+            "comment",
+            "repost",
+            "post",
+            "play",
+            "pause",
+            "fullscreen",
+            "close",
+            "manage notifications",
+            "view my newsletter",
+            "my newsletter",
+        }
+    ),
+    "ar": frozenset(
+        {
+            "عرض الكل",
+            "متابعة",
+            "إلغاء المتابعة",
+            "اتصال",
+            "إرسال",
+            "إعجاب",
+            "تعليق",
+            "مشاركة منشور",
+            "منشور",
+            "تشغيل",
+            "إيقاف مؤقت",
+            "ملء الشاشة",
+            "إغلاق",
+            "إدارة الإشعارات",
+        }
+    ),
 }
+_GENERIC_LABELS: frozenset[str] = frozenset().union(*_GENERIC_LABELS_BY_LOCALE.values())
 
-_CONTEXT_LABELS = {
-    "about",
-    "experience",
-    "education",
-    "interests",
-    "honors",
-    "languages",
-    "featured",
-    "contact info",
+# Section headings worth keeping as a reference's `context`, matched against
+# a normalized (lowercased, whitespace-collapsed) `h1`/`h2`/`h3`. Same
+# per-locale-table guard as `_GENERIC_LABELS_BY_LOCALE` above, but here the
+# matched text becomes API output (the `context` field), so a localized
+# heading is translated back to its canonical English tag rather than
+# returned verbatim -- a caller sees the same fixed vocabulary regardless of
+# which locale's heading matched. The "ar" entries are equally unverified
+# best-effort transcriptions; see docs/i18n-audit.md.
+_CONTEXT_LABEL_TRANSLATIONS: dict[str, dict[str, str]] = {
+    "about": {"ar": "نبذة عني"},
+    "experience": {"ar": "الخبرة"},
+    "education": {"ar": "التعليم"},
+    "interests": {"ar": "الاهتمامات"},
+    "honors": {"ar": "التكريمات والجوائز"},
+    "languages": {"ar": "اللغات"},
+    "featured": {"ar": "مميز"},
+    "contact info": {"ar": "معلومات الاتصال"},
+}
+# Localized heading -> its canonical English tag; the canonical tags map to
+# themselves so `clean_heading` needs no separate English-only branch.
+_CONTEXT_LABEL_CANONICAL: dict[str, str] = {
+    canonical: canonical for canonical in _CONTEXT_LABEL_TRANSLATIONS
+} | {
+    translated: canonical
+    for canonical, translations in _CONTEXT_LABEL_TRANSLATIONS.items()
+    for translated in translations.values()
 }
 
 _SECTION_CONTEXTS = {
@@ -430,21 +486,28 @@ def derive_context(
         return "post attachment"
 
     if section_name in {"main_profile", "about"}:
-        if heading in _CONTEXT_LABELS:
+        if heading is not None:
             return heading
         if raw.get("in_article"):
             return "featured"
         return "top card"
 
-    return heading if heading in _CONTEXT_LABELS else None
+    return heading
 
 
 def clean_heading(value: str) -> str | None:
-    """Normalize a raw heading into a short supported context label."""
+    """Normalize a raw heading into a short supported context label.
+
+    Matches against every locale in `_CONTEXT_LABEL_TRANSLATIONS` and always
+    returns the canonical English tag, so a caller sees the same fixed
+    vocabulary regardless of which locale's heading text matched. `.lower()`
+    is a no-op on the Arabic entries (Arabic has no letter case) and is kept
+    for the English ones.
+    """
     value = _WHITESPACE_RE.sub(" ", value).strip().lower()
     if not value:
         return None
-    return value if value in _CONTEXT_LABELS else None
+    return _CONTEXT_LABEL_CANONICAL.get(value)
 
 
 def _choose_better_reference(existing: Reference, new: Reference) -> Reference:

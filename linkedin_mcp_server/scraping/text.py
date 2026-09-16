@@ -6,6 +6,52 @@ from dataclasses import dataclass
 
 import re
 
+# Digit scripts LinkedIn's Arabic UI renders counts and pagination state in,
+# mapped to their ASCII equivalents. `str.maketrans` needs a dict of
+# ``ord(char) -> replacement``, hence the ``ord()`` keys rather than the
+# characters themselves.
+#
+# - Arabic-Indic (٠-٩, U+0660-0669): the digits LinkedIn's own Arabic locale
+#   renders numbers in (confirmed by the accepted-limitation test this table
+#   replaces, ``tests/test_job_pagination_dom.py``'s prior
+#   ``test_non_ascii_numerals_degrade_to_no_count``).
+# - Extended Arabic-Indic / Persian-Urdu (۰-۹, U+06F0-06F9): a different
+#   digit shape some Arabic-script locales (Persian, Urdu, and some Gulf
+#   keyboards) use instead of U+0660. Included defensively; not verified
+#   against a live LinkedIn session in either of those locales.
+# - Arabic thousands separator ٬ (U+066C) and decimal separator ٫ (U+066B):
+#   render in follower/connection counts formatted with grouping, e.g.
+#   "١٬٢٣٤" for "1,234". Rewritten to their ASCII equivalents so a later
+#   ``int(text.replace(",", ""))``-style call sees ordinary punctuation.
+_DIGIT_TRANSLATION = str.maketrans(
+    {
+        **{0x0660 + i: str(i) for i in range(10)},
+        **{0x06F0 + i: str(i) for i in range(10)},
+        0x066C: ",",
+        0x066B: ".",
+    }
+)
+
+# Bidi control characters LinkedIn's RTL rendering wraps around numbers and
+# mixed-direction text: LRM (U+200E), RLM (U+200F), Arabic Letter Mark
+# (U+061C). Invisible in a UI, but they land in `innerText`/`textContent`
+# and break an exact-match or `isdigit()` check that does not expect them.
+_BIDI_MARKS_RE = re.compile("[‎‏؜]")
+
+
+def normalize_localized_digits(text: str) -> str:
+    """Rewrite non-Latin decimal digits and their separators to ASCII.
+
+    Strips bidi control marks and rewrites Arabic-Indic and Extended
+    Arabic-Indic digits, plus the Arabic thousands/decimal separators, to
+    ASCII. Latin digits and punctuation pass through unchanged, so this is
+    safe to call unconditionally before parsing a count, a page number or a
+    date out of scraped text — see ``_DIGIT_TRANSLATION`` for exactly which
+    code points it rewrites. Does not cover other numeral scripts (Devanagari,
+    CJK, ...); extend the table above if one turns up against a real session.
+    """
+    return _BIDI_MARKS_RE.sub("", text).translate(_DIGIT_TRANSLATION)
+
 
 @dataclass(frozen=True)
 class DetailCaptureTextTable:

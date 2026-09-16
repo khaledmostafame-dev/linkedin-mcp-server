@@ -828,6 +828,83 @@ class TestBuildReferences:
         assert references == []
 
 
+class TestLocaleGuardedLabels:
+    """Arabic entries in link_metadata.py's per-locale label tables.
+
+    These pin the fixed Arabic transcriptions used where visible text is
+    genuinely the only signal (CLAUDE.md -> Scraping Rules: "guard it behind
+    an explicit per-locale table and document the limitation in code"). The
+    exact strings are a best-effort transcription, not verified against a
+    live LinkedIn Arabic session -- see docs/i18n-audit.md. Mirrors the
+    existing English-label tests above (e.g.
+    ``test_prefers_shorter_clean_label_over_merged_visible_text``) so a
+    revert of the Arabic table fails the same way an English regression
+    would.
+    """
+
+    def test_drops_an_arabic_generic_action_label(self):
+        """A generic Arabic control word ("Follow") is dropped like its
+        English counterpart, falling back to the aria-label carrying the
+        real name."""
+        references = build_references(
+            [
+                {
+                    "href": "https://www.linkedin.com/in/williamhgates/",
+                    "text": "متابعة",
+                    "aria_label": "Bill Gates",
+                }
+            ],
+            "main_profile",
+        )
+
+        assert references == [
+            {
+                "kind": "person",
+                "url": "/in/williamhgates/",
+                "text": "Bill Gates",
+                "context": "top card",
+            }
+        ]
+
+    def test_arabic_heading_maps_to_the_canonical_english_context(self):
+        references = build_references(
+            [
+                {
+                    "href": "https://www.linkedin.com/in/williamhgates/",
+                    "text": "Bill Gates",
+                    "heading": "الخبرة",
+                }
+            ],
+            "main_profile",
+        )
+
+        assert references == [
+            {
+                "kind": "person",
+                "url": "/in/williamhgates/",
+                "text": "Bill Gates",
+                "context": "experience",
+            }
+        ]
+
+    def test_an_uncovered_locale_heading_degrades_to_top_card(self):
+        """A heading this table doesn't cover (German, here) degrades to
+        "top card" for main_profile/about — the same accepted fallback an
+        unrecognized English heading gets, not a crash or a guess."""
+        references = build_references(
+            [
+                {
+                    "href": "https://www.linkedin.com/in/williamhgates/",
+                    "text": "Bill Gates",
+                    "heading": "Über mich",
+                }
+            ],
+            "main_profile",
+        )
+
+        assert references[0]["context"] == "top card"
+
+
 class TestClassifyLink:
     def test_a_slugged_job_url_keeps_its_id(self):
         """LinkedIn serves a job under a bare id and under a slugged path.

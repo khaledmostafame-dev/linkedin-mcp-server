@@ -13,7 +13,11 @@ from linkedin_mcp_server.core.exceptions import AuthenticationError
 from linkedin_mcp_server.scraping import job_pages as job_pages_module
 from linkedin_mcp_server.scraping.content import PageContentReader
 from linkedin_mcp_server.scraping.contracts import ExtractedSection
-from linkedin_mcp_server.scraping.job_pages import JobPageReader, _ScrollCharge
+from linkedin_mcp_server.scraping.job_pages import (
+    JobPageReader,
+    _ScrollCharge,
+    parse_total_from_page_state_text,
+)
 from linkedin_mcp_server.scraping.link_metadata import Reference
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.session import ScrapingSession
@@ -1375,3 +1379,40 @@ class TestExtractJobIds:
             assert await reader._extract_job_ids(scoped=True) == ["101", "999"]
 
         assert "No results rail" in caplog.text
+
+
+class TestParseTotalFromPageStateText:
+    """Pure-Python coverage of the structural "Page X of Y" shape.
+
+    ``_get_total_search_pages`` is a deliberate DOM exception covered by the
+    browser-DOM tests in ``tests/test_job_pagination_dom.py``, but the parsing
+    decision underneath it — exactly two digit-groups, total second, no word
+    matched — needs no browser (AGENTS.md -> Tests: "prefer a unit test
+    elsewhere").
+    """
+
+    def test_english_shape(self):
+        assert parse_total_from_page_state_text("Page 2 of 7") == 7
+
+    def test_arabic_indic_digits(self):
+        # Arabic "Page X of Y" is rendered with Arabic-Indic digits on a
+        # LinkedIn Arabic-locale session; the surrounding words are not
+        # matched at all, only the two-number shape. Best-effort transcription
+        # of the phrase, not a live LinkedIn capture -- see i18n audit.
+        assert parse_total_from_page_state_text("الصفحة ٢ من ٧") == 7
+
+    def test_a_single_number_degrades_to_no_count(self):
+        assert parse_total_from_page_state_text("Page 2") is None
+
+    def test_three_numbers_degrades_to_no_count(self):
+        """An unexpected third number is ambiguous, not a guess worth making."""
+        assert parse_total_from_page_state_text("Page 2 of 7 (v3)") is None
+
+    def test_none_input(self):
+        assert parse_total_from_page_state_text(None) is None
+
+    def test_empty_string(self):
+        assert parse_total_from_page_state_text("") is None
+
+    def test_no_digits_at_all(self):
+        assert parse_total_from_page_state_text("Page unknown of many") is None

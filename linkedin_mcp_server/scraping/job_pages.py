@@ -43,6 +43,7 @@ from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.session import ScrapingSession
 from linkedin_mcp_server.scraping.text import (
     filter_linkedin_noise_lines,
+    normalize_localized_digits,
     truncate_linkedin_noise,
 )
 
@@ -94,6 +95,24 @@ JOB_IDS_JS = (
     return {ids: ids, scoped: Boolean(picked)};
 }"""
 )
+
+
+def parse_total_from_page_state_text(text: str | None) -> int | None:
+    """Read the total-pages number out of a "Page X of Y"-shaped string.
+
+    Pure and browser-free on purpose: ``_get_total_search_pages`` is a
+    deliberate DOM exception covered by ``tests/test_job_pagination_dom.py``,
+    but the text-shape decision underneath it doesn't need a browser to test
+    (AGENTS.md → Tests: "prefer a unit test elsewhere"). Locale-independent by
+    construction — it never matches the word "of", only the structural shape
+    of exactly two digit-groups with the total second, so a translation of
+    "Page X of Y" this project has never read still parses as long as it
+    keeps that shape. Digits go through ``normalize_localized_digits`` first.
+    """
+    if not text:
+        return None
+    numbers = re.findall(r"\d+", normalize_localized_digits(text))
+    return int(numbers[-1]) if len(numbers) == 2 else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,8 +407,17 @@ class JobPageReader:
     async def _get_total_search_pages(self) -> int | None:
         """Read total page count from LinkedIn's pagination state element.
 
-        Parses the "Page X of Y" text from ``.jobs-search-pagination__page-state``.
-        Returns ``None`` when the element is absent or unparseable.
+        Reads ``.jobs-search-pagination__page-state``, whose English text reads
+        "Page X of Y". Rather than matching the word "of" — which a non-English
+        UI translates (CLAUDE.md → Scraping Rules: detection must be
+        locale-independent) — this takes the structural shape of that
+        template instead: exactly two digit-groups, current page first, total
+        second. That holds across the translations of "Page ... of ..." this
+        project has been able to check, and degrades to ``None`` instead of a
+        wrong count on any text this project hasn't. Digits go through
+        ``normalize_localized_digits`` first, so Arabic-Indic counts ("١" ..)
+        parse the same as ASCII ones. Returns ``None`` when the element is
+        absent or the text doesn't carry exactly two numbers.
 
         NOTE: This is a deliberate DOM exception. The element has ``display: none``
         (screen-reader only), so the text never appears in ``innerText``. A class-based
@@ -404,10 +432,7 @@ class JobPageReader:
                 return el ? el.textContent.trim() : null;
             }"""
         )
-        if not text:
-            return None
-        match = re.search(r"of\s+(\d+)", text)
-        return int(match.group(1)) if match else None
+        return parse_total_from_page_state_text(text)
 
     async def _extract_saved_jobs_page(
         self,
@@ -559,21 +584,29 @@ class JobPageReader:
         ``_get_total_search_pages``. The my-items pager exposes no page count
         in ``innerText`` and no stable attribute to count, so a design-system
         class is the only reachable signal. The labels are numerals rather
-        than words, so no locale table is needed. A renamed class, or a locale
-        serving non-ASCII numerals that ``parseInt`` cannot read, both yield
-        ``None`` — pagination then falls back to ``max_pages`` and the
-        no-new-ids early stop.
+        than words, so no per-locale *word* table is needed — but the
+        numerals themselves are locale-dependent: JS ``parseInt`` cannot read
+        Arabic-Indic digits, so the label strings are read raw here and parsed
+        in Python through ``normalize_localized_digits`` instead, the same
+        helper ``_get_total_search_pages`` uses. A renamed class, or a label
+        that still isn't a number after normalizing (an ellipsis, an unlisted
+        digit script), yields ``None`` for that button — pagination then falls
+        back to ``max_pages`` and the no-new-ids early stop only if *no*
+        button on the page parses.
         """
-        value = await self._session.page.evaluate(
+        labels = await self._session.page.evaluate(
             """() => {
                 const buttons = document.querySelectorAll(
                     'ul.artdeco-pagination__pages li button'
                 );
-                if (!buttons.length) return null;
-                const nums = [...buttons]
-                    .map((b) => parseInt(b.textContent.trim(), 10))
-                    .filter((n) => !Number.isNaN(n));
-                return nums.length ? Math.max(...nums) : null;
+                return [...buttons].map((b) => b.textContent.trim());
             }"""
         )
-        return int(value) if value is not None else None
+        if not labels:
+            return None
+        numbers = [
+            int(normalized)
+            for label in labels
+            if (normalized := normalize_localized_digits(label)).isdigit()
+        ]
+        return max(numbers) if numbers else None
