@@ -56,7 +56,8 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_company_employees` | List employees at a company from the /people/ page, with optional keyword filter |
 | `search_jobs` | Search for jobs with keywords and location filters |
 | `get_saved_jobs` | List job postings saved by the authenticated user |
-| `search_people` | Search for people by keywords, geo URN location, connection degree (1st/2nd/3rd), current/past company, school, industry, title, and profile language, paginating up to `max_pages` and reporting `pages_fetched`/`stopped_reason`/`truncated` |
+| `search_people` | Search for people by keywords, location (free text, resolved at call time against LinkedIn's own typeahead, or a numeric geo URN id), connection degree (1st/2nd/3rd), current/past company, school, industry, title, and profile language, paginating up to `max_pages` and reporting `pages_fetched`/`stopped_reason`/`truncated` |
+| `resolve_geo_location` | Resolve a free-text place name to LinkedIn geo URN id candidates without running a search; used internally by `search_people`'s free-text `location`, and directly to disambiguate when it reports more than one candidate |
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
 | `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) and sort order (relevance/latest), reporting `stopped_reason`/`truncated` |

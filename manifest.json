@@ -93,7 +93,11 @@
     },
     {
       "name": "search_people",
-      "description": "Search for people on LinkedIn by keywords, geo URN location, connection degree (1st/2nd/3rd), current/past company, school, industry, title, and profile language, paginating up to max_pages and reporting pages_fetched/stopped_reason/truncated"
+      "description": "Search for people on LinkedIn by keywords, location (free text, resolved at call time, or a numeric geo URN id), connection degree (1st/2nd/3rd), current/past company, school, industry, title, and profile language, paginating up to max_pages and reporting pages_fetched/stopped_reason/truncated"
+    },
+    {
+      "name": "resolve_geo_location",
+      "description": "Resolve a free-text place name to LinkedIn geo URN id candidates via LinkedIn's own location typeahead, without running a search"
     },
     {
       "name": "get_inbox",
