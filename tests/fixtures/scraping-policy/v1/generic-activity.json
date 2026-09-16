@@ -11,6 +11,13 @@
     {
       "call": "extract_page",
       "callback_id": "callback-1",
+      "event": "response",
+      "kind": "listener.add",
+      "section": "section"
+    },
+    {
+      "call": "extract_page",
+      "callback_id": "callback-2",
       "event": "framenavigated",
       "kind": "listener.add",
       "section": "section"
@@ -59,7 +66,7 @@
     },
     {
       "call": "extract_page",
-      "callback_id": "callback-1",
+      "callback_id": "callback-2",
       "event": "framenavigated",
       "kind": "listener.remove",
       "section": "section"
@@ -102,6 +109,13 @@
       "section": "section"
     },
     {
+      "call": "extract_page",
+      "kind": "sleep",
+      "reason": "sleep",
+      "seconds": 0.2,
+      "section": "section"
+    },
+    {
       "arg": {
         "selectors": [
           "main"
@@ -110,7 +124,14 @@
       "call": "extract_page",
       "kind": "evaluate",
       "operation": "root_content",
-      "program_digest": "e8a0e21ac6f5",
+      "program_digest": "8f7f95c2d74d",
+      "section": "section"
+    },
+    {
+      "call": "extract_page",
+      "callback_id": "callback-1",
+      "event": "response",
+      "kind": "listener.remove",
       "section": "section"
     }
   ],

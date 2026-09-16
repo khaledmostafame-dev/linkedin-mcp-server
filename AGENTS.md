@@ -147,6 +147,10 @@ Optional additional keys:
 - `unknown_sections: [name, ...]`
 - `job_ids: [id, ...]` (search_jobs and get_saved_jobs)
 - `references["feed"]` (get_feed only) — every entry is `kind: "feed_post"`; non-post anchors (sidebar profiles, employer logos) are filtered. URLs may carry either `/feed/update/<urn>/` (DOM-anchor-derived) or `/posts/<slug>` (SDUI-derived) form; both are valid LinkedIn permalinks. Cap is 50 entries, matching `get_feed`'s `num_posts` ceiling.
+- The same `/feed/update/<urn>/` vs `/posts/<slug>` permalink capture also applies to `get_company_posts` and `get_person_profile`'s `posts` section — both are posts-listing pages LinkedIn renders with no DOM anchor for the individual post (see `feed_payload.is_post_listing_page` / `is_post_listing_response`).
+- `references[section]` entries with `kind: "image"` — the subject of the page: the member on a profile, the company on a company page. Selected by LinkedIn's CDN path, where the subject is always the largest variant of its kind — `profile-displayphoto-*` or `company-logo_*` — while `_100_100` thumbnails used for post authors, mutual connections, and other companies are filtered out. `context` is `profile photo` or `company logo`. At most one entry per kind; a tie for largest yields nothing, since neither candidate is identifiable as the subject. Rendered size is deliberately not used as a signal — extraction runs before layout, so the subject's own image often measures 0x0.
+- `references["notifications"]` (get_notifications) — references to the actors and posts/profiles/companies each notification card refers to. Cap is 50, matching `get_notifications`'s `max_items` ceiling.
+- `references["saved_posts"]` (get_saved_posts) — same `feed_post`-style permalink shape as `references["feed"]`.
 
 ## Tests
 
