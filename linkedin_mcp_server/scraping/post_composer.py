@@ -39,6 +39,7 @@ from linkedin_mcp_server.scraping.post_content import (
     MentionSegment,
     MentionTarget,
     PostAttachment,
+    PollSpec,
     PostEdit,
     PostRequest,
     TextSegment,
@@ -120,6 +121,35 @@ _DOCUMENT_BUTTON_SELECTOR = ", ".join(
         ),
     ]
 )
+# Poll: unmeasured candidate icon hooks, looked for in the composer and then
+# in its "more" menu. A miss fails closed.
+_POLL_BUTTON_SELECTOR = ", ".join(
+    [
+        _icon_button("poll-medium", "poll-small", "survey-medium"),
+        _icon_button(
+            "poll-medium", "poll-small", "survey-medium", role='[role="button"]'
+        ),
+    ]
+)
+_ADD_OPTION_BUTTON_SELECTOR = _icon_button(
+    "add-small", "add-medium", "plus-small", "plus-medium"
+)
+_POLL_FIELD_SELECTOR = 'textarea, input[type="text"], input:not([type])'
+# Duration <select> option values, when LinkedIn uses enum values. Otherwise
+# the four options are taken in their fixed order (1 day, 3 days, 1 week,
+# 2 weeks): a structural assumption, listed for live verification.
+_POLL_DURATION_VALUES: dict[int, tuple[str, ...]] = {
+    1: ("ONE_DAY", "1", "P1D"),
+    3: ("THREE_DAYS", "3", "P3D"),
+    7: ("ONE_WEEK", "SEVEN_DAYS", "7", "P7D", "P1W"),
+    14: ("TWO_WEEKS", "FOURTEEN_DAYS", "14", "P14D", "P2W"),
+}
+_POLL_DURATION_ORDER: tuple[int, ...] = (1, 3, 7, 14)
+_SELECT_STATE_JS = """(select) => ({
+    values: Array.from(select.options).map(option => option.value),
+    selectedIndex: select.selectedIndex,
+})"""
+
 # Visibility option ids: LinkedIn's share settings use upper-case enum ids for
 # its rows (``#ACTOR`` was measured upstream). Enum names are not translated.
 _VISIBILITY_OPTION_SELECTORS: dict[str, str] = {
@@ -805,6 +835,128 @@ class PostComposer:
                 "The composer does not show the attached document.",
             )
 
+    # --- poll ---------------------------------------------------------------
+
+    async def _open_poll_form(self) -> Any:
+        composer = self._composer_dialog()
+        button = composer.locator(_POLL_BUTTON_SELECTOR).first
+        if not await button.is_visible():
+            more = composer.locator(_MORE_BUTTON_SELECTOR).first
+            if await more.is_visible():
+                await more.click(timeout=_STEP_TIMEOUT_MS)
+                await self._pause()
+            button = self._page.locator(_POLL_BUTTON_SELECTOR).first
+            if not await button.is_visible():
+                raise _Abort(
+                    "poll_unavailable",
+                    "The composer did not expose a poll action; nothing was posted.",
+                )
+        await button.click(timeout=_STEP_TIMEOUT_MS)
+        dialog = (
+            self._page.locator(_DIALOG_SELECTOR)
+            .filter(has=self._page.locator(_POLL_FIELD_SELECTOR))
+            .filter(has=self._page.locator("select"))
+            .filter(has_not=self._page.locator(_EDITOR_SELECTOR))
+            .filter(visible=True)
+            .last
+        )
+        try:
+            await dialog.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
+        except PlaywrightTimeoutError as error:
+            raise _Abort("poll_unavailable", "The poll form did not open.") from error
+        return dialog
+
+    async def _fill_field(self, field: Any, value: str, name: str) -> None:
+        max_length = await field.evaluate(_MAXLENGTH_JS)
+        if isinstance(max_length, int) and 0 < max_length < len(value):
+            raise _Abort(
+                "poll_rejected",
+                f"LinkedIn limits the poll {name} to {max_length} characters.",
+            )
+        await field.fill(value)
+        if await field.input_value() != value:
+            raise _Abort("poll_rejected", f"The poll {name} field did not accept it.")
+
+    async def _select_duration(self, dialog: Any, days: int) -> None:
+        selects = dialog.locator("select:visible")
+        if await selects.count() != 1:
+            raise _Abort("poll_unavailable", "The poll form has no single duration.")
+        select = selects.first
+        state = await select.evaluate(_SELECT_STATE_JS)
+        values = [str(v) for v in (state or {}).get("values") or []]
+        known = [i for i, v in enumerate(values) if v in _POLL_DURATION_VALUES[days]]
+        if len(known) == 1:
+            index = known[0]
+        elif len(values) == len(_POLL_DURATION_ORDER):
+            index = _POLL_DURATION_ORDER.index(days)
+        else:
+            raise _Abort(
+                "poll_unavailable",
+                "The poll duration choices could not be identified.",
+            )
+        await select.select_option(index=index)
+        after = await select.evaluate(_SELECT_STATE_JS)
+        if (after or {}).get("selectedIndex") != index:
+            raise _Abort("poll_rejected", "The poll duration did not stay selected.")
+
+    async def _attach_poll(self, poll: PollSpec) -> None:
+        """Fill LinkedIn's poll form and verify the composer shows it.
+
+        Field order is structural: the question field comes first and one
+        field per option follows; more option fields appear through the add
+        control. Each value must read back exactly, and afterwards the
+        composer must show the question and every option.
+        """
+        dialog = await self._open_poll_form()
+        fields = dialog.locator(f":is({_POLL_FIELD_SELECTOR}):visible")
+        count = await fields.count()
+        if count < 1 + 2:
+            raise _Abort("poll_unavailable", "The poll form has too few fields.")
+        while count < 1 + len(poll.options):
+            add = dialog.locator(_ADD_OPTION_BUTTON_SELECTOR).filter(visible=True)
+            if await add.count() != 1:
+                raise _Abort(
+                    "poll_unavailable", "The poll form did not offer one add control."
+                )
+            await add.first.click(timeout=_STEP_TIMEOUT_MS)
+            await self._pause()
+            grown = await fields.count()
+            if grown != count + 1:
+                raise _Abort("poll_unavailable", "Adding a poll option failed.")
+            count = grown
+        if count != 1 + len(poll.options):
+            raise _Abort(
+                "poll_unavailable",
+                "The poll form holds more option fields than requested.",
+            )
+        await self._fill_field(fields.nth(0), poll.question, "question")
+        for index, option in enumerate(poll.options, start=1):
+            await self._fill_field(fields.nth(index), option, f"option {index}")
+        await self._select_duration(dialog, poll.duration_days)
+        done = dialog.locator(
+            'button:not([disabled]):not([aria-disabled="true"]):visible'
+        ).last
+        try:
+            await done.click(timeout=_STEP_TIMEOUT_MS)
+            await dialog.wait_for(state="hidden", timeout=_STEP_TIMEOUT_MS)
+            await self._editor().wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
+        except Exception as error:
+            raise _Abort(
+                "poll_rejected", "LinkedIn did not accept the poll form."
+            ) from error
+        shown = collapse_whitespace(await self._composer_dialog().first.inner_text())
+        missing = [
+            value
+            for value in (poll.question, *poll.options)
+            if collapse_whitespace(value) not in shown
+        ]
+        if missing:
+            raise _Abort(
+                "poll_mismatch",
+                "The composer's poll preview does not show the requested question "
+                "and options; nothing was posted.",
+            )
+
     # --- schedule -----------------------------------------------------------
 
     async def _apply_schedule(
@@ -1135,6 +1287,8 @@ class PostComposer:
                 )
             elif request.images:
                 await self._attach_images(request.images)
+            elif request.poll is not None:
+                await self._attach_poll(request.poll)
             if request.schedule_at is not None:
                 schedule = await self._apply_schedule(request.schedule_at)
             typed_anything = True
@@ -1195,7 +1349,10 @@ class PostComposer:
 
         if request.schedule_at is not None:
             listing = await self.get_scheduled_posts()
-            snippet = collapse_whitespace("".join(typed.expected))[:60]
+            snippet = collapse_whitespace(
+                "".join(typed.expected)
+                or (request.poll.question if request.poll is not None else "")
+            )[:60]
             entries = [
                 entry
                 for entry in listing.get("scheduled_posts") or []
@@ -1231,6 +1388,14 @@ class PostComposer:
             mentions=typed.mentions,
             post_as=actor,
         )
+
+    async def create_poll(self, request: PostRequest) -> dict[str, Any]:
+        """Publish or schedule a validated poll through the share composer."""
+        if request.poll is None:
+            return post_result(
+                FEED_URL, "invalid_request", "create_poll needs a validated poll."
+            )
+        return await self.create_post(request)
 
     # --- scheduled posts ----------------------------------------------------
 

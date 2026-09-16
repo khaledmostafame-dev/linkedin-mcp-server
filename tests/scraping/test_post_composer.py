@@ -27,6 +27,7 @@ from linkedin_mcp_server.scraping.post_composer import (
 )
 from linkedin_mcp_server.scraping.post_content import (
     MentionSegment,
+    build_poll,
     build_post_edit,
     build_post_request,
     parse_mention_target,
@@ -619,3 +620,135 @@ class TestEditScheduledPost:
         assert result["retry_safe"] is True
         replace.assert_not_awaited()
         abandon.assert_awaited_once()
+
+
+class TestPolls:
+    def _form(
+        self, composer: PostComposer, *, readback: str | None = None, shown: str
+    ) -> tuple[list[MagicMock], MagicMock]:
+        values: list[MagicMock] = []
+
+        def field(index: int) -> MagicMock:
+            item = MagicMock()
+            item.evaluate = AsyncMock(return_value=-1)
+            stored: dict[str, str] = {}
+
+            async def fill(value: str) -> None:
+                stored["value"] = value
+
+            async def input_value() -> str:
+                if readback is not None and index == 1:
+                    return readback
+                return stored.get("value", "")
+
+            item.fill = AsyncMock(side_effect=fill)
+            item.input_value = AsyncMock(side_effect=input_value)
+            values.append(item)
+            return item
+
+        fields = MagicMock()
+        fields.count = AsyncMock(return_value=3)
+        made = [field(i) for i in range(3)]
+        fields.nth.side_effect = lambda i: made[i]
+        select = MagicMock()
+        select.select_option = AsyncMock()
+        select.evaluate = AsyncMock(
+            side_effect=[
+                {"values": ["a", "b", "c", "d"], "selectedIndex": 0},
+                {"values": ["a", "b", "c", "d"], "selectedIndex": 2},
+            ]
+        )
+        selects = MagicMock(count=AsyncMock(return_value=1), first=select)
+        done = MagicMock(click=AsyncMock())
+        dialog = MagicMock(wait_for=AsyncMock())
+
+        def locator(selector: str) -> MagicMock:
+            if selector == "select:visible":
+                return selects
+            if selector.startswith("button:not([disabled])"):
+                return MagicMock(last=done)
+            return fields
+
+        dialog.locator.side_effect = locator
+        _stub(composer, "_open_poll_form", AsyncMock(return_value=dialog))
+        _stub(
+            composer, "_editor", MagicMock(return_value=MagicMock(wait_for=AsyncMock()))
+        )
+        composer_dialog = MagicMock()
+        composer_dialog.first.inner_text = AsyncMock(return_value=shown)
+        _stub(composer, "_composer_dialog", MagicMock(return_value=composer_dialog))
+        self.select = select
+        self.done = done
+        return values, done
+
+    async def test_fields_are_filled_in_order_and_the_preview_verified(self):
+        composer, _page = _composer()
+        poll = build_poll("Best format?", ["Carousel", "Video"], 7)
+        values, done = self._form(
+            composer, shown="Best format? Carousel Video 1 week left"
+        )
+
+        await composer._attach_poll(poll)
+
+        assert [v.fill.await_args.args[0] for v in values] == [
+            "Best format?",
+            "Carousel",
+            "Video",
+        ]
+        self.select.select_option.assert_awaited_once_with(index=2)
+        done.click.assert_awaited_once()
+
+    async def test_a_field_that_does_not_read_back_is_refused(self):
+        composer, _page = _composer()
+        poll = build_poll("Best format?", ["Carousel", "Video"], 7)
+        _values, done = self._form(composer, readback="Carous", shown="")
+
+        with pytest.raises(_Abort) as raised:
+            await composer._attach_poll(poll)
+
+        assert raised.value.status == "poll_rejected"
+        done.click.assert_not_awaited()
+
+    async def test_a_preview_missing_an_option_is_refused(self):
+        composer, _page = _composer()
+        poll = build_poll("Best format?", ["Carousel", "Video"], 7)
+        self._form(composer, shown="Best format? Carousel")
+
+        with pytest.raises(_Abort) as raised:
+            await composer._attach_poll(poll)
+
+        assert raised.value.status == "poll_mismatch"
+
+    async def test_create_poll_refuses_a_request_without_a_poll(self):
+        composer, _page = _composer()
+        create = _stub(composer, "create_post", AsyncMock())
+
+        result = await composer.create_poll(build_post_request("Hello", now=NOW))
+
+        assert result["status"] == "invalid_request"
+        create.assert_not_awaited()
+
+    async def test_a_poll_step_failure_never_clicks_post(self):
+        composer, page = _composer()
+        editor = MagicMock(wait_for=AsyncMock())
+        _stub(composer, "_open_composer", AsyncMock(return_value=editor))
+        _stub(composer, "_editor_state", AsyncMock(return_value={"text": ""}))
+        _stub(composer, "_apply_visibility", AsyncMock())
+        _stub(
+            composer,
+            "_attach_poll",
+            AsyncMock(side_effect=_Abort("poll_unavailable", "no poll action")),
+        )
+        typed = _stub(composer, "_type_segments", AsyncMock())
+        dismiss = _stub(composer, "_dismiss_composer", AsyncMock())
+        request = build_post_request(
+            "", poll=build_poll("Q?", ["Yes", "No"], 1), now=NOW
+        )
+
+        result = await composer.create_poll(request)
+
+        assert result["status"] == "poll_unavailable"
+        assert result["retry_safe"] is True
+        typed.assert_not_awaited()
+        dismiss.assert_awaited_once_with(clear=False)
+        page.keyboard.type.assert_not_awaited()

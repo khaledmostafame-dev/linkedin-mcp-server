@@ -28,6 +28,7 @@ from linkedin_mcp_server.scraping import session as session_module
 from linkedin_mcp_server.scraping import LinkedInExtractor
 from linkedin_mcp_server.scraping.fields import COMPANY_SECTIONS, PERSON_SECTIONS
 from linkedin_mcp_server.scraping.post_content import (
+    build_poll,
     build_post_edit,
     build_post_request,
 )
@@ -1011,6 +1012,13 @@ async def _posting_composer_unavailable_scenario(method: str) -> dict[str, Any]:
                 request = build_post_request("Synthetic post body")
                 arguments = {"text": request.rendered_text}
                 result = await extractor.create_post(request)
+            elif method == "create_poll":
+                request = build_post_request(
+                    "",
+                    poll=build_poll("Synthetic question?", ["Yes", "No"], 3),
+                )
+                arguments = {"question": "Synthetic question?", "duration_days": 3}
+                result = await extractor.create_poll(request)
             elif method == "get_scheduled_posts":
                 arguments = {}
                 result = await extractor.get_scheduled_posts()
@@ -1097,6 +1105,7 @@ async def _facade_contract_trace() -> dict[str, Any]:
 
 TOOL_FACADE_METHODS = {
     "connect_with_person",
+    "create_poll",
     "create_post",
     "delete_post",
     "delete_scheduled_post",
@@ -1199,6 +1208,9 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         ),
         "post-create-composer-unavailable.json": (
             await _posting_composer_unavailable_scenario("create_post")
+        ),
+        "post-poll-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("create_poll")
         ),
         "post-scheduled-list-composer-unavailable.json": (
             await _posting_composer_unavailable_scenario("get_scheduled_posts")

@@ -12,6 +12,7 @@ from linkedin_mcp_server.scraping.post_content import (
     PostAttachment,
     PostValidationError,
     TextSegment,
+    build_poll,
     build_post_edit,
     build_post_request,
     date_matches,
@@ -279,3 +280,42 @@ class TestPostAsAndEdits:
         )
         assert edit.rendered_text == "Hi Sample Person"
         assert len(edit.mentions) == 1
+
+
+class TestPolls:
+    def test_limits_are_enforced_before_a_browser(self):
+        build_poll("q" * 140, ["a" * 30, "b"], 14)
+        with pytest.raises(PostValidationError, match="140"):
+            build_poll("q" * 141, ["a", "b"], 3)
+        with pytest.raises(PostValidationError, match="30"):
+            build_poll("Question?", ["a" * 31, "b"], 3)
+        with pytest.raises(PostValidationError, match="2 to 4"):
+            build_poll("Question?", ["only"], 3)
+        with pytest.raises(PostValidationError, match="2 to 4"):
+            build_poll("Question?", ["a", "b", "c", "d", "e"], 3)
+        with pytest.raises(PostValidationError, match="distinct"):
+            build_poll("Question?", ["Yes", "yes"], 3)
+        with pytest.raises(PostValidationError, match="blank"):
+            build_poll("Question?", ["Yes", "  "], 3)
+
+    @pytest.mark.parametrize("days", [0, 2, 5, 30, True, "7"])
+    def test_only_linkedins_durations_are_accepted(self, days):
+        with pytest.raises(PostValidationError, match="duration_days"):
+            build_poll("Question?", ["Yes", "No"], days)
+
+    def test_a_poll_needs_no_text_and_takes_no_attachments(self):
+        poll = build_poll("Question?", ["Yes", "No"], 7)
+        request = build_post_request("", poll=poll, now=NOW)
+        preview = post_preview(request)
+        assert preview["poll"] == {
+            "question": "Question?",
+            "question_characters": 9,
+            "question_limit": 140,
+            "options": ["Yes", "No"],
+            "option_limit": 30,
+            "duration_days": 7,
+        }
+        with pytest.raises(PostValidationError, match="attachments"):
+            build_post_request(
+                "", poll=poll, document=_document(), document_title="D", now=NOW
+            )

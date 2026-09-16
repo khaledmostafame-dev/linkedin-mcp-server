@@ -32,6 +32,7 @@ FACADE_PACKAGE_IMPORTERS = {
 PUBLIC_SIGNATURES = {
     "click_button_by_text": "(self, text: 'str', *, scope: 'str' = 'main', timeout: 'int' = 5000) -> 'bool'",
     "connect_with_person": "(self, username: 'str', *, note: 'str | None' = None) -> 'dict[str, Any]'",
+    "create_poll": "(self, request: 'PostRequest') -> 'dict[str, Any]'",
     "create_post": "(self, request: 'PostRequest') -> 'dict[str, Any]'",
     "delete_post": "(self, post_url: 'str', *, confirm: 'bool') -> 'dict[str, Any]'",
     "delete_scheduled_post": "(self, identifier: 'str', *, confirm: 'bool') -> 'dict[str, Any]'",
@@ -61,6 +62,7 @@ PUBLIC_SIGNATURES = {
 DELEGATES = {
     "click_button_by_text": ("_content", "click_button_by_text"),
     "connect_with_person": ("_connection", "connect_with_person"),
+    "create_poll": ("_post_composer", "create_poll"),
     "create_post": ("_post_composer", "create_post"),
     "delete_post": ("_post_composer", "delete_post"),
     "delete_scheduled_post": ("_post_composer", "delete_scheduled_post"),
@@ -90,6 +92,7 @@ DELEGATES = {
 DELEGATE_CALLS = {
     "click_button_by_text": "self._content.click_button_by_text(text, scope=scope, timeout=timeout)",
     "connect_with_person": "self._connection.connect_with_person(username, note=note)",
+    "create_poll": "self._post_composer.create_poll(request)",
     "create_post": "self._post_composer.create_post(request)",
     "delete_post": "self._post_composer.delete_post(post_url, confirm=confirm)",
     "delete_scheduled_post": "self._post_composer.delete_scheduled_post(identifier, confirm=confirm)",

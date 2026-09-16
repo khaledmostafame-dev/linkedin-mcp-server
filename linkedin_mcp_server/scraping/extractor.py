@@ -293,3 +293,7 @@ class LinkedInExtractor:
     ) -> dict[str, Any]:
         """Replace the text of one of the logged-in member's own posts."""
         return await self._post_composer.edit_post(post_url, edit, confirm=confirm)
+
+    async def create_poll(self, request: PostRequest) -> dict[str, Any]:
+        """Publish or schedule a validated poll through the share composer."""
+        return await self._post_composer.create_poll(request)
