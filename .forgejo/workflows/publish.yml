@@ -1,0 +1,53 @@
+name: Build & publish images
+
+# Forgejo Actions on the NAS -- see Synology/Forgejo-self-hosted-runbook.md.
+# Images are built here (never on GitHub/GHCR/Docker Hub) and pushed to the
+# self-hosted registry. A mirror-sync push (GitHub -> Forgejo) auto-fires
+# `on: push`; workflow_dispatch is a manual fallback.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute short sha
+        id: vars
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Login to registry
+        run: echo "${{ secrets.REGISTRY_TOKEN }}" | docker login git.khaled.synology.me -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+
+      - name: Build and push image
+        run: |
+          REG=git.khaled.synology.me/khaledmostafame-dev
+          docker build -t $REG/linkedin-mcp-server:latest -t $REG/linkedin-mcp-server:${{ steps.vars.outputs.short_sha }} .
+          docker push $REG/linkedin-mcp-server:latest
+          docker push $REG/linkedin-mcp-server:${{ steps.vars.outputs.short_sha }}
+
+      # Link the package to this repo so it shows under the repo's Packages
+      # tab. Non-fatal: 201=linked, 409=already linked, 403/401=token lacks
+      # repo-link rights.
+      - name: Link package to repo
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: token ${{ secrets.REGISTRY_TOKEN }}" \
+            "https://git.khaled.synology.me/api/v1/packages/khaledmostafame-dev/container/linkedin-mcp-server/-/link/linkedin-mcp-server" \
+            || echo curl-failed)
+          echo "link linkedin-mcp-server -> linkedin-mcp-server : $code"
+
+      # Tell the Portainer stack to repull :latest and recreate only if the
+      # digest changed. Non-fatal, and a no-op until the repo secret exists.
+      - name: Redeploy via Portainer webhook
+        run: |
+          if [ -z "${{ secrets.PORTAINER_WEBHOOK_URL }}" ]; then
+            echo "PORTAINER_WEBHOOK_URL not set — skipping redeploy"
+          else
+            curl -s -o /dev/null -w 'redeploy webhook status: %{http_code}\n' -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}" || true
+          fi
