@@ -25,13 +25,14 @@ a page-owning collaborator.
 | `contracts` | `ExtractedSection`, `FilterValidationError`, `RATE_LIMITED_SECTION_TEXT`, `SEND_INTERRUPTED_WARNING`, `message_action_result()`, `rate_limited_section_error()`, `refuse_an_invalid_message()` | `browser-free` |
 | `conversations` | `ConversationReader`, `strip_select_conversation_prefix()` | `page-owning` |
 | `entity_search` | `ENTITY_SEARCH_REFERENCE_CAP`, `MAX_ENTITY_SEARCH_PAGES`, `paginated_entity_search()` | `browser-free` |
+| `events` | `EventScraper` | `browser-free` |
 | `extractor` | `LinkedInExtractor` | `page-owning` |
 | `feed` | `FeedScraper` | `page-owning` |
 | `feed_payload` | `POST_SLUG_URL_RE`, `append_captured_post_permalinks()`, `build_feed_references()`, `is_feed_payload_response()`, `is_post_listing_page()`, `is_post_listing_response()` | `browser-free` |
 | `fields` | `COMPANY_SECTIONS`, `PERSON_SECTIONS`, `parse_company_sections()`, `parse_person_sections()` | `browser-free` |
 | `geo_resolver` | `GeoCandidate`, `GeoLocationResolver`, `GeoResolution`, `MAX_CANDIDATES` | `page-owning` |
 | `group` | `GroupScraper` | `page-owning` |
-| `identifiers` | `company_page_url()`, `group_page_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_group_id()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_post_urn()`, `normalize_thread_id()`, `person_profile_url()`, `post_update_url()` | `browser-free` |
+| `identifiers` | `company_page_url()`, `event_page_url()`, `group_page_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_event_id()`, `normalize_group_id()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_post_urn()`, `normalize_thread_id()`, `person_profile_url()`, `post_update_url()` | `browser-free` |
 | `job_pages` | `JOB_IDS_JS`, `JobPageCapture`, `JobPageReader`, `parse_total_from_page_state_text()` | `page-owning` |
 | `job_policy` | `JOB_SEARCH_PATHS`, `RESULTS_PER_LINKEDIN_PAGE`, `SAVED_JOBS_PAGE_SIZE`, `SAVED_JOBS_PATHS`, `SAVED_JOBS_URL`, `SCROLL_BUDGET_TOTAL`, `SCROLL_DEADLINE_MAX`, `SEARCH_TIMEOUT_FRACTION`, `dropped_filters_section_error()`, `dropped_offset_section_error()`, `lost_keywords_section_error()`, `reconcile_search_references()`, `route()`, `same_job_search()` | `browser-free` |
 | `jobs` | `JobScraper` | `browser-free` |
@@ -45,7 +46,7 @@ a page-owning collaborator.
 | `posts` | `PostSearch` | `browser-free` |
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `page-owning` |
 | `response_capture` | `drain_listener_tasks()` | `browser-free` |
-| `search_urls` | `CONTENT_DATE_POSTED_MAP`, `CONTENT_SORT_BY_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_group_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
+| `search_urls` | `CONTENT_DATE_POSTED_MAP`, `CONTENT_SORT_BY_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_event_search_url()`, `build_group_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
 | `session` | `NAV_DELAY`, `ScrapingSession` | `page-owning` |
 | `text` | `DETAIL_CAPTURE_EN_US`, `DetailCaptureTextTable`, `SIDEBAR_CHROME_EN`, `SidebarChromeTable`, `filter_linkedin_noise_lines()`, `normalize_localized_digits()`, `strip_conversation_chrome()`, `strip_linkedin_noise()`, `truncate_linkedin_noise()` | `browser-free` |
 
@@ -61,7 +62,8 @@ a page-owning collaborator.
 - `contracts` -> `identifiers`, `link_metadata`
 - `conversations` -> `content`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `session`, `text`
 - `entity_search` -> `capture`, `contracts`, `job_policy`, `link_metadata`, `session`
-- `extractor` -> `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `session`, `text`
+- `events` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `search_urls`
+- `extractor` -> `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `events`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `session`, `text`
 - `feed` -> `content`, `contracts`, `feed_payload`, `navigation`, `response_capture`, `session`, `text`
 - `feed_payload` -> `link_metadata`
 - `fields` -> `capture`
@@ -100,6 +102,8 @@ a page-owning collaborator.
 - `follow`
 - `get_company_employees`
 - `get_conversation`
+- `get_event_attendees`
+- `get_event_details`
 - `get_group_members`
 - `get_group_posts`
 - `get_inbox`
@@ -121,6 +125,7 @@ a page-owning collaborator.
 - `scrape_person`
 - `search_companies`
 - `search_conversations`
+- `search_events`
 - `search_groups`
 - `search_jobs`
 - `search_people`
@@ -136,6 +141,7 @@ a page-owning collaborator.
 - `_connection`
 - `_content`
 - `_conversations`
+- `_event`
 - `_feed`
 - `_group`
 - `_jobs`

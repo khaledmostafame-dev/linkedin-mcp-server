@@ -82,6 +82,9 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `search_groups` | Search for LinkedIn groups by keyword |
 | `get_group_posts` | List recent posts from a LinkedIn group's home feed |
 | `get_group_members` | List members of a LinkedIn group from its /members/ page, with optional keyword filter (full list requires the account to be a group member) |
+| `search_events` | Search for LinkedIn events by keyword |
+| `get_event_details` | Get the details page for a single LinkedIn event |
+| `get_event_attendees` | List attendees of a LinkedIn event, with a bounded scroll budget |
 | `close_session` | Close browser session and clean up resources |
 | `get_pacing_status` | Show LinkedIn pacing: call counters, when the next read and write are allowed, any cooldown, and the effective limits. Never contacts LinkedIn |
 

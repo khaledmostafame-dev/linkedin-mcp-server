@@ -17,6 +17,7 @@ ReferenceKind = Literal[
     "school",
     "conversation",
     "group",
+    "event",
     "external",
     # One comment on a post (get_post_comments). `url` is the comment author's
     # profile or company page and `value` the comment URN; see
@@ -157,6 +158,8 @@ _SECTION_CONTEXTS = {
     "inbox": "inbox",
     "conversation": "conversation",
     "members": "group member",
+    "attendees": "event attendee",
+    "event_details": "event details",
     "connections": "connection",
     "received_invitations": "received invitation",
     "sent_invitations": "sent invitation",
@@ -193,6 +196,7 @@ _REFERENCE_CAPS = {
     # member are the point of the tool, so the cap matches LinkedIn's
     # ~500-row serving limit per listing rather than the compact default.
     "members": 500,
+    "attendees": 500,
     # Network listings (list_connections, get_invitations, get_mutual_connections)
     # are likewise the payload themselves, not incidental links found while
     # reading something else -- cap generously so a caller's own max_results
@@ -244,6 +248,9 @@ _PULSE_PATH_RE = re.compile(r"^/pulse/([^/?#]+)")
 _FEED_PATH_RE = re.compile(r"^/feed/update/([^/?#]+)")
 _MESSAGING_THREAD_PATH_RE = re.compile(r"^/messaging/thread/([^/?#]+)")
 _GROUP_PATH_RE = re.compile(r"^/groups/([0-9]+)")
+# Same slugged-id shape as JOB_PATH_RE: LinkedIn serves an event under both
+# /events/<id>/ and /events/<title>-<id>/, both resolving to the same page.
+_EVENT_PATH_RE = re.compile(r"^/events/(?:[^/?#]*-)?([0-9]+)(?=[/?#]|$)")
 _MAX_REDIRECT_UNWRAP_DEPTH = 5
 
 # Accept both quoted-string and bare-integer JSON list elements, e.g.
@@ -425,6 +432,9 @@ def classify_link(href: str) -> tuple[ReferenceKind, str] | None:
 
     if match := _GROUP_PATH_RE.match(path):
         return "group", f"/groups/{match.group(1)}/"
+
+    if match := _EVENT_PATH_RE.match(path):
+        return "event", f"/events/{match.group(1)}/"
 
     return None
 

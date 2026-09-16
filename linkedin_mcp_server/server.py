@@ -53,6 +53,7 @@ from linkedin_mcp_server.server_role import (
 from linkedin_mcp_server.update_check import UpdateNoticeMiddleware
 from linkedin_mcp_server.tools.comments import register_comment_tools
 from linkedin_mcp_server.tools.company import register_company_tools
+from linkedin_mcp_server.tools.event import register_event_tools
 from linkedin_mcp_server.tools.feed import register_feed_tools
 from linkedin_mcp_server.tools.group import register_group_tools
 from linkedin_mcp_server.tools.job import register_job_tools
@@ -315,6 +316,7 @@ def create_mcp_server(
         register_network_tools(mcp, tool_timeout=tool_timeout)
         register_group_tools(mcp, tool_timeout=tool_timeout)
         register_saved_posts_tools(mcp, tool_timeout=tool_timeout)
+        register_event_tools(mcp, tool_timeout=tool_timeout)
 
         # Inside the gate with the rest, and easy to miss because it is the one
         # tool defined here rather than in a `register_*` call. Left out of the

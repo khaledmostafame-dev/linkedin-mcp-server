@@ -54,6 +54,9 @@ def _make_mock_extractor(scrape_result: dict) -> MagicMock:
     mock.search_groups = AsyncMock(return_value=scrape_result)
     mock.get_group_posts = AsyncMock(return_value=scrape_result)
     mock.get_group_members = AsyncMock(return_value=scrape_result)
+    mock.search_events = AsyncMock(return_value=scrape_result)
+    mock.get_event_details = AsyncMock(return_value=scrape_result)
+    mock.get_event_attendees = AsyncMock(return_value=scrape_result)
     mock.extract_page = AsyncMock(
         return_value=ExtractedSection(text="some text", references=[])
     )
@@ -2219,6 +2222,79 @@ class TestGroupTools:
             await tool_fn("12345", mock_context, extractor=mock_extractor)
 
 
+class TestEventTools:
+    async def test_search_events_success(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/search/results/events/?keywords=rpa",
+            "sections": {"search_results": "RPA Summit 2026"},
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.event import register_event_tools
+
+        mcp = FastMCP("test")
+        register_event_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "search_events")
+        result = await tool_fn("rpa", mock_context, extractor=mock_extractor)
+
+        assert result["sections"]["search_results"] == "RPA Summit 2026"
+        mock_extractor.search_events.assert_awaited_once_with("rpa", max_pages=3)
+
+    async def test_get_event_details_forwards_event_url(self, mock_context):
+        expected = {"url": "...", "sections": {"event_details": "RPA Summit"}}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.event import register_event_tools
+
+        mcp = FastMCP("test")
+        register_event_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_event_details")
+        result = await tool_fn("1234567890", mock_context, extractor=mock_extractor)
+
+        assert result["sections"]["event_details"] == "RPA Summit"
+        mock_extractor.get_event_details.assert_awaited_once_with("1234567890")
+
+    async def test_get_event_attendees_forwards_max_attendees(self, mock_context):
+        expected = {"url": "...", "sections": {"attendees": "Jane Doe"}}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.event import register_event_tools
+
+        mcp = FastMCP("test")
+        register_event_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_event_attendees")
+        result = await tool_fn(
+            "1234567890", mock_context, max_attendees=100, extractor=mock_extractor
+        )
+
+        assert result["sections"]["attendees"] == "Jane Doe"
+        mock_extractor.get_event_attendees.assert_awaited_once_with(
+            "1234567890", max_attendees=100
+        )
+
+    async def test_get_event_attendees_error(self, mock_context):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.exceptions import SessionExpiredError
+
+        mock_extractor = MagicMock()
+        mock_extractor.get_event_attendees = AsyncMock(
+            side_effect=SessionExpiredError()
+        )
+
+        from linkedin_mcp_server.tools.event import register_event_tools
+
+        mcp = FastMCP("test")
+        register_event_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_event_attendees")
+        with pytest.raises(ToolError, match="Session expired"):
+            await tool_fn("1234567890", mock_context, extractor=mock_extractor)
+
+
 class TestToolTimeouts:
     async def test_all_tools_have_global_timeout(self):
         from linkedin_mcp_server.server import create_mcp_server
@@ -2255,6 +2331,9 @@ class TestToolTimeouts:
             "search_groups",
             "get_group_posts",
             "get_group_members",
+            "search_events",
+            "get_event_details",
+            "get_event_attendees",
             "close_session",
             "get_pacing_status",
         )
@@ -2302,6 +2381,9 @@ class TestToolTimeouts:
             "search_groups",
             "get_group_posts",
             "get_group_members",
+            "search_events",
+            "get_event_details",
+            "get_event_attendees",
             "close_session",
             "get_pacing_status",
         )

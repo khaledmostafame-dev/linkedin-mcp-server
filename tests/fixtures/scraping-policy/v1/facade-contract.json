@@ -64,6 +64,14 @@
         "coroutine": true,
         "signature": "(self, linkedin_username: 'str | None' = None, thread_id: 'str | None' = None, index: 'int' = 0) -> 'dict[str, Any]'"
       },
+      "get_event_attendees": {
+        "coroutine": true,
+        "signature": "(self, event_url: 'str', max_attendees: 'int' = 50) -> 'dict[str, Any]'"
+      },
+      "get_event_details": {
+        "coroutine": true,
+        "signature": "(self, event_url: 'str') -> 'dict[str, Any]'"
+      },
       "get_group_members": {
         "coroutine": true,
         "signature": "(self, group_id: 'str', max_members: 'int' = 50, keywords: 'str | None' = None) -> 'dict[str, Any]'"
@@ -148,6 +156,10 @@
         "coroutine": true,
         "signature": "(self, keywords: 'str', limit: 'int' = 20) -> 'dict[str, Any]'"
       },
+      "search_events": {
+        "coroutine": true,
+        "signature": "(self, keywords: 'str', max_pages: 'int' = 3) -> 'dict[str, Any]'"
+      },
       "search_groups": {
         "coroutine": true,
         "signature": "(self, keywords: 'str') -> 'dict[str, Any]'"
@@ -186,6 +198,8 @@
       "follow",
       "get_company_employees",
       "get_conversation",
+      "get_event_attendees",
+      "get_event_details",
       "get_group_members",
       "get_group_posts",
       "get_inbox",
@@ -206,6 +220,7 @@
       "scrape_person",
       "search_companies",
       "search_conversations",
+      "search_events",
       "search_groups",
       "search_jobs",
       "search_people",
@@ -756,6 +771,51 @@
               "description": "LinkedIn messaging thread ID"
             }
           },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_event_attendees": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "event_url": {
+              "description": "LinkedIn event URL or numeric event id",
+              "type": "string"
+            },
+            "max_attendees": {
+              "default": 50,
+              "description": "Approximate cap on how many attendees to load via\nbounded scrolling (1-500, default 50)",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_event_details": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "event_url": {
+              "description": "LinkedIn event URL or numeric event id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_url"
+          ],
           "type": "object"
         },
         "output": {
@@ -1353,6 +1413,32 @@
               "default": 20,
               "description": "Maximum number of search-result rows to enumerate as\nconversation references (1-50, default 20). Each enumeration\nselects the row in LinkedIn's UI and may mark it as read, so\na low cap is preferable for noisy queries.",
               "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keywords"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "search_events": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "keywords": {
+              "description": "Search keywords (e.g., \"automation anywhere conference\")",
+              "type": "string"
+            },
+            "max_pages": {
+              "default": 3,
+              "description": "Scroll-depth budget in nominal \"pages\" (1-10, default 3)",
+              "maximum": 10,
               "minimum": 1,
               "type": "integer"
             }

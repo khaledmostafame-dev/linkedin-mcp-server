@@ -916,6 +916,15 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
             elif method == "search_posts":
                 arguments = {"keywords": "mathematics", "max_pages": 2}
                 result = await extractor.search_posts(**arguments)
+            elif method == "search_events":
+                arguments = {"keywords": "computing history", "max_pages": 2}
+                result = await extractor.search_events(**arguments)
+            elif method == "get_event_details":
+                arguments = {"event_url": "1234567890"}
+                result = await extractor.get_event_details(**arguments)
+            elif method == "get_event_attendees":
+                arguments = {"event_url": "1234567890", "max_attendees": 25}
+                result = await extractor.get_event_attendees(**arguments)
             else:
                 raise AssertionError(method)
     page.assert_clean()
@@ -1290,6 +1299,8 @@ TOOL_FACADE_METHODS = {
     "follow",
     "get_company_employees",
     "get_conversation",
+    "get_event_attendees",
+    "get_event_details",
     "get_group_members",
     "get_group_posts",
     "get_inbox",
@@ -1310,6 +1321,7 @@ TOOL_FACADE_METHODS = {
     "scrape_person",
     "search_companies",
     "search_conversations",
+    "search_events",
     "search_groups",
     "search_jobs",
     "search_people",
@@ -1399,6 +1411,13 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         ),
         "comments-react-preview.json": await _comment_browser_free_scenario(
             "react_to_comment"
+        ),
+        "search-events.json": await _single_capture_facade_scenario("search_events"),
+        "event-details.json": await _single_capture_facade_scenario(
+            "get_event_details"
+        ),
+        "event-attendees.json": await _single_capture_facade_scenario(
+            "get_event_attendees"
         ),
         "inbox.json": await _conversation_scenario("get_inbox"),
         "conversation.json": await _conversation_scenario("get_conversation"),
