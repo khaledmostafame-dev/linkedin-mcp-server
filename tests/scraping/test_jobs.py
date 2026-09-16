@@ -184,6 +184,68 @@ class TestSearchJobs:
         assert result["job_ids"] == ["111", "222", "333"]
         assert "search_results" in result["sections"]
 
+    async def test_reports_the_advertised_total_from_the_first_page(self, mock_page):
+        scraper = _scraper(mock_page)
+        with (
+            patch.object(
+                scraper._pages,
+                "_extract_search_page",
+                new_callable=AsyncMock,
+                return_value=captured(
+                    mock_page, extracted("28 results\nSenior policy engineer")
+                ),
+            ),
+            patch.object(
+                scraper._pages,
+                "_extract_job_ids",
+                new_callable=AsyncMock,
+                return_value=["111"],
+            ),
+            patch.object(
+                scraper._pages,
+                "_get_total_search_pages",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "linkedin_mcp_server.scraping.jobs.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+        ):
+            result = await scraper.search_jobs("python", max_pages=1)
+
+        assert result["total"] == {"count": 28, "exact": True}
+
+    async def test_a_page_without_a_count_line_reports_no_total(self, mock_page):
+        scraper = _scraper(mock_page)
+        with (
+            patch.object(
+                scraper._pages,
+                "_extract_search_page",
+                new_callable=AsyncMock,
+                return_value=captured(mock_page, extracted("Job 1\nJob 2")),
+            ),
+            patch.object(
+                scraper._pages,
+                "_extract_job_ids",
+                new_callable=AsyncMock,
+                return_value=["111"],
+            ),
+            patch.object(
+                scraper._pages,
+                "_get_total_search_pages",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "linkedin_mcp_server.scraping.jobs.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+        ):
+            result = await scraper.search_jobs("python", max_pages=1)
+
+        assert "total" not in result
+
     async def test_returns_references(self, mock_page):
         scraper = _scraper(mock_page)
         with (

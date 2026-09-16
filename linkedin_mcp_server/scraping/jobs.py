@@ -37,6 +37,7 @@ from linkedin_mcp_server.scraping.link_metadata import Reference, dedupe_referen
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.search_urls import build_job_search_url
 from linkedin_mcp_server.scraping.session import NAV_DELAY
+from linkedin_mcp_server.scraping.text import JOB_SEARCH_EN_US
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,10 @@ class JobScraper:
             sort_by: Sort results (date, relevance)
 
         Returns:
-            {url, sections: {search_results: text}, job_ids: [str]}
+            {url, sections: {search_results: text}, job_ids: [str],
+            total?: {count: int, exact: bool}} — ``total`` is LinkedIn's own
+            advertised result count read from the first page, present only
+            when that line could be parsed.
         """
         base_url = build_job_search_url(
             keywords,
@@ -153,6 +157,7 @@ class JobScraper:
         filters_warning: dict[str, str] | None = None
         total_pages: int | None = None
         total_pages_queried = False
+        total_result: dict[str, Any] | None = None
 
         # The search-wide scroll budget is spent as it goes rather than
         # divided up front, because dividing it charges every navigation for
@@ -373,6 +378,16 @@ class JobScraper:
                         if total_pages is not None:
                             logger.debug("LinkedIn reports %d total pages", total_pages)
 
+                # The advertised result count, read from the same text this
+                # page already extracted (no second navigation). Only the
+                # first page is read: LinkedIn prints it once, near the top,
+                # and later pages have long since scrolled it out of frame.
+                if page_num == 0:
+                    counted = JOB_SEARCH_EN_US.result_count(extracted.text)
+                    if counted is not None:
+                        count, exact = counted
+                        total_result = {"count": count, "exact": exact}
+
                 page_ids = list(
                     dict.fromkeys(await self._pages._extract_job_ids(scoped=True))
                 )
@@ -425,6 +440,8 @@ class JobScraper:
             else {},
             "job_ids": all_job_ids,
         }
+        if total_result is not None:
+            result["total"] = total_result
         if page_references:
             result["references"] = {
                 "search_results": dedupe_references(page_references)
@@ -443,6 +460,12 @@ class JobScraper:
         if section_errors:
             result["section_errors"] = section_errors
         return result
+
+    async def save_job(
+        self, job_id: str, *, confirm: bool, unsave: bool = False
+    ) -> dict[str, Any]:
+        """Save or unsave a job posting for the authenticated LinkedIn account."""
+        return await self._pages.save_job(job_id, confirm=confirm, unsave=unsave)
 
     async def get_saved_jobs(self, max_pages: int = 3) -> dict[str, Any]:
         """List the authenticated user's saved job postings.
