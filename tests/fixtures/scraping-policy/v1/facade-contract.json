@@ -56,6 +56,10 @@
         "coroutine": true,
         "signature": "(self, username: 'str') -> 'dict[str, Any]'"
       },
+      "resolve_geo_location": {
+        "coroutine": true,
+        "signature": "(self, query: 'str') -> 'dict[str, Any]'"
+      },
       "scrape_company": {
         "coroutine": true,
         "signature": "(self, company_name: 'str', requested: 'set[str]', callbacks: 'ProgressCallback | None' = None) -> 'dict[str, Any]'"
@@ -103,6 +107,7 @@
       "get_my_profile",
       "get_saved_jobs",
       "get_sidebar_profiles",
+      "resolve_geo_location",
       "scrape_company",
       "scrape_job",
       "scrape_person",
@@ -449,6 +454,25 @@
           },
           "required": [
             "linkedin_username"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "resolve_geo_location": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "query": {
+              "description": "Free-text place name (e.g. \"Dubai\", \"Saudi Arabia\",\n\"United Arab Emirates\", \"India\"). Blank raises ToolError.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
           ],
           "type": "object"
         },

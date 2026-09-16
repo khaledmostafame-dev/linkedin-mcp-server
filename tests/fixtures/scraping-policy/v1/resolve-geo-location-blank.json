@@ -1,0 +1,15 @@
+{
+  "call": {
+    "arguments": {
+      "query": "   "
+    },
+    "method": "resolve_geo_location"
+  },
+  "events": [],
+  "result": {
+    "message": "location query must not be blank; pass a place name (e.g. 'Dubai', 'Saudi Arabia') or a numeric geo URN id.",
+    "raised": "FilterValidationError"
+  },
+  "scenario": "resolve_geo_location__blank_query",
+  "schema_version": 1
+}
