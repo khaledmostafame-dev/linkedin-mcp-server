@@ -1646,6 +1646,10 @@ class TestToolTimeouts:
             "send_message",
             "get_feed",
             "search_posts",
+            "get_post_comments",
+            "reply_to_comment",
+            "comment_on_post",
+            "react_to_comment",
             "close_session",
         )
 
@@ -1679,6 +1683,10 @@ class TestToolTimeouts:
             "send_message",
             "get_feed",
             "search_posts",
+            "get_post_comments",
+            "reply_to_comment",
+            "comment_on_post",
+            "react_to_comment",
             "close_session",
         )
 

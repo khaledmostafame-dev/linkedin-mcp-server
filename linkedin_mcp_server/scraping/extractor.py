@@ -8,6 +8,7 @@ from patchright.async_api import Page
 
 from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
 from linkedin_mcp_server.scraping.capture import SectionCapture
+from linkedin_mcp_server.scraping.comments import CommentScraper
 from linkedin_mcp_server.scraping.company import CompanyScraper
 from linkedin_mcp_server.scraping.connection_actions import ConnectionActions
 from linkedin_mcp_server.scraping.content import PageContentReader
@@ -54,6 +55,7 @@ class LinkedInExtractor:
         self._content = content
         self._capture = capture
         self._feed = FeedScraper(session, navigator, content)
+        self._comments = CommentScraper(session, navigator, content)
         self._message_sender = message_sender
         self._person = person
         self._company = CompanyScraper(session, capture)
@@ -255,4 +257,55 @@ class LinkedInExtractor:
             message,
             confirm_send=confirm_send,
             profile_urn=profile_urn,
+        )
+
+    async def get_post_comments(
+        self,
+        post_url: str,
+        max_comments: int = 50,
+        include_replies: bool = True,
+        sort: str = "relevant",
+    ) -> dict[str, Any]:
+        """Read a post's comments with each comment's URN, author and parent."""
+        return await self._comments.get_post_comments(
+            post_url,
+            max_comments=max_comments,
+            include_replies=include_replies,
+            sort=sort,
+        )
+
+    async def comment_on_post(
+        self,
+        post_url: str,
+        text: str,
+        *,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Post a top-level comment with explicit confirmation gating."""
+        return await self._comments.comment_on_post(post_url, text, confirm=confirm)
+
+    async def reply_to_comment(
+        self,
+        post_url: str,
+        comment_urn: str,
+        text: str,
+        *,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Reply to one comment, located by URN, with explicit confirmation gating."""
+        return await self._comments.reply_to_comment(
+            post_url, comment_urn, text, confirm=confirm
+        )
+
+    async def react_to_comment(
+        self,
+        post_url: str,
+        comment_urn: str,
+        reaction: str = "like",
+        *,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """React to one comment, located by URN, with explicit confirmation gating."""
+        return await self._comments.react_to_comment(
+            post_url, comment_urn, reaction, confirm=confirm
         )
