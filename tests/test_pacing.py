@@ -377,6 +377,22 @@ class TestCooldown:
 
         assert middleware.current_state().strikes == 0
 
+    async def test_a_login_task_started_inside_a_call_reports_nowhere(self):
+        import asyncio
+
+        async def passes_a_checkpoint() -> None:
+            pacing_signals.report(pacing_signals.SECURITY_CHALLENGE)
+
+        with pacing_signals.collecting() as signals:
+            await asyncio.create_task(
+                passes_a_checkpoint(), context=pacing_signals.detached_context()
+            )
+            assert signals == set()
+            # An ordinary helper task spawned by a scrape still reports.
+            await asyncio.create_task(passes_a_checkpoint())
+
+        assert signals == {pacing_signals.SECURITY_CHALLENGE}
+
     def test_a_report_outside_a_tool_call_goes_nowhere(self):
         pacing_signals.report(pacing_signals.HTTP_429)
         with pacing_signals.collecting() as signals:

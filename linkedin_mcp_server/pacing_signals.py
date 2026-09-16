@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import Context, ContextVar, copy_context
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -86,6 +86,20 @@ def report_if_challenge(url: str) -> None:
     """Report *url* when it is a checkpoint, challenge or authwall route."""
     if is_challenge_url(url):
         report(SECURITY_CHALLENGE, url)
+
+
+def detached_context() -> Context:
+    """The current context without the collector, for a background task.
+
+    A task copies the context it was created in, collector included, so a login
+    browser started from inside a tool call would report the checkpoint a person
+    passes through while signing in, and put the account into a cooldown for
+    completing a normal 2FA step. Pass this as ``create_task(..., context=)``
+    for work that outlives the call or belongs to someone at a keyboard.
+    """
+    context = copy_context()
+    context.run(_signals.set, None)
+    return context
 
 
 @contextmanager
