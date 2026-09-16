@@ -1,0 +1,103 @@
+{
+  "call": {
+    "arguments": {
+      "text": "Synthetic post body"
+    },
+    "method": "create_post"
+  },
+  "events": [
+    {
+      "call": "create_post",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add",
+      "section": "posting"
+    },
+    {
+      "call": "create_post",
+      "extra": {
+        "target_url": "https://www.linkedin.com/feed/?shareActive=true",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto",
+      "section": "posting"
+    },
+    {
+      "call": "create_post",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/feed/?shareActive=true",
+      "requested_url": "https://www.linkedin.com/feed/?shareActive=true",
+      "section": "posting",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "create_post",
+      "description": "goto https://www.linkedin.com/feed/?shareActive=true",
+      "kind": "boundary.stabilize",
+      "result": null,
+      "section": "posting"
+    },
+    {
+      "call": "create_post",
+      "extra": {
+        "target_url": "https://www.linkedin.com/feed/?shareActive=true",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto",
+      "section": "posting"
+    },
+    {
+      "call": "create_post",
+      "kind": "boundary.auth_quick",
+      "result": null,
+      "section": "posting"
+    },
+    {
+      "call": "create_post",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove",
+      "section": "posting"
+    },
+    {
+      "call": "create_post",
+      "kind": "boundary.rate_limit",
+      "section": "posting"
+    },
+    {
+      "call": "create_post",
+      "kind": "locator.create",
+      "locator": "post_editor",
+      "parent": null,
+      "section": "posting",
+      "selector": "div[role=\"textbox\"][contenteditable=\"true\"]"
+    },
+    {
+      "call": "create_post",
+      "kind": "locator.derive",
+      "locator": "post_editor_first",
+      "operation": "first",
+      "parent": "post_editor",
+      "section": "posting"
+    },
+    {
+      "call": "create_post",
+      "kind": "locator.wait_for",
+      "locator": "post_editor_first",
+      "section": "posting",
+      "state": "visible",
+      "timeout_ms": 15000
+    }
+  ],
+  "result": {
+    "message": "LinkedIn did not open exactly one share composer editor.",
+    "retry_safe": true,
+    "status": "composer_unavailable",
+    "url": "https://www.linkedin.com/feed/?shareActive=true"
+  },
+  "scenario": "create_post__composer_unavailable",
+  "schema_version": 1
+}

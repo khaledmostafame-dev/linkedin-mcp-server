@@ -43,6 +43,11 @@ from .support.policy_trace import ScriptedPage, TraceRecorder
 TOOL_DELEGATES = {
     "comment_on_post": "comment_on_post",
     "connect_with_person": "connect_with_person",
+    "create_post": "create_post",
+    "delete_post": "delete_post",
+    "delete_scheduled_post": "delete_scheduled_post",
+    "edit_post": "edit_post",
+    "edit_scheduled_post": "edit_scheduled_post",
     "get_company_employees": "get_company_employees",
     "get_company_posts": "extract_page",
     "get_company_profile": "scrape_company",
@@ -54,6 +59,7 @@ TOOL_DELEGATES = {
     "get_person_profile": "scrape_person",
     "get_post_comments": "get_post_comments",
     "get_saved_jobs": "get_saved_jobs",
+    "get_scheduled_posts": "get_scheduled_posts",
     "get_sidebar_profiles": "get_sidebar_profiles",
     "react_to_comment": "react_to_comment",
     "reply_to_comment": "reply_to_comment",
@@ -101,6 +107,7 @@ async def test_constructor_export_and_dependency_use_the_same_facade(monkeypatch
         "_jobs",
         "_message_sender",
         "_person",
+        "_post_composer",
         "_posts",
     }
     assert set(vars(extractor)) == expected_state
@@ -124,9 +131,9 @@ async def test_registered_tools_and_extractor_delegates_are_counted_separately()
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 24
+    assert len(tool_names) == 30
     assert tool_names == {*TOOL_DELEGATES, "close_session", "get_pacing_status"}
-    assert len(TOOL_DELEGATES) == 22
+    assert len(TOOL_DELEGATES) == 28
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
     assert "get_pacing_status" not in TOOL_DELEGATES
@@ -503,7 +510,7 @@ def test_facade_methods_are_exactly_the_frozen_coroutine_surface():
     }
 
     assert actual == expected
-    assert len(TOOL_FACADE_METHODS) == 22
+    assert len(TOOL_FACADE_METHODS) == 28
     assert len(COMPATIBILITY_METHODS) == 2
 
 

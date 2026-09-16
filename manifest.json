@@ -136,6 +136,30 @@
       "description": "Like one comment on a LinkedIn post, located by its URN, with explicit confirmation"
     },
     {
+      "name": "create_post",
+      "description": "Publish or schedule a LinkedIn post with explicit confirmation: real @mentions resolved by profile/company URL or URN (fails closed when no suggestion matches), up to 20 images or one PDF/PPTX/DOCX document carousel with a title, visibility, posting as an administered company page, and LinkedIn-native scheduling; confirm=false returns a browser-free preview"
+    },
+    {
+      "name": "get_scheduled_posts",
+      "description": "List the authenticated user's scheduled LinkedIn posts with identifiers for delete_scheduled_post"
+    },
+    {
+      "name": "edit_scheduled_post",
+      "description": "Change a scheduled LinkedIn post's text and/or scheduled time by its get_scheduled_posts identifier, with explicit confirmation"
+    },
+    {
+      "name": "delete_scheduled_post",
+      "description": "Delete one scheduled LinkedIn post by the identifier get_scheduled_posts returned, with explicit confirmation"
+    },
+    {
+      "name": "edit_post",
+      "description": "Replace the text of the authenticated user's own published LinkedIn post after verifying authorship, with explicit confirmation; LinkedIn re-evaluates distribution on edits"
+    },
+    {
+      "name": "delete_post",
+      "description": "Delete the authenticated user's own published LinkedIn post after verifying authorship, with explicit confirmation"
+    },
+    {
       "name": "close_session",
       "description": "Properly close browser session and clean up resources"
     },

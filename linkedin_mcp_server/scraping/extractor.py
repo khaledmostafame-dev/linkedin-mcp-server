@@ -24,6 +24,8 @@ from linkedin_mcp_server.scraping.jobs import JobScraper
 from linkedin_mcp_server.scraping.message_sender import MessageSender
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.person import PersonScraper
+from linkedin_mcp_server.scraping.post_composer import PostComposer
+from linkedin_mcp_server.scraping.post_content import PostEdit, PostRequest
 from linkedin_mcp_server.scraping.posts import PostSearch
 from linkedin_mcp_server.scraping.profile_page import ProfilePageReader
 from linkedin_mcp_server.scraping.session import ScrapingSession
@@ -67,6 +69,7 @@ class LinkedInExtractor:
         job_pages = JobPageReader(session, navigator, content)
         self._jobs = JobScraper(navigator, capture, job_pages)
         self._posts = PostSearch(capture)
+        self._post_composer = PostComposer(session, navigator)
         self._conversations = ConversationReader(
             session, navigator, content, profile_page
         )
@@ -309,3 +312,37 @@ class LinkedInExtractor:
         return await self._comments.react_to_comment(
             post_url, comment_urn, reaction, confirm=confirm
         )
+
+    async def create_post(self, request: PostRequest) -> dict[str, Any]:
+        """Publish or schedule a validated post through the share composer."""
+        return await self._post_composer.create_post(request)
+
+    async def get_scheduled_posts(self) -> dict[str, Any]:
+        """List the authenticated user's scheduled posts."""
+        return await self._post_composer.get_scheduled_posts()
+
+    async def delete_scheduled_post(
+        self, identifier: str, *, confirm: bool
+    ) -> dict[str, Any]:
+        """Delete one scheduled post named by its get_scheduled_posts identifier."""
+        return await self._post_composer.delete_scheduled_post(
+            identifier, confirm=confirm
+        )
+
+    async def edit_scheduled_post(
+        self, identifier: str, edit: PostEdit, *, confirm: bool
+    ) -> dict[str, Any]:
+        """Change a scheduled post's text, schedule, or both."""
+        return await self._post_composer.edit_scheduled_post(
+            identifier, edit, confirm=confirm
+        )
+
+    async def delete_post(self, post_url: str, *, confirm: bool) -> dict[str, Any]:
+        """Delete one of the logged-in member's own published posts."""
+        return await self._post_composer.delete_post(post_url, confirm=confirm)
+
+    async def edit_post(
+        self, post_url: str, edit: PostEdit, *, confirm: bool
+    ) -> dict[str, Any]:
+        """Replace the text of one of the logged-in member's own posts."""
+        return await self._post_composer.edit_post(post_url, edit, confirm=confirm)

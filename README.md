@@ -64,6 +64,12 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `reply_to_comment` | Reply to one comment located by URN (requires `confirm`; verifies the reply box belongs to that comment, confirms the reply appeared; @mentions not supported) |
 | `comment_on_post` | Post a top-level comment on a post (requires `confirm`; confirms the comment appeared; @mentions not supported) |
 | `react_to_comment` | Like one comment located by URN (requires `confirm`; never removes an existing reaction) |
+| `create_post` | Publish or schedule a post with real @mentions (`@[Name](profile or company URL)`, verified by identity, fails closed), up to 20 images or one PDF/PPTX document carousel, visibility, posting as a company page you admin (`post_as`), and LinkedIn-native scheduling (requires `confirm`; `confirm=false` previews without a browser) |
+| `get_scheduled_posts` | List scheduled posts with identifiers |
+| `edit_scheduled_post` | Change a scheduled post's text and/or time by identifier (requires `confirm`) |
+| `delete_scheduled_post` | Delete a scheduled post by identifier (requires `confirm`) |
+| `edit_post` | Replace the text of your own published post after verifying authorship (requires `confirm`; LinkedIn re-evaluates distribution on edits) |
+| `delete_post` | Delete your own published post after verifying authorship (requires `confirm`) |
 | `close_session` | Close browser session and clean up resources |
 | `get_pacing_status` | Show LinkedIn pacing: call counters, when the next read and write are allowed, any cooldown, and the effective limits. Never contacts LinkedIn |
 
