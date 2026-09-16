@@ -120,6 +120,18 @@
       "description": "Search LinkedIn posts/content globally by keyword (the 'Posts' tab) with an optional recency filter (past-24h/past-week/past-month)"
     },
     {
+      "name": "create_post",
+      "description": "Publish or schedule a LinkedIn post with explicit confirmation: real @mentions resolved by profile/company URL or URN (fails closed when no suggestion matches), up to 20 images or one PDF/PPTX/DOCX document carousel with a title, visibility, and LinkedIn-native scheduling; confirm=false returns a browser-free preview"
+    },
+    {
+      "name": "get_scheduled_posts",
+      "description": "List the authenticated user's scheduled LinkedIn posts with identifiers for delete_scheduled_post"
+    },
+    {
+      "name": "delete_scheduled_post",
+      "description": "Delete one scheduled LinkedIn post by the identifier get_scheduled_posts returned, with explicit confirmation"
+    },
+    {
       "name": "close_session",
       "description": "Properly close browser session and clean up resources"
     }
