@@ -7,6 +7,7 @@ with configurable section selection.
 
 import json
 import logging
+import time
 from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
@@ -146,7 +147,13 @@ def register_person_tools(
         ctx: Context,
         location: str | None = None,
         network: StrList | None = None,
-        current_company: str | None = None,
+        current_company: StrList | None = None,
+        past_company: StrList | None = None,
+        school: StrList | None = None,
+        industry: StrList | None = None,
+        title: str | None = None,
+        profile_language: StrList | None = None,
+        max_pages: Annotated[int, Field(ge=1, le=10)] = 1,
         extractor: Any | None = None,
     ) -> dict[str, Any]:
         """
@@ -155,35 +162,62 @@ def register_person_tools(
         Args:
             keywords: Search keywords (e.g., "software engineer", "recruiter at Google")
             ctx: FastMCP context for progress reporting
-            location: Optional location filter (e.g., "New York", "Remote")
+            location: Optional location filter. LinkedIn's geoUrn facet only
+                filters on the numeric geo URN id (e.g. "103644278" for the
+                United States); plain-text place names are accepted by the URL
+                but ignored by LinkedIn and return the unfiltered result set.
+                If you do not have the URN, omit this and put the place name in
+                `keywords` instead.
             network: Optional connection-degree filter. Each element is one of
                 "F" (1st-degree), "S" (2nd-degree), "O" (3rd-degree and beyond).
                 Example: ["F"] to only return 1st-degree connections. A single
                 token ("F") or a comma-separated string ("F,S") is also
                 accepted, for clients that cannot transmit an array.
-            current_company: Optional current-employer filter. LinkedIn's
-                currentCompany facet only filters on the numeric company URN id
-                (e.g. "1115" for SAP); plain company names are accepted by the
-                URL but ignored by LinkedIn and return the unfiltered result
-                set. Look up a company's URN via get_company_profile -- it is
-                exposed under references["about"]. For company-wide employee
+            current_company: Optional current-employer filter -- numeric
+                LinkedIn company URN ids (e.g. "1115" for SAP, or "1115,2573558"
+                for several). Plain company names are accepted by the URL but
+                ignored by LinkedIn and return the unfiltered result set. Look
+                up a company's URN via get_company_profile -- it is exposed
+                under references["about"]. For company-wide employee
                 demographics (location/education/function breakdown) plus a
                 slug-based lookup, use get_company_employees instead.
+            past_company: Optional former-employer filter, same numeric URN
+                shape as current_company.
+            school: Optional school filter, numeric LinkedIn school URN ids.
+            industry: Optional industry filter, numeric LinkedIn industry
+                taxonomy ids. There is no in-app lookup for these; read them
+                off LinkedIn's own People search "Industry" filter panel.
+            title: Optional free-text filter matched against the member's
+                current/past title (e.g. "Product Manager"). Unlike the
+                id-based facets above, this is sent as typed, like keywords.
+            profile_language: Optional profile-language filter, lowercase
+                ISO 639-1 two-letter codes (e.g. "en", or "en,ar" for several).
+            max_pages: How many result pages to walk, roughly ten people each
+                (1-10, default 1 -- one page, unchanged from before pagination
+                existed). Costs one navigation per page; stops early once a
+                page adds no person LinkedIn had not already shown.
 
         Returns:
-            Dict with url, sections (name -> raw text), and optional references.
-            The LLM should parse the raw text to extract individual people and their profiles.
+            Dict with url, sections (search_results -> raw text),
+            pages_fetched (int), stopped_reason
+            ("max_pages"|"no_more_results"|"limit"|"error"), truncated (bool,
+            true when more results may exist past what was fetched), and
+            optional references and section_errors. The LLM should parse the
+            raw text to extract individual people and their profiles.
         """
         try:
+            started = time.monotonic()
             extractor = extractor or await get_ready_extractor(
                 ctx, tool_name="search_people"
             )
             logger.info(
-                "Searching people: keywords='%s', location='%s', network=%s, current_company='%s'",
+                "Searching people: keywords='%s', location='%s', network=%s, "
+                "current_company=%s, max_pages=%d",
                 keywords,
                 location,
                 network,
                 current_company,
+                max_pages,
             )
 
             await ctx.report_progress(
@@ -196,6 +230,15 @@ def register_person_tools(
                     location,
                     network=network,
                     current_company=current_company,
+                    past_company=past_company,
+                    school=school,
+                    industry=industry,
+                    title=title,
+                    profile_language=profile_language,
+                    max_pages=max_pages,
+                    # What is left of the figure FastMCP cancels this call on,
+                    # same idea as search_jobs's own tool_timeout handoff.
+                    tool_timeout=max(0.0, tool_timeout - (time.monotonic() - started)),
                 )
             except FilterValidationError as e:
                 # Validation messages carry actionable detail; surface

@@ -1373,7 +1373,7 @@ class TestSearchPeople:
             new_callable=AsyncMock,
             return_value=extracted("Jane Doe"),
         ):
-            result = await scraper.search_people("engineer", current_company="1115")
+            result = await scraper.search_people("engineer", current_company=["1115"])
 
         assert "currentCompany=%5B%221115%22%5D" in result["url"]
 
@@ -1386,8 +1386,8 @@ class TestSearchPeople:
 
     async def test_search_people_rejects_plain_company_name(self, mock_page):
         scraper = _scraper(mock_page)
-        with pytest.raises(ValueError, match="must be a numeric"):
-            await scraper.search_people("engineer", current_company="SAP")
+        with pytest.raises(ValueError, match="must be numeric"):
+            await scraper.search_people("engineer", current_company=["SAP"])
 
         mock_page.goto.assert_not_awaited()
 
@@ -1395,8 +1395,8 @@ class TestSearchPeople:
         """LinkedIn URN ids are ASCII decimal; reject Unicode digits even
         though ``str.isdigit()`` would accept them."""
         scraper = _scraper(mock_page)
-        with pytest.raises(ValueError, match="must be a numeric"):
-            await scraper.search_people("engineer", current_company="١١١٥")
+        with pytest.raises(ValueError, match="must be numeric"):
+            await scraper.search_people("engineer", current_company=["١١١٥"])
 
         mock_page.goto.assert_not_awaited()
 
@@ -1408,9 +1408,16 @@ class TestSearchPeople:
             new_callable=AsyncMock,
             return_value=extracted("Jane Doe"),
         ):
-            result = await scraper.search_people("engineer", current_company="")
+            result = await scraper.search_people("engineer", current_company=[])
 
         assert "currentCompany" not in result["url"]
+
+    async def test_search_people_rejects_plain_text_location(self, mock_page):
+        scraper = _scraper(mock_page)
+        with pytest.raises(ValueError, match="must be a numeric"):
+            await scraper.search_people("engineer", location="Seattle")
+
+        mock_page.goto.assert_not_awaited()
 
     async def test_search_people_combines_all_filters(self, mock_page):
         scraper = _scraper(mock_page)
@@ -1422,12 +1429,125 @@ class TestSearchPeople:
         ):
             result = await scraper.search_people(
                 "engineer",
-                location="Seattle",
+                location="104116203",
                 network=["F"],
-                current_company="1115",
+                current_company=["1115"],
+                past_company=["2573558"],
+                school=["19014"],
+                industry=["4"],
+                title="Product Manager",
+                profile_language=["en"],
             )
 
         assert "keywords=engineer" in result["url"]
-        assert "location=Seattle" in result["url"]
+        assert "geoUrn=%5B%22104116203%22%5D" in result["url"]
         assert "network=%5B%22F%22%5D" in result["url"]
         assert "currentCompany=%5B%221115%22%5D" in result["url"]
+        assert "pastCompany=%5B%222573558%22%5D" in result["url"]
+        assert "school=%5B%2219014%22%5D" in result["url"]
+        assert "industry=%5B%224%22%5D" in result["url"]
+        assert "title=Product+Manager" in result["url"]
+        assert "profileLanguage=%5B%22en%22%5D" in result["url"]
+        assert result["pages_fetched"] == 1
+        assert result["stopped_reason"] == "no_more_results"
+        assert result["truncated"] is False
+
+    async def test_search_people_default_max_pages_fetches_one_page(self, mock_page):
+        scraper = _scraper(mock_page)
+        with patch.object(
+            scraper._capture,
+            "capture",
+            new_callable=AsyncMock,
+            return_value=extracted("Jane Doe"),
+        ) as mock_capture:
+            result = await scraper.search_people("engineer")
+
+        assert mock_capture.await_count == 1
+        assert result["pages_fetched"] == 1
+        assert "&page=" not in mock_capture.call_args.args[0]
+
+    async def test_search_people_paginates_until_no_new_people(self, mock_page):
+        scraper = _scraper(mock_page)
+        pages = [
+            extracted(
+                "Page one",
+                [
+                    {"kind": "person", "url": f"/in/user{i}/", "text": f"User {i}"}
+                    for i in range(3)
+                ],
+            ),
+            extracted(
+                "Page two",
+                [
+                    {"kind": "person", "url": f"/in/user{i}/", "text": f"User {i}"}
+                    for i in range(3, 6)
+                ],
+            ),
+            extracted(
+                "Page three (no new people)",
+                [
+                    {"kind": "person", "url": "/in/user0/", "text": "User 0"},
+                ],
+            ),
+        ]
+        with patch.object(
+            scraper._capture,
+            "capture",
+            new_callable=AsyncMock,
+            side_effect=pages,
+        ) as mock_capture:
+            result = await scraper.search_people("engineer", max_pages=10)
+
+        assert mock_capture.await_count == 3
+        urls = [call.args[0] for call in mock_capture.await_args_list]
+        assert "&page=" not in urls[0]
+        assert urls[1].endswith("&page=2")
+        assert urls[2].endswith("&page=3")
+        assert result["pages_fetched"] == 3
+        assert result["stopped_reason"] == "no_more_results"
+        assert result["truncated"] is False
+        assert result["sections"]["search_results"] == (
+            "Page one\n---\nPage two\n---\nPage three (no new people)"
+        )
+        assert len(result["references"]["search_results"]) == 6
+
+    async def test_search_people_max_pages_reached_reports_truncated(self, mock_page):
+        scraper = _scraper(mock_page)
+        pages = [
+            extracted(
+                "Page",
+                [{"kind": "person", "url": f"/in/user{i}/", "text": f"User {i}"}],
+            )
+            for i in range(2)
+        ]
+        with patch.object(
+            scraper._capture,
+            "capture",
+            new_callable=AsyncMock,
+            side_effect=pages,
+        ) as mock_capture:
+            result = await scraper.search_people("engineer", max_pages=2)
+
+        assert mock_capture.await_count == 2
+        assert result["pages_fetched"] == 2
+        assert result["stopped_reason"] == "max_pages"
+        assert result["truncated"] is True
+
+    async def test_search_people_error_page_reports_stopped_reason_error(
+        self, mock_page
+    ):
+        scraper = _scraper(mock_page)
+        with patch.object(
+            scraper._capture,
+            "capture",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("synthetic capture failure"),
+        ):
+            result = await scraper.search_people("engineer", max_pages=3)
+
+        assert result["pages_fetched"] == 0
+        assert result["stopped_reason"] == "error"
+        assert result["truncated"] is False
+        assert result["section_errors"]["search_results"]["error_message"] == (
+            "synthetic capture failure"
+        )

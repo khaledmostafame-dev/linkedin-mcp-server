@@ -10,17 +10,15 @@ import re
 
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
 from linkedin_mcp_server.core.exceptions import LinkedInScraperException
 from linkedin_mcp_server.error_diagnostics import build_issue_diagnostics
-from linkedin_mcp_server.scraping.capture import (
-    CaptureMode,
-    CapturePlan,
-    SectionCapture,
-)
+from linkedin_mcp_server.scraping.capture import CaptureMode, SectionCapture
 from linkedin_mcp_server.scraping.contracts import (
     RATE_LIMITED_SECTION_TEXT,
     rate_limited_section_error,
 )
+from linkedin_mcp_server.scraping.entity_search import paginated_entity_search
 from linkedin_mcp_server.scraping.fields import PERSON_SECTIONS, _person_section_specs
 from linkedin_mcp_server.scraping.identifiers import (
     normalize_person_identifier,
@@ -471,29 +469,59 @@ class PersonScraper:
         keywords: str,
         location: str | None = None,
         network: list[str] | None = None,
-        current_company: str | None = None,
+        current_company: list[str] | None = None,
+        past_company: list[str] | None = None,
+        school: list[str] | None = None,
+        industry: list[str] | None = None,
+        title: str | None = None,
+        profile_language: list[str] | None = None,
+        max_pages: int = 1,
+        tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS,
     ) -> dict[str, Any]:
-        """Search for people and extract the results page.
+        """Search for people, walking ``&page=N`` up to ``max_pages`` deep.
 
         Args:
             keywords: Free-text query ("software engineer", "recruiter at Google").
-            location: Optional location filter ("New York", "Remote").
+            location: Optional location filter. LinkedIn's people-search
+                ``geoUrn`` facet only filters on the numeric geo URN id
+                (e.g. ``"103644278"`` for the United States); plain-text place
+                names are accepted by the URL but ignored by LinkedIn and
+                return the unfiltered result set.
             network: Optional connection-degree filter. Each element is one of
                 ``"F"`` (1st-degree), ``"S"`` (2nd-degree), ``"O"`` (3rd-degree
                 and beyond). Example: ``["F"]`` to only return 1st-degree
                 connections. Invalid tokens raise ``ValueError``. The container
                 shape is repaired at the MCP tool boundary, so the list arrives
                 here already normalized.
-            current_company: Optional current-employer filter. LinkedIn's
-                ``currentCompany`` facet only filters on the numeric company
-                URN id (e.g. ``"1115"`` for SAP); plain company names are
-                accepted by the URL but ignored by LinkedIn and return the
-                unfiltered result set. Look up a company's URN via
-                ``get_company_profile`` -- it is exposed under
+            current_company: Optional current-employer filter -- numeric
+                LinkedIn company URN ids (e.g. ``["1115"]`` for SAP). Plain
+                company names are accepted by the URL but ignored by LinkedIn
+                and return the unfiltered result set. Look up a company's URN
+                via ``get_company_profile`` -- it is exposed under
                 ``references["about"]``.
+            past_company: Optional former-employer filter, same numeric URN
+                shape as ``current_company``.
+            school: Optional school filter, numeric LinkedIn school URN ids.
+            industry: Optional industry filter, numeric LinkedIn industry
+                taxonomy ids. There is no in-app lookup for these; read them
+                off LinkedIn's own People search "Industry" filter panel.
+            title: Optional free-text filter matched against the member's
+                current/past title (LinkedIn's ``title`` facet). Unlike the
+                id-based facets above, this is sent as typed, like ``keywords``.
+            profile_language: Optional profile-language filter, lowercase
+                ISO 639-1 two-letter codes (e.g. ``["en"]``).
+            max_pages: How many ``&page=N`` result pages to walk, roughly ten
+                people each (1-10, default 1 -- unchanged from before
+                pagination existed). Costs one navigation per page; stops
+                early once a page adds no person LinkedIn had not already
+                shown.
+            tool_timeout: The registered MCP tool timeout, used to derive the
+                wall-clock budget a multi-page walk stops itself within.
 
         Returns:
-            {url, sections: {name: text}}
+            {url, sections: {search_results: text}, pages_fetched: int,
+            stopped_reason: "max_pages"|"no_more_results"|"limit"|"error",
+            truncated: bool, references?, section_errors?}
         """
         # Builds before it navigates, and the builder refuses a filter
         # LinkedIn would swallow, so an invalid token costs no page load.
@@ -502,31 +530,17 @@ class PersonScraper:
             location=location,
             network=network,
             current_company=current_company,
+            past_company=past_company,
+            school=school,
+            industry=industry,
+            title=title,
+            profile_language=profile_language,
         )
-        extracted = await self._capture.capture(
+        return await paginated_entity_search(
+            self._capture,
             url,
-            section_name="search_results",
-            plan=CapturePlan(CaptureMode.SEARCH_RESULTS),
+            entity_kind="person",
+            max_pages=max_pages,
+            context="search_people",
+            tool_timeout=tool_timeout,
         )
-
-        sections: dict[str, str] = {}
-        references: dict[str, list[Reference]] = {}
-        section_errors: dict[str, dict[str, Any]] = {}
-        if extracted.text and extracted.text != RATE_LIMITED_SECTION_TEXT:
-            sections["search_results"] = extracted.text
-            if extracted.references:
-                references["search_results"] = extracted.references
-        elif extracted.text == RATE_LIMITED_SECTION_TEXT:
-            section_errors["search_results"] = rate_limited_section_error()
-        elif extracted.error:
-            section_errors["search_results"] = extracted.error
-
-        result: dict[str, Any] = {
-            "url": url,
-            "sections": sections,
-        }
-        if references:
-            result["references"] = references
-        if section_errors:
-            result["section_errors"] = section_errors
-        return result

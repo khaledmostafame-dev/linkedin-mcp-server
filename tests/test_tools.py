@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import Any, Callable, Coroutine, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp import FastMCP
@@ -273,6 +273,13 @@ class TestPersonTool:
             "New York",
             network=None,
             current_company=None,
+            past_company=None,
+            school=None,
+            industry=None,
+            title=None,
+            profile_language=None,
+            max_pages=1,
+            tool_timeout=ANY,
         )
 
     async def test_search_people_with_network_and_company_filters(self, mock_context):
@@ -307,6 +314,13 @@ class TestPersonTool:
             None,
             network=["F"],
             current_company="1115",
+            past_company=None,
+            school=None,
+            industry=None,
+            title=None,
+            profile_language=None,
+            max_pages=1,
+            tool_timeout=ANY,
         )
 
     @pytest.mark.parametrize(
@@ -369,6 +383,13 @@ class TestPersonTool:
             None,
             network=["F"],
             current_company=None,
+            past_company=None,
+            school=None,
+            industry=None,
+            title=None,
+            profile_language=None,
+            max_pages=1,
+            tool_timeout=ANY,
         )
 
     async def test_search_people_validation_error_surfaced_as_tool_error(
@@ -1348,7 +1369,9 @@ class TestSearchCompaniesTool:
         tool_fn = await get_tool_fn(mcp, "search_companies")
         result = await tool_fn("fintech", mock_context, extractor=mock_extractor)
         assert "search_results" in result["sections"]
-        mock_extractor.search_companies.assert_awaited_once_with("fintech")
+        mock_extractor.search_companies.assert_awaited_once_with(
+            "fintech", max_pages=1, tool_timeout=ANY
+        )
 
     async def test_search_companies_error(self, mock_context):
         from fastmcp.exceptions import ToolError
@@ -1579,6 +1602,7 @@ class TestPostTools:
             "Buscamos Unity",
             date_posted="past-week",
             max_pages=3,
+            sort_by=None,
         )
 
     async def test_search_posts_validation_error_surfaced_as_tool_error(
