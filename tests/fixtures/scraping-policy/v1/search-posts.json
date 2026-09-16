@@ -107,6 +107,8 @@
     "sections": {
       "search_results": "Result content"
     },
+    "stopped_reason": "scroll_cap",
+    "truncated": true,
     "url": "https://www.linkedin.com/search/results/content/?keywords=mathematics&origin=FACETED_SEARCH"
   },
   "scenario": "search_posts__baseline",

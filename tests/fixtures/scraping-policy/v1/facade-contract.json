@@ -70,7 +70,7 @@
       },
       "search_companies": {
         "coroutine": true,
-        "signature": "(self, keywords: 'str') -> 'dict[str, Any]'"
+        "signature": "(self, keywords: 'str', max_pages: 'int' = 1, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'"
       },
       "search_conversations": {
         "coroutine": true,
@@ -82,11 +82,11 @@
       },
       "search_people": {
         "coroutine": true,
-        "signature": "(self, keywords: 'str', location: 'str | None' = None, network: 'list[str] | None' = None, current_company: 'str | None' = None) -> 'dict[str, Any]'"
+        "signature": "(self, keywords: 'str', location: 'str | None' = None, network: 'list[str] | None' = None, current_company: 'list[str] | None' = None, past_company: 'list[str] | None' = None, school: 'list[str] | None' = None, industry: 'list[str] | None' = None, title: 'str | None' = None, profile_language: 'list[str] | None' = None, max_pages: 'int' = 1, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'"
       },
       "search_posts": {
         "coroutine": true,
-        "signature": "(self, keywords: 'str', date_posted: 'str | None' = None, max_pages: 'int' = 3) -> 'dict[str, Any]'"
+        "signature": "(self, keywords: 'str', date_posted: 'str | None' = None, max_pages: 'int' = 3, sort_by: 'str | None' = None) -> 'dict[str, Any]'"
       },
       "send_message": {
         "coroutine": true,
@@ -464,6 +464,13 @@
             "keywords": {
               "description": "Search keywords (e.g., \"fintech\", \"anthropic\", \"electric vehicles\")",
               "type": "string"
+            },
+            "max_pages": {
+              "default": 1,
+              "description": "How many result pages to walk, roughly ten companies\neach (1-10, default 1 -- one page, unchanged from before\npagination existed). Stops early once a page adds no company\nLinkedIn had not already shown.",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
             }
           },
           "required": [
@@ -612,14 +619,32 @@
             "current_company": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
               "default": null,
-              "description": "Optional current-employer filter. LinkedIn's\ncurrentCompany facet only filters on the numeric company URN id\n(e.g. \"1115\" for SAP); plain company names are accepted by the\nURL but ignored by LinkedIn and return the unfiltered result\nset. Look up a company's URN via get_company_profile -- it is\nexposed under references[\"about\"]. For company-wide employee\ndemographics (location/education/function breakdown) plus a\nslug-based lookup, use get_company_employees instead."
+              "description": "Optional current-employer filter -- numeric\nLinkedIn company URN ids (e.g. \"1115\" for SAP, or \"1115,2573558\"\nfor several). Plain company names are accepted by the URL but\nignored by LinkedIn and return the unfiltered result set. Look\nup a company's URN via get_company_profile -- it is exposed\nunder references[\"about\"]. For company-wide employee\ndemographics (location/education/function breakdown) plus a\nslug-based lookup, use get_company_employees instead."
+            },
+            "industry": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional industry filter, numeric LinkedIn industry\ntaxonomy ids. There is no in-app lookup for these; read them\noff LinkedIn's own People search \"Industry\" filter panel."
             },
             "keywords": {
               "description": "Search keywords (e.g., \"software engineer\", \"recruiter at Google\")",
@@ -635,7 +660,14 @@
                 }
               ],
               "default": null,
-              "description": "Optional location filter (e.g., \"New York\", \"Remote\")"
+              "description": "Optional location filter. LinkedIn's geoUrn facet only\nfilters on the numeric geo URN id (e.g. \"103644278\" for the\nUnited States); plain-text place names are accepted by the URL\nbut ignored by LinkedIn and return the unfiltered result set.\nIf you do not have the URN, omit this and put the place name in\n`keywords` instead."
+            },
+            "max_pages": {
+              "default": 1,
+              "description": "How many result pages to walk, roughly ten people each\n(1-10, default 1 -- one page, unchanged from before pagination\nexisted). Costs one navigation per page; stops early once a\npage adds no person LinkedIn had not already shown.",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
             },
             "network": {
               "anyOf": [
@@ -651,6 +683,63 @@
               ],
               "default": null,
               "description": "Optional connection-degree filter. Each element is one of\n\"F\" (1st-degree), \"S\" (2nd-degree), \"O\" (3rd-degree and beyond).\nExample: [\"F\"] to only return 1st-degree connections. A single\ntoken (\"F\") or a comma-separated string (\"F,S\") is also\naccepted, for clients that cannot transmit an array."
+            },
+            "past_company": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional former-employer filter, same numeric URN\nshape as current_company."
+            },
+            "profile_language": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional profile-language filter, lowercase\nISO 639-1 two-letter codes (e.g. \"en\", or \"en,ar\" for several)."
+            },
+            "school": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional school filter, numeric LinkedIn school URN ids."
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional free-text filter matched against the member's\ncurrent/past title (e.g. \"Product Manager\"). Unlike the\nid-based facets above, this is sent as typed, like keywords."
             }
           },
           "required": [
@@ -689,6 +778,18 @@
               "maximum": 10,
               "minimum": 1,
               "type": "integer"
+            },
+            "sort_by": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional sort order. \"relevance\" (default, LinkedIn's\n\"Top match\") or \"latest\" (also accepts \"date\"/\"date_posted\",\nmatching search_jobs's spelling) for LinkedIn's \"Latest\"."
             }
           },
           "required": [
