@@ -50,6 +50,7 @@ TOOL_DELEGATES = {
     "edit_scheduled_post": "edit_scheduled_post",
     "follow": "follow",
     "get_company_employees": "get_company_employees",
+    "get_company_page_analytics": "get_company_page_analytics",
     "get_company_posts": "extract_page",
     "get_company_profile": "scrape_company",
     "get_conversation": "get_conversation",
@@ -65,7 +66,9 @@ TOOL_DELEGATES = {
     "get_my_profile": "get_my_profile",
     "get_notifications": "extract_page",
     "get_person_profile": "scrape_person",
+    "get_post_analytics": "get_post_analytics",
     "get_post_comments": "get_post_comments",
+    "get_profile_analytics": "get_profile_analytics",
     "get_saved_jobs": "get_saved_jobs",
     "get_saved_posts": "extract_page",
     "get_scheduled_posts": "get_scheduled_posts",
@@ -112,6 +115,7 @@ async def test_constructor_export_and_dependency_use_the_same_facade(monkeypatch
     constructed = await dependencies.get_ready_extractor(None, tool_name="policy-test")
 
     expected_state = {
+        "_analytics",
         "_capture",
         "_comments",
         "_company",
@@ -149,9 +153,9 @@ async def test_registered_tools_and_extractor_delegates_are_counted_separately()
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 45
+    assert len(tool_names) == 48
     assert tool_names == {*TOOL_DELEGATES, "close_session", "get_pacing_status"}
-    assert len(TOOL_DELEGATES) == 43
+    assert len(TOOL_DELEGATES) == 46
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
     assert "get_pacing_status" not in TOOL_DELEGATES
@@ -528,7 +532,7 @@ def test_facade_methods_are_exactly_the_frozen_coroutine_surface():
     }
 
     assert actual == expected
-    assert len(TOOL_FACADE_METHODS) == 41
+    assert len(TOOL_FACADE_METHODS) == 44
     assert len(COMPATIBILITY_METHODS) == 2
 
 

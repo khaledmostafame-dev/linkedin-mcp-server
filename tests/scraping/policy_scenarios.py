@@ -892,6 +892,47 @@ async def _comment_browser_free_scenario(method: str) -> dict[str, Any]:
     return recorder.trace({"method": method, "arguments": arguments}, result)
 
 
+async def _analytics_refusal_scenario(method: str) -> dict[str, Any]:
+    """Analytics calls refused before the page is touched.
+
+    An address that names no post, and a section list naming no dashboard, are
+    answered without a navigation. The page flows are exercised against real
+    Chromium in ``tests/test_analytics_dom.py``.
+    """
+    recorder = TraceRecorder(f"{method}__refused", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "analytics"):
+            try:
+                if method == "get_post_analytics":
+                    arguments = {
+                        "post_url": "https://www.linkedin.com/in/ada-lovelace/"
+                    }
+                    await extractor.get_post_analytics(**arguments)
+                elif method == "get_profile_analytics":
+                    arguments = {"sections": "bogus"}
+                    await extractor.get_profile_analytics(**arguments)
+                elif method == "get_company_page_analytics":
+                    arguments = {"company": "analytical-engine/../../feed"}
+                    await extractor.get_company_page_analytics(**arguments)
+                elif method == "get_company_page_analytics__sections":
+                    arguments = {"company": "analytical-engine", "sections": "bogus"}
+                    await extractor.get_company_page_analytics(**arguments)
+                else:
+                    raise AssertionError(method)
+            except InvalidReferenceError as error:
+                result: dict[str, Any] = {"refused": str(error)}
+            else:  # pragma: no cover - the refusal is the scenario
+                raise AssertionError("the call must be refused")
+    page.assert_clean()
+    return recorder.trace(
+        {"method": method.split("__")[0], "arguments": arguments}, result
+    )
+
+
 async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     name = f"{method}__baseline"
     recorder = TraceRecorder(name, _COMMON_ALLOWED)
@@ -1298,6 +1339,7 @@ TOOL_FACADE_METHODS = {
     "extract_page",
     "follow",
     "get_company_employees",
+    "get_company_page_analytics",
     "get_conversation",
     "get_event_attendees",
     "get_event_details",
@@ -1307,7 +1349,9 @@ TOOL_FACADE_METHODS = {
     "get_invitations",
     "get_mutual_connections",
     "get_my_profile",
+    "get_post_analytics",
     "get_post_comments",
+    "get_profile_analytics",
     "get_saved_jobs",
     "get_scheduled_posts",
     "get_sidebar_profiles",
@@ -1418,6 +1462,18 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         ),
         "event-attendees.json": await _single_capture_facade_scenario(
             "get_event_attendees"
+        ),
+        "analytics-post-refused.json": await _analytics_refusal_scenario(
+            "get_post_analytics"
+        ),
+        "analytics-profile-refused.json": await _analytics_refusal_scenario(
+            "get_profile_analytics"
+        ),
+        "analytics-company-refused.json": await _analytics_refusal_scenario(
+            "get_company_page_analytics"
+        ),
+        "analytics-company-sections-refused.json": await _analytics_refusal_scenario(
+            "get_company_page_analytics__sections"
         ),
         "inbox.json": await _conversation_scenario("get_inbox"),
         "conversation.json": await _conversation_scenario("get_conversation"),

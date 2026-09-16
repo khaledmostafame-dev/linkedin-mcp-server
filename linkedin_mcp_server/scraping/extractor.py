@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from patchright.async_api import Page
 
 from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
+from linkedin_mcp_server.scraping.analytics import AnalyticsScraper
 from linkedin_mcp_server.scraping.capture import SectionCapture
 from linkedin_mcp_server.scraping.comments import CommentScraper
 from linkedin_mcp_server.scraping.company import CompanyScraper
@@ -61,6 +62,7 @@ class LinkedInExtractor:
         self._capture = capture
         self._feed = FeedScraper(session, navigator, content)
         self._comments = CommentScraper(session, navigator, content)
+        self._analytics = AnalyticsScraper(session, navigator, content)
         self._message_sender = message_sender
         self._person = person
         self._company = CompanyScraper(session, capture)
@@ -470,3 +472,19 @@ class LinkedInExtractor:
     ) -> dict[str, Any]:
         """List attendees of a LinkedIn event."""
         return await self._event.get_event_attendees(event_url, max_attendees)
+
+    async def get_post_analytics(self, post_url: str) -> dict[str, Any]:
+        """Read the analytics page of one of the signed-in member's own posts."""
+        return await self._analytics.get_post_analytics(post_url)
+
+    async def get_profile_analytics(
+        self, sections: str | None = None
+    ) -> dict[str, Any]:
+        """Read the signed-in member's profile and creator analytics dashboards."""
+        return await self._analytics.get_profile_analytics(sections)
+
+    async def get_company_page_analytics(
+        self, company: str, sections: str | None = None
+    ) -> dict[str, Any]:
+        """Read the admin analytics of a company page the member administers."""
+        return await self._analytics.get_company_page_analytics(company, sections)

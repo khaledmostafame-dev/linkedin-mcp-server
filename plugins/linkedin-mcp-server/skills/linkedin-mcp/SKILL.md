@@ -47,6 +47,9 @@ instances, clear profiles, or replace the user's browser session.
   and `get_company_employees`.
 - Jobs: `search_jobs`, `get_saved_jobs`, and `get_job_details`.
 - Content: `get_feed`, `search_posts`, and `get_post_comments`.
+- Analytics (the signed-in member's own only): `get_post_analytics`,
+  `get_profile_analytics`, and `get_company_page_analytics` (pages they
+  administer).
 - Messages: `get_inbox`, `get_conversation`, and `search_conversations`.
 - Posting: `get_scheduled_posts` (read); `create_post`,
   `edit_scheduled_post`, `delete_scheduled_post`, `edit_post` and

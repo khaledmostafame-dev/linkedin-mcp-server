@@ -16,6 +16,7 @@ a page-owning collaborator.
 | Module | Canonical public owners | Source classification |
 | --- | --- | --- |
 | `__init__` | _(no public definitions)_ | `browser-free` |
+| `analytics` | `AnalyticsScraper`, `COMPANY_ANALYTICS_SECTIONS`, `METRIC_LABELS`, `POST_ANALYTICS_SECTION`, `PROFILE_ANALYTICS_SECTIONS`, `build_metrics()`, `parse_company_analytics_sections()`, `parse_count()`, `parse_profile_analytics_sections()`, `post_analytics_url()` | `page-owning` |
 | `capture` | `CaptureMode`, `CapturePlan`, `RATE_LIMIT_RETRY_DELAY`, `SectionCapture`, `capture_plan_for_url()` | `page-owning` |
 | `comments` | `COMMENT_INTERRUPTED_WARNING`, `COMMENT_MAX_LENGTH`, `CommentReference`, `CommentScraper`, `CommentSort`, `CommentUrn`, `MAX_COMMENTS_LIMIT`, `build_comment_references()`, `comment_action_result()`, `comment_permalink()`, `normalize_comment_text()`, `normalize_comment_urn()`, `parse_comment_urn()`, `posted_at_from_id()`, `prepare_comment_reaction()`, `prepare_comment_write()` | `browser-free` |
 | `company` | `CompanyScraper` | `browser-free` |
@@ -53,6 +54,7 @@ a page-owning collaborator.
 ## Internal import graph
 
 - `__init__` -> `extractor`, `fields`
+- `analytics` -> `content`, `contracts`, `identifiers`, `navigation`, `session`, `text`
 - `capture` -> `content`, `contracts`, `feed_payload`, `link_metadata`, `navigation`, `response_capture`, `session`, `text`
 - `comments` -> `content`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `session`, `text`
 - `company` -> `capture`, `contracts`, `entity_search`, `fields`, `identifiers`, `link_metadata`, `search_urls`, `session`
@@ -63,7 +65,7 @@ a page-owning collaborator.
 - `conversations` -> `content`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `session`, `text`
 - `entity_search` -> `capture`, `contracts`, `job_policy`, `link_metadata`, `session`
 - `events` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `search_urls`
-- `extractor` -> `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `events`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `session`, `text`
+- `extractor` -> `analytics`, `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `events`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `session`, `text`
 - `feed` -> `content`, `contracts`, `feed_payload`, `navigation`, `response_capture`, `session`, `text`
 - `feed_payload` -> `link_metadata`
 - `fields` -> `capture`
@@ -101,6 +103,7 @@ a page-owning collaborator.
 - `extract_page`
 - `follow`
 - `get_company_employees`
+- `get_company_page_analytics`
 - `get_conversation`
 - `get_event_attendees`
 - `get_event_details`
@@ -111,7 +114,9 @@ a page-owning collaborator.
 - `get_mutual_connections`
 - `get_my_profile`
 - `get_page_text`
+- `get_post_analytics`
 - `get_post_comments`
+- `get_profile_analytics`
 - `get_saved_jobs`
 - `get_scheduled_posts`
 - `get_sidebar_profiles`
@@ -135,6 +140,7 @@ a page-owning collaborator.
 
 ## `LinkedInExtractor` construction-state allowlist
 
+- `_analytics`
 - `_capture`
 - `_comments`
 - `_company`

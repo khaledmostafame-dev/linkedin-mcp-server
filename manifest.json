@@ -220,6 +220,18 @@
       "description": "List attendees of a LinkedIn event, with a bounded scroll budget"
     },
     {
+      "name": "get_post_analytics",
+      "description": "Read the analytics of one of the signed-in member's own LinkedIn posts: impressions, reach, engagement, profile viewers, followers gained and audience demographics"
+    },
+    {
+      "name": "get_profile_analytics",
+      "description": "Read the signed-in member's own profile and creator analytics dashboards: profile viewers, search appearances, followers and post impressions"
+    },
+    {
+      "name": "get_company_page_analytics",
+      "description": "Read the admin analytics of a LinkedIn company page the signed-in member administers: visitors, followers and follower growth, and content performance"
+    },
+    {
       "name": "close_session",
       "description": "Properly close browser session and clean up resources"
     },

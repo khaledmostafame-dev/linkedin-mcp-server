@@ -85,6 +85,9 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `search_events` | Search for LinkedIn events by keyword |
 | `get_event_details` | Get the details page for a single LinkedIn event |
 | `get_event_attendees` | List attendees of a LinkedIn event, with a bounded scroll budget |
+| `get_post_analytics` | Analytics of one of your own posts (impressions, members reached, reactions, comments, reposts, saves, profile viewers, followers gained, demographics when shown); other people's posts return a `not_authorized` section error |
+| `get_profile_analytics` | Your own profile and creator dashboards as separate sections (profile_viewers, search_appearances, followers, post_impressions) |
+| `get_company_page_analytics` | Admin analytics of a company page you administer (visitors, followers with count and growth, content), one navigation per section; non-admin sections return a `not_authorized` section error |
 | `close_session` | Close browser session and clean up resources |
 | `get_pacing_status` | Show LinkedIn pacing: call counters, when the next read and write are allowed, any cooldown, and the effective limits. Never contacts LinkedIn |
 
