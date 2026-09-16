@@ -17,6 +17,7 @@ from patchright.async_api import Page
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from linkedin_mcp_server.callbacks import ProgressCallback
+from linkedin_mcp_server.core.exceptions import InvalidReferenceError
 from linkedin_mcp_server.scraping import capture as capture_module
 from linkedin_mcp_server.scraping import company as company_module
 from linkedin_mcp_server.scraping import feed as feed_module
@@ -832,6 +833,60 @@ async def _invalid_message_scenario(message: str, label: str) -> dict[str, Any]:
     )
 
 
+_COMMENT_POST = "urn:li:activity:7300000000000000000"
+_COMMENT_URN = "urn:li:comment:(activity:7300000000000000000,7300000000000000101)"
+
+
+async def _comment_browser_free_scenario(method: str) -> dict[str, Any]:
+    """Comment calls answered before the page is touched.
+
+    Previews, refused text and refused arguments never reach LinkedIn, and the
+    trace proves it: no page operation is recorded. The browser flows themselves
+    are exercised against real Chromium in ``tests/test_comments_dom.py``.
+    """
+    recorder = TraceRecorder(f"{method}__browser_free", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "comments"):
+            if method == "get_post_comments":
+                arguments = {"post_url": _COMMENT_POST, "sort": "oldest"}
+                try:
+                    await extractor.get_post_comments(**arguments)
+                except InvalidReferenceError as error:
+                    result: dict[str, Any] = {"refused": str(error)}
+                else:  # pragma: no cover - the refusal is the scenario
+                    raise AssertionError("an unknown sort must be refused")
+            elif method == "reply_to_comment":
+                arguments = {
+                    "post_url": _COMMENT_POST,
+                    "comment_urn": _COMMENT_URN,
+                    "text": "Thanks for this",
+                    "confirm": False,
+                }
+                result = await extractor.reply_to_comment(**arguments)
+            elif method == "comment_on_post":
+                arguments = {
+                    "post_url": _COMMENT_POST,
+                    "text": "line	break",
+                    "confirm": True,
+                }
+                result = await extractor.comment_on_post(**arguments)
+            elif method == "react_to_comment":
+                arguments = {
+                    "post_url": _COMMENT_POST,
+                    "comment_urn": _COMMENT_URN,
+                    "confirm": False,
+                }
+                result = await extractor.react_to_comment(**arguments)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
 async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     name = f"{method}__baseline"
     recorder = TraceRecorder(name, _COMMON_ALLOWED)
@@ -1018,6 +1073,7 @@ async def _facade_contract_trace() -> dict[str, Any]:
 
 
 TOOL_FACADE_METHODS = {
+    "comment_on_post",
     "connect_with_person",
     "extract_feed",
     "extract_page",
@@ -1025,8 +1081,11 @@ TOOL_FACADE_METHODS = {
     "get_conversation",
     "get_inbox",
     "get_my_profile",
+    "get_post_comments",
     "get_saved_jobs",
     "get_sidebar_profiles",
+    "react_to_comment",
+    "reply_to_comment",
     "scrape_company",
     "scrape_job",
     "scrape_person",
@@ -1108,6 +1167,18 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
             "search_companies"
         ),
         "search-posts.json": await _single_capture_facade_scenario("search_posts"),
+        "comments-read-refused.json": await _comment_browser_free_scenario(
+            "get_post_comments"
+        ),
+        "comments-reply-preview.json": await _comment_browser_free_scenario(
+            "reply_to_comment"
+        ),
+        "comments-invalid-text.json": await _comment_browser_free_scenario(
+            "comment_on_post"
+        ),
+        "comments-react-preview.json": await _comment_browser_free_scenario(
+            "react_to_comment"
+        ),
         "inbox.json": await _conversation_scenario("get_inbox"),
         "conversation.json": await _conversation_scenario("get_conversation"),
         "search-conversations.json": await _conversation_scenario(

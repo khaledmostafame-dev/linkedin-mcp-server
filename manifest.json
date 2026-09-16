@@ -120,6 +120,22 @@
       "description": "Search LinkedIn posts/content globally by keyword (the 'Posts' tab) with an optional recency filter (past-24h/past-week/past-month)"
     },
     {
+      "name": "get_post_comments",
+      "description": "Read a LinkedIn post's comments and replies with each comment's URN, parent comment, author, permalink and excerpt"
+    },
+    {
+      "name": "reply_to_comment",
+      "description": "Reply to one comment on a LinkedIn post, located by its URN, with explicit confirmation; the reply is confirmed on the page and @mentions are not supported"
+    },
+    {
+      "name": "comment_on_post",
+      "description": "Post a top-level comment on a LinkedIn post with explicit confirmation; the comment is confirmed on the page and @mentions are not supported"
+    },
+    {
+      "name": "react_to_comment",
+      "description": "Like one comment on a LinkedIn post, located by its URN, with explicit confirmation"
+    },
+    {
       "name": "close_session",
       "description": "Properly close browser session and clean up resources"
     },

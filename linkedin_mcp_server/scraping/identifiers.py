@@ -55,8 +55,10 @@ __all__ = [
     "normalize_job_id",
     "normalize_opaque_id",
     "normalize_person_identifier",
+    "normalize_post_urn",
     "normalize_thread_id",
     "person_profile_url",
+    "post_update_url",
 ]
 
 # linkedin.com and every host under it. There is no canonical host to normalize
@@ -467,3 +469,63 @@ def normalize_job_id(value: str) -> str:
 def normalize_thread_id(value: str) -> str:
     """The id for a conversation, from the id or from a reference to it."""
     return normalize_opaque_id(value, field="thread_id", route=_THREAD_ROUTE)
+
+
+# The three namespaces a post detail page is addressed by. `/feed/update/<urn>/`
+# serves all of them, so the URN is the canonical form and the route is rebuilt
+# from it rather than trusted from the input.
+_POST_URN = re.compile(r"^urn:li:(activity|ugcPost|share):([0-9]+)$")
+
+# A `/posts/<slug>` permalink ends in `<namespace>-<id>-<suffix>`, the same shape
+# `feed_payload.POST_SLUG_URL_RE` reads out of SDUI payloads. The words in front
+# are the author and a title excerpt, so only the tail identifies the post.
+_POST_SLUG_TAIL = re.compile(
+    r"(?:^|[-_])(activity|ugcPost|share)-([0-9]+)(?:-[\w-]*)?$"
+)
+
+_POST_URL_HINT = (
+    "Pass a post permalink (/feed/update/urn:li:activity:<id>/ or /posts/<slug>) "
+    "or the post URN itself (urn:li:activity:<id>, urn:li:ugcPost:<id>, "
+    "urn:li:share:<id>)."
+)
+
+
+def normalize_post_urn(value: str) -> str:
+    """The canonical post URN, from a permalink, a relative path or the URN.
+
+    Accepted: ``urn:li:activity:<id>``, ``urn:li:ugcPost:<id>``,
+    ``urn:li:share:<id>`` (optionally percent-encoded once), and LinkedIn
+    addresses under ``/feed/update/<urn>/`` or ``/posts/<slug>``. The query
+    (``?commentUrn=…``, tracking parameters) is ignored, because the post is the
+    path; everything else a browser would read differently is refused the way
+    the other normalizers here refuse it.
+
+    Raises:
+        InvalidReferenceError: when the value does not name a post.
+    """
+    value = value.strip()
+    if not value:
+        raise InvalidReferenceError(f"Missing post_url. {_POST_URL_HINT}")
+
+    decoded = _decoded(value)
+    if decoded is not None and _POST_URN.match(decoded):
+        return decoded
+
+    segments = _linkedin_segments(value, want="post permalink")
+    if segments is not None:
+        route = [segment.lower() for segment in segments[:2]]
+        if route == ["feed", "update"] and len(segments) >= 3:
+            urn = _decoded(segments[2])
+            if urn is not None and _POST_URN.match(urn):
+                return urn
+        elif route[:1] == ["posts"] and len(segments) >= 2:
+            slug = _usable(segments[1])
+            match = _POST_SLUG_TAIL.search(slug) if slug is not None else None
+            if match is not None:
+                return f"urn:li:{match.group(1)}:{match.group(2)}"
+    raise InvalidReferenceError(f"That is not a LinkedIn post. {_POST_URL_HINT}")
+
+
+def post_update_url(post_urn: str) -> str:
+    """Post detail URL for an already-normalized post URN."""
+    return f"https://www.linkedin.com/feed/update/{quote(post_urn, safe=':')}/"

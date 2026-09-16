@@ -1,0 +1,21 @@
+{
+  "call": {
+    "arguments": {
+      "confirm": true,
+      "post_url": "urn:li:activity:7300000000000000000",
+      "text": "line\tbreak"
+    },
+    "method": "comment_on_post"
+  },
+  "events": [],
+  "result": {
+    "message": "Text must not contain control characters other than line breaks.",
+    "post_urn": "urn:li:activity:7300000000000000000",
+    "posted": false,
+    "retry_safe": true,
+    "status": "invalid_text",
+    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7300000000000000000/"
+  },
+  "scenario": "comment_on_post__browser_free",
+  "schema_version": 1
+}

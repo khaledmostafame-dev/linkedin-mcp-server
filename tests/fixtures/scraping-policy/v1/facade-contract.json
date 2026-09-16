@@ -16,6 +16,10 @@
         "coroutine": true,
         "signature": "(self, text: 'str', *, scope: 'str' = 'main', timeout: 'int' = 5000) -> 'bool'"
       },
+      "comment_on_post": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', text: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
       "connect_with_person": {
         "coroutine": true,
         "signature": "(self, username: 'str', *, note: 'str | None' = None) -> 'dict[str, Any]'"
@@ -48,6 +52,10 @@
         "coroutine": true,
         "signature": "(self) -> 'str'"
       },
+      "get_post_comments": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', max_comments: 'int' = 50, include_replies: 'bool' = True, sort: 'str' = 'relevant') -> 'dict[str, Any]'"
+      },
       "get_saved_jobs": {
         "coroutine": true,
         "signature": "(self, max_pages: 'int' = 3) -> 'dict[str, Any]'"
@@ -55,6 +63,14 @@
       "get_sidebar_profiles": {
         "coroutine": true,
         "signature": "(self, username: 'str') -> 'dict[str, Any]'"
+      },
+      "react_to_comment": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', comment_urn: 'str', reaction: 'str' = 'like', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "reply_to_comment": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', comment_urn: 'str', text: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
       },
       "scrape_company": {
         "coroutine": true,
@@ -94,6 +110,7 @@
       }
     },
     "tool_methods": [
+      "comment_on_post",
       "connect_with_person",
       "extract_feed",
       "extract_page",
@@ -101,8 +118,11 @@
       "get_conversation",
       "get_inbox",
       "get_my_profile",
+      "get_post_comments",
       "get_saved_jobs",
       "get_sidebar_profiles",
+      "react_to_comment",
+      "reply_to_comment",
       "scrape_company",
       "scrape_job",
       "scrape_person",
@@ -118,6 +138,35 @@
         "input": {
           "additionalProperties": false,
           "properties": {},
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "comment_on_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "false returns status \"preview\" without touching LinkedIn;\ntrue posts the comment.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post (same forms as get_post_comments).",
+              "type": "string"
+            },
+            "text": {
+              "description": "Comment text, at most 1,250 characters. Line breaks are\nsupported; other control characters and '@' are rejected.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "text",
+            "confirm"
+          ],
           "type": "object"
         },
         "output": {
@@ -430,6 +479,46 @@
           "type": "object"
         }
       },
+      "get_post_comments": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "include_replies": {
+              "default": true,
+              "description": "Also expand and return replies (default true).",
+              "type": "boolean"
+            },
+            "max_comments": {
+              "default": 50,
+              "description": "Maximum number of comments (replies included) to\nreturn, 1-100, default 50.",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "post_url": {
+              "description": "The post, as /feed/update/urn:li:activity:<id>/,\nurn:li:ugcPost:<id> or urn:li:share:<id> (bare or in that path),\nor a /posts/<slug> permalink. references[\"feed\"] from get_feed\nwork as-is.",
+              "type": "string"
+            },
+            "sort": {
+              "default": "relevant",
+              "description": "\"relevant\" keeps LinkedIn's on-page order; \"recent\" orders\nnewest first by comment id (LinkedIn issues ids in time order),\neach top-level comment followed by its replies. The on-page\nsort menu is not driven.",
+              "enum": [
+                "relevant",
+                "recent"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_saved_jobs": {
         "input": {
           "additionalProperties": false,
@@ -460,6 +549,75 @@
           },
           "required": [
             "linkedin_username"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "react_to_comment": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "comment_urn": {
+              "description": "The comment's URN from get_post_comments.",
+              "type": "string"
+            },
+            "confirm": {
+              "description": "false returns status \"preview\" without touching LinkedIn;\ntrue reacts.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post the comment is on (same forms as get_post_comments).",
+              "type": "string"
+            },
+            "reaction": {
+              "const": "like",
+              "default": "like",
+              "description": "Only \"like\".",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "comment_urn",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "reply_to_comment": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "comment_urn": {
+              "description": "The comment's URN, e.g. the `value` of an entry in\nget_post_comments' references[\"comments\"].",
+              "type": "string"
+            },
+            "confirm": {
+              "description": "false returns status \"preview\" without touching LinkedIn;\ntrue posts the reply.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post the comment is on (same forms as get_post_comments).",
+              "type": "string"
+            },
+            "text": {
+              "description": "Reply text, at most 1,250 characters. Line breaks are\nsupported; other control characters are rejected. '@' is\nrejected because @mentions are not supported.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "comment_urn",
+            "text",
+            "confirm"
           ],
           "type": "object"
         },

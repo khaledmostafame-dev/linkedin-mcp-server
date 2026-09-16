@@ -17,6 +17,10 @@ ReferenceKind = Literal[
     "school",
     "conversation",
     "external",
+    # One comment on a post (get_post_comments). `url` is the comment author's
+    # profile or company page and `value` the comment URN; see
+    # `scraping/comments.CommentReference` for the extra keys it carries.
+    "comment",
 ]
 
 

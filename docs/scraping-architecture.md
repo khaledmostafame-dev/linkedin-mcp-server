@@ -17,6 +17,7 @@ a page-owning collaborator.
 | --- | --- | --- |
 | `__init__` | _(no public definitions)_ | `browser-free` |
 | `capture` | `CaptureMode`, `CapturePlan`, `RATE_LIMIT_RETRY_DELAY`, `SectionCapture`, `capture_plan_for_url()` | `page-owning` |
+| `comments` | `COMMENT_INTERRUPTED_WARNING`, `COMMENT_MAX_LENGTH`, `CommentReference`, `CommentScraper`, `CommentSort`, `CommentUrn`, `MAX_COMMENTS_LIMIT`, `build_comment_references()`, `comment_action_result()`, `comment_permalink()`, `normalize_comment_text()`, `normalize_comment_urn()`, `parse_comment_urn()`, `posted_at_from_id()`, `prepare_comment_reaction()`, `prepare_comment_write()` | `browser-free` |
 | `company` | `CompanyScraper` | `browser-free` |
 | `connection` | `ActionSignals`, `ConnectionState`, `detect_connection_state()` | `browser-free` |
 | `connection_actions` | `ACTION_SIGNALS_JS`, `CLICK_INCOMING_ACCEPT_JS`, `ConnectionActions`, `OPEN_MORE_BUTTON_JS`, `ReadMainProfile` | `page-owning` |
@@ -27,7 +28,7 @@ a page-owning collaborator.
 | `feed` | `FeedScraper` | `page-owning` |
 | `feed_payload` | `POST_SLUG_URL_RE`, `build_feed_references()`, `is_feed_payload_response()` | `browser-free` |
 | `fields` | `COMPANY_SECTIONS`, `PERSON_SECTIONS`, `parse_company_sections()`, `parse_person_sections()` | `browser-free` |
-| `identifiers` | `company_page_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_thread_id()`, `person_profile_url()` | `browser-free` |
+| `identifiers` | `company_page_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_post_urn()`, `normalize_thread_id()`, `person_profile_url()`, `post_update_url()` | `browser-free` |
 | `job_pages` | `JOB_IDS_JS`, `JobPageCapture`, `JobPageReader` | `page-owning` |
 | `job_policy` | `JOB_SEARCH_PATHS`, `RESULTS_PER_LINKEDIN_PAGE`, `SAVED_JOBS_PAGE_SIZE`, `SAVED_JOBS_PATHS`, `SAVED_JOBS_URL`, `SCROLL_BUDGET_TOTAL`, `SCROLL_DEADLINE_MAX`, `SEARCH_TIMEOUT_FRACTION`, `dropped_filters_section_error()`, `dropped_offset_section_error()`, `lost_keywords_section_error()`, `reconcile_search_references()`, `route()`, `same_job_search()` | `browser-free` |
 | `jobs` | `JobScraper` | `browser-free` |
@@ -45,13 +46,14 @@ a page-owning collaborator.
 
 - `__init__` -> `extractor`, `fields`
 - `capture` -> `content`, `contracts`, `link_metadata`, `navigation`, `session`, `text`
+- `comments` -> `content`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `session`, `text`
 - `company` -> `capture`, `contracts`, `fields`, `identifiers`, `link_metadata`, `search_urls`, `session`
 - `connection` -> _(none)_
 - `connection_actions` -> `connection`, `identifiers`, `navigation`, `session`
 - `content` -> `session`, `text`
 - `contracts` -> `identifiers`, `link_metadata`
 - `conversations` -> `content`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `session`, `text`
-- `extractor` -> `capture`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `feed`, `job_pages`, `jobs`, `message_sender`, `navigation`, `person`, `posts`, `profile_page`, `session`, `text`
+- `extractor` -> `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `feed`, `job_pages`, `jobs`, `message_sender`, `navigation`, `person`, `posts`, `profile_page`, `session`, `text`
 - `feed` -> `content`, `contracts`, `feed_payload`, `navigation`, `session`, `text`
 - `feed_payload` -> `link_metadata`
 - `fields` -> `capture`
@@ -72,6 +74,7 @@ a page-owning collaborator.
 ## `LinkedInExtractor` public coroutine surface
 
 - `click_button_by_text`
+- `comment_on_post`
 - `connect_with_person`
 - `extract_feed`
 - `extract_page`
@@ -80,8 +83,11 @@ a page-owning collaborator.
 - `get_inbox`
 - `get_my_profile`
 - `get_page_text`
+- `get_post_comments`
 - `get_saved_jobs`
 - `get_sidebar_profiles`
+- `react_to_comment`
+- `reply_to_comment`
 - `scrape_company`
 - `scrape_job`
 - `scrape_person`
@@ -95,6 +101,7 @@ a page-owning collaborator.
 ## `LinkedInExtractor` construction-state allowlist
 
 - `_capture`
+- `_comments`
 - `_company`
 - `_connection`
 - `_content`

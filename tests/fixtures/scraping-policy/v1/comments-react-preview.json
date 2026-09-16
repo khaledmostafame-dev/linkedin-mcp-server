@@ -1,0 +1,22 @@
+{
+  "call": {
+    "arguments": {
+      "comment_urn": "urn:li:comment:(activity:7300000000000000000,7300000000000000101)",
+      "confirm": false,
+      "post_url": "urn:li:activity:7300000000000000000"
+    },
+    "method": "react_to_comment"
+  },
+  "events": [],
+  "result": {
+    "comment_urn": "urn:li:comment:(activity:7300000000000000000,7300000000000000101)",
+    "message": "Nothing was changed. Set confirm=true to like comment urn:li:comment:(activity:7300000000000000000,7300000000000000101).",
+    "post_urn": "urn:li:activity:7300000000000000000",
+    "posted": false,
+    "retry_safe": true,
+    "status": "preview",
+    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7300000000000000000/"
+  },
+  "scenario": "react_to_comment__browser_free",
+  "schema_version": 1
+}
