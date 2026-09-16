@@ -34,6 +34,7 @@ def _make_mock_extractor(scrape_result: dict) -> MagicMock:
     mock.scrape_job = AsyncMock(return_value=scrape_result)
     mock.search_jobs = AsyncMock(return_value=scrape_result)
     mock.get_saved_jobs = AsyncMock(return_value=scrape_result)
+    mock.get_job_alerts = AsyncMock(return_value=scrape_result)
     mock.search_people = AsyncMock(return_value=scrape_result)
     mock.get_sidebar_profiles = AsyncMock(return_value=scrape_result)
     mock.get_inbox = AsyncMock(return_value=scrape_result)
@@ -845,6 +846,49 @@ class TestJobTools:
         assert "saved_jobs" in result["sections"]
         assert result["job_ids"] == ["111", "222"]
         mock_extractor.get_saved_jobs.assert_awaited_once_with(max_pages=2)
+
+    async def test_get_job_alerts(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/my-items/job-alerts/",
+            "sections": {"job_alerts": "Python Developer alert\nData Scientist alert"},
+            "references": {
+                "job_alerts": [
+                    {
+                        "kind": "job_alert",
+                        "url": "https://www.linkedin.com/jobs/search/?keywords=python",
+                    }
+                ]
+            },
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.job import register_job_tools
+
+        mcp = FastMCP("test")
+        register_job_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_job_alerts")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert "job_alerts" in result["sections"]
+        assert result["references"]["job_alerts"][0]["kind"] == "job_alert"
+        mock_extractor.get_job_alerts.assert_awaited_once_with()
+
+    async def test_get_job_alerts_error(self, mock_context):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.exceptions import SessionExpiredError
+
+        mock_extractor = MagicMock()
+        mock_extractor.get_job_alerts = AsyncMock(side_effect=SessionExpiredError())
+
+        from linkedin_mcp_server.tools.job import register_job_tools
+
+        mcp = FastMCP("test")
+        register_job_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_job_alerts")
+        with pytest.raises(ToolError, match="Session expired"):
+            await tool_fn(mock_context, extractor=mock_extractor)
 
     async def test_save_job(self, mock_context):
         expected = {

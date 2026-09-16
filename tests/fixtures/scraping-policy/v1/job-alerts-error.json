@@ -1,0 +1,106 @@
+{
+  "call": {
+    "arguments": {},
+    "method": "get_job_alerts"
+  },
+  "events": [
+    {
+      "call": "get_job_alerts",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "get_job_alerts",
+      "extra": {
+        "target_url": "https://www.linkedin.com/my-items/job-alerts/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "get_job_alerts",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/my-items/job-alerts/",
+      "requested_url": "https://www.linkedin.com/my-items/job-alerts/",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "get_job_alerts",
+      "description": "goto https://www.linkedin.com/my-items/job-alerts/",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "get_job_alerts",
+      "extra": {
+        "target_url": "https://www.linkedin.com/my-items/job-alerts/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "get_job_alerts",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "get_job_alerts",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "get_job_alerts",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "get_job_alerts",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "get_job_alerts",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "get_job_alerts",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 5,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "get_job_alerts",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "e8a0e21ac6f5"
+    }
+  ],
+  "result": {
+    "section_errors": {
+      "job_alerts": {
+        "context": "extract_page",
+        "error_message": "synthetic capture failure",
+        "error_type": "RuntimeError"
+      }
+    },
+    "section_names": [],
+    "sections": {},
+    "url": "https://www.linkedin.com/my-items/job-alerts/"
+  },
+  "scenario": "get_job_alerts__capture_error",
+  "schema_version": 1
+}

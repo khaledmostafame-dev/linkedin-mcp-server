@@ -96,6 +96,10 @@
       "description": "Save or unsave a LinkedIn job posting for the authenticated account, with explicit confirmation; idempotent"
     },
     {
+      "name": "get_job_alerts",
+      "description": "List the authenticated LinkedIn user's job alerts, with each alert's own search returned as a reference"
+    },
+    {
       "name": "search_people",
       "description": "Search for people on LinkedIn by keywords, location, connection degree (1st/2nd/3rd), and current company"
     },

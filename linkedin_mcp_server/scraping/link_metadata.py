@@ -17,6 +17,7 @@ ReferenceKind = Literal[
     "school",
     "conversation",
     "external",
+    "job_alert",
 ]
 
 
@@ -316,6 +317,12 @@ def classify_link(href: str) -> tuple[ReferenceKind, str] | None:
 
     if match := JOB_PATH_RE.match(path):
         return "job", f"/jobs/view/{match.group(1)}/"
+
+    # A saved job-alert's own search — get_job_alerts is the only reader
+    # that emits these paths today; kept as a query-preserving passthrough
+    # since an alert's filters live entirely in the query string.
+    if path.rstrip("/") in ("/jobs/search", "/jobs/search-results"):
+        return "job_alert", href
 
     if match := _NEWSLETTER_PATH_RE.match(path):
         return "newsletter", f"/newsletters/{match.group(1)}/"

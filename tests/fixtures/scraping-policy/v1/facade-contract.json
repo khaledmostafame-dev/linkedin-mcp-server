@@ -44,6 +44,10 @@
         "coroutine": true,
         "signature": "(self, limit: 'int' = 20) -> 'dict[str, Any]'"
       },
+      "get_job_alerts": {
+        "coroutine": true,
+        "signature": "(self) -> 'dict[str, Any]'"
+      },
       "get_my_profile": {
         "coroutine": true,
         "signature": "(self, sections: 'set[str] | None' = None, callbacks: 'ProgressCallback | None' = None, max_scrolls: 'int | None' = None) -> 'dict[str, Any]'"
@@ -117,6 +121,7 @@
       "get_company_employees",
       "get_conversation",
       "get_inbox",
+      "get_job_alerts",
       "get_my_profile",
       "get_saved_jobs",
       "get_sidebar_profiles",
@@ -359,6 +364,17 @@
               "type": "integer"
             }
           },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_job_alerts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
           "type": "object"
         },
         "output": {

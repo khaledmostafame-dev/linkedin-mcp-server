@@ -272,3 +272,52 @@ def register_job_tools(
                 raise_tool_error(relogin_exc, "get_saved_jobs")
         except Exception as e:
             raise_tool_error(e, "get_saved_jobs")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Get Job Alerts",
+        annotations={"readOnlyHint": True, "openWorldHint": True},
+        tags={"job", "scraping"},
+        exclude_args=["extractor"],
+    )
+    async def get_job_alerts(
+        ctx: Context,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        List the authenticated LinkedIn user's job alerts.
+
+        Each alert's own saved search is returned as a job_alert reference
+        carrying its search URL (filters live in that URL's query string,
+        not in the section text).
+
+        Args:
+            ctx: FastMCP context for progress reporting
+
+        Returns:
+            Dict with url, sections (job_alerts -> raw text), and optional
+            references (job_alerts -> [{kind: "job_alert", url, text?}, ...]).
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="get_job_alerts"
+            )
+            logger.info("Fetching job alerts")
+
+            await ctx.report_progress(
+                progress=0, total=100, message="Loading job alerts"
+            )
+
+            result = await extractor.get_job_alerts()
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            return result
+
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "get_job_alerts")
+        except Exception as e:
+            raise_tool_error(e, "get_job_alerts")  # NoReturn

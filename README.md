@@ -60,6 +60,7 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `search_jobs` | Search for jobs with keywords and location filters; reports LinkedIn's own advertised result total when available |
 | `get_saved_jobs` | List job postings saved by the authenticated user |
 | `save_job` | Save or unsave a job posting for the authenticated account (requires confirmation; idempotent) |
+| `get_job_alerts` | List the authenticated user's job alerts, each alert's own search returned as a reference |
 | `search_people` | Search for people by keywords, location, connection degree (1st/2nd/3rd), and current company |
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |

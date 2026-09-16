@@ -984,6 +984,27 @@ async def _conversation_scenario(method: str) -> dict[str, Any]:
     )
 
 
+async def _job_alerts_error_scenario() -> dict[str, Any]:
+    """The minimal early-refusal trace for a new facade method: a capture
+    failure surfaces as a section error rather than propagating, the same
+    shape `scrape-job-error.json` already covers for `scrape_job`.
+    """
+    recorder = TraceRecorder("get_job_alerts__capture_error", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder).script(
+        "evaluate:root_content", RuntimeError("synthetic capture failure")
+    )
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("get_job_alerts"):
+            result = await extractor.get_job_alerts()
+    page.assert_clean()
+    return recorder.trace(
+        {"method": "get_job_alerts", "arguments": {}},
+        _complete_mapping_result(result, section_names=list(result["sections"])),
+    )
+
+
 async def _reply_invalid_scenario() -> dict[str, Any]:
     """The browser-free refusal path: no navigation, no scripting needed."""
     recorder = TraceRecorder("reply_to_conversation__invalid_blank", _COMMON_ALLOWED)
@@ -1088,6 +1109,7 @@ TOOL_FACADE_METHODS = {
     "get_company_employees",
     "get_conversation",
     "get_inbox",
+    "get_job_alerts",
     "get_my_profile",
     "get_saved_jobs",
     "get_sidebar_profiles",
@@ -1188,6 +1210,7 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
             await _conversation_option_unavailable_scenario("archive_conversation")
         ),
         "save-job-already-saved.json": await _save_job_already_saved_scenario(),
+        "job-alerts-error.json": await _job_alerts_error_scenario(),
     }
     return traces
 

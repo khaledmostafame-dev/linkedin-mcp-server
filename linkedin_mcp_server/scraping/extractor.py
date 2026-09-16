@@ -190,6 +190,10 @@ class LinkedInExtractor:
         """Save or unsave a job posting for the authenticated LinkedIn account."""
         return await self._jobs.save_job(job_id, confirm=confirm, unsave=unsave)
 
+    async def get_job_alerts(self) -> dict[str, Any]:
+        """List the authenticated user's job alerts."""
+        return await self._jobs.get_job_alerts()
+
     async def get_saved_jobs(self, max_pages: int = 3) -> dict[str, Any]:
         """List the authenticated user's saved job postings."""
         return await self._jobs.get_saved_jobs(max_pages)

@@ -120,6 +120,65 @@ class TestScrapeJob:
         assert "references" not in result
 
 
+class TestGetJobAlerts:
+    async def test_lists_alerts_with_their_search_as_a_reference(self, mock_page):
+        scraper = _scraper(mock_page)
+        with patch.object(
+            scraper._capture,
+            "capture",
+            new_callable=AsyncMock,
+            return_value=extracted(
+                "Python Developer alert",
+                [
+                    {
+                        "kind": "job_alert",
+                        "url": "https://www.linkedin.com/jobs/search/?keywords=python",
+                        "text": "Python Developer",
+                    }
+                ],
+            ),
+        ) as capture:
+            result = await scraper.get_job_alerts()
+
+        capture.assert_awaited_once_with(
+            "https://www.linkedin.com/my-items/job-alerts/",
+            section_name="job_alerts",
+            plan=CapturePlan(),
+        )
+        assert result["url"] == "https://www.linkedin.com/my-items/job-alerts/"
+        assert result["sections"]["job_alerts"] == "Python Developer alert"
+        assert result["references"]["job_alerts"][0]["kind"] == "job_alert"
+
+    async def test_no_alerts_is_an_empty_result_not_an_error(self, mock_page):
+        scraper = _scraper(mock_page)
+        with patch.object(
+            scraper._capture,
+            "capture",
+            new_callable=AsyncMock,
+            return_value=extracted(""),
+        ):
+            result = await scraper.get_job_alerts()
+
+        assert result["sections"] == {}
+        assert "references" not in result
+        assert "section_errors" not in result
+
+    async def test_a_capture_error_becomes_a_section_error(self, mock_page):
+        scraper = _scraper(mock_page)
+        with patch.object(
+            scraper._capture,
+            "capture",
+            new_callable=AsyncMock,
+            return_value=extracted(
+                "", error={"error_type": "unknown", "error_message": "boom"}
+            ),
+        ):
+            result = await scraper.get_job_alerts()
+
+        assert result["sections"] == {}
+        assert result["section_errors"]["job_alerts"]["error_type"] == "unknown"
+
+
 class TestSearchJobs:
     """Tests for search_jobs with job ID extraction and pagination."""
 

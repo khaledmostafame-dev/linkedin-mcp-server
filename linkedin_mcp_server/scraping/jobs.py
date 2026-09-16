@@ -20,6 +20,7 @@ from linkedin_mcp_server.scraping.contracts import (
 from linkedin_mcp_server.scraping.identifiers import job_view_url, normalize_job_id
 from linkedin_mcp_server.scraping.job_pages import JobPageReader
 from linkedin_mcp_server.scraping.job_policy import (
+    JOB_ALERTS_URL,
     JOB_SEARCH_PATHS,
     RESULTS_PER_LINKEDIN_PAGE,
     SAVED_JOBS_PAGE_SIZE,
@@ -466,6 +467,52 @@ class JobScraper:
     ) -> dict[str, Any]:
         """Save or unsave a job posting for the authenticated LinkedIn account."""
         return await self._pages.save_job(job_id, confirm=confirm, unsave=unsave)
+
+    async def get_job_alerts(self) -> dict[str, Any]:
+        """List the authenticated user's job alerts.
+
+        Read-only port of the read half of upstream PR #847 (#846). Each
+        alert's own search — the query LinkedIn built and saved for it — is
+        surfaced as a ``job_alert`` reference rather than parsed out of text,
+        since the filters live entirely in that URL's query string.
+
+        LinkedIn's exact URL for this My Items page has not been confirmed
+        live in this fork; ``JOB_ALERTS_URL`` is a best-effort guess
+        following the ``/my-items/saved-jobs/`` sibling pattern. If wrong,
+        this returns an empty ``sections``/``references`` result rather than
+        raising, the same shape as a real account with no alerts.
+
+        Returns:
+            {url, sections: {job_alerts: text}, references?: {job_alerts:
+            [{kind: "job_alert", url, text?}, ...]}}
+        """
+        extracted = await self._capture.capture(
+            JOB_ALERTS_URL,
+            section_name="job_alerts",
+            plan=CapturePlan(),
+        )
+
+        sections: dict[str, str] = {}
+        references: dict[str, list[Reference]] = {}
+        section_errors: dict[str, dict[str, Any]] = {}
+        if extracted.text and extracted.text != RATE_LIMITED_SECTION_TEXT:
+            sections["job_alerts"] = extracted.text
+            if extracted.references:
+                references["job_alerts"] = extracted.references
+        elif extracted.text == RATE_LIMITED_SECTION_TEXT:
+            section_errors["job_alerts"] = rate_limited_section_error()
+        elif extracted.error:
+            section_errors["job_alerts"] = extracted.error
+
+        result: dict[str, Any] = {
+            "url": JOB_ALERTS_URL,
+            "sections": sections,
+        }
+        if references:
+            result["references"] = references
+        if section_errors:
+            result["section_errors"] = section_errors
+        return result
 
     async def get_saved_jobs(self, max_pages: int = 3) -> dict[str, Any]:
         """List the authenticated user's saved job postings.
