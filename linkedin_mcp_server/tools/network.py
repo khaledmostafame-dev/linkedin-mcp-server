@@ -19,6 +19,11 @@ from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
 from linkedin_mcp_server.core.exceptions import AuthenticationError
 from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_error
 from linkedin_mcp_server.error_handler import raise_tool_error
+from linkedin_mcp_server.scraping.connection_actions import (
+    respond_to_invitation_preview,
+    withdraw_invitation_preview,
+)
+from linkedin_mcp_server.scraping.network import follow_preview
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +239,10 @@ def register_network_tools(
             profile text) when available.
         """
         try:
+            if not confirm:
+                # Answered before the browser is acquired: a preview never
+                # starts Chromium or reaches LinkedIn.
+                return withdraw_invitation_preview(linkedin_username)
             extractor = extractor or await get_ready_extractor(
                 ctx, tool_name="withdraw_invitation"
             )
@@ -298,6 +307,8 @@ def register_network_tools(
             profile (raw profile text) when available.
         """
         try:
+            if not confirm:
+                return respond_to_invitation_preview(linkedin_username, action)
             extractor = extractor or await get_ready_extractor(
                 ctx, tool_name="respond_to_invitation"
             )
@@ -342,12 +353,11 @@ def register_network_tools(
 
         Detection of the Follow/Following control is structural and
         deliberately conservative: it acts only when the top card exposes
-        exactly one unambiguous, non-menu labeled button. Because LinkedIn's
-        Follow/Following labels are locale-dependent text this server does
-        not read, success is reported as "toggled" (an accessible-attribute
-        change was observed after the click) rather than as a claim about
-        which direction the toggle landed in -- verify with
-        get_person_profile/get_company_profile if that distinction matters.
+        exactly one unambiguous, non-menu labeled button that reports its
+        state through aria-pressed. When the page is already in the requested
+        state nothing is clicked ("already_following"/"already_unfollowed"),
+        so a follow request can never undo an existing follow; "toggled" means
+        aria-pressed afterwards reports the requested state.
 
         Args:
             target_url: A LinkedIn person profile or company page URL/slug
@@ -356,16 +366,18 @@ def register_network_tools(
             confirm: Must be True to act. False returns a preview with no
                 browser interaction and no state change.
             ctx: FastMCP context for progress reporting
-            unfollow: Set True to request unfollowing instead of following.
-                The click is the same toggle either way; this only affects
-                the returned message and the ``requested`` field.
+            unfollow: True to stop following. The requested direction is
+                checked against the control's aria-pressed state before any
+                click.
 
         Returns:
-            Dict with url, status ("preview", "toggled", "uncertain", or
-            "action_unavailable"), requested ("follow"/"unfollow"), and
-            message.
+            Dict with url, status ("preview", "toggled", "already_following",
+            "already_unfollowed", "uncertain", or "action_unavailable"),
+            requested ("follow"/"unfollow"), and message.
         """
         try:
+            if not confirm:
+                return follow_preview(target_url, unfollow=unfollow)
             extractor = extractor or await get_ready_extractor(ctx, tool_name="follow")
             logger.info(
                 "Follow request for %s (unfollow=%s, confirm=%s)",

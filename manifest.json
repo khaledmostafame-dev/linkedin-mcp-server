@@ -57,7 +57,7 @@
     },
     {
       "name": "connect_with_person",
-      "description": "Send a connection request or accept an incoming one, with optional note"
+      "description": "Send a connection request or accept an incoming one, with optional note and explicit confirmation; confirm=false returns a browser-free preview"
     },
     {
       "name": "get_sidebar_profiles",
@@ -181,7 +181,7 @@
     },
     {
       "name": "follow",
-      "description": "Follow or unfollow a LinkedIn person or company page"
+      "description": "Follow or unfollow a LinkedIn person or company page with explicit confirmation; nothing is clicked when the page is already in the requested state"
     },
     {
       "name": "search_groups",

@@ -253,6 +253,10 @@
         "input": {
           "additionalProperties": false,
           "properties": {
+            "confirm": {
+              "description": "Must be True to send the request or accept an incoming\none; False returns a browser-free preview",
+              "type": "boolean"
+            },
             "linkedin_username": {
               "description": "LinkedIn username (e.g., \"stickerdaniel\", \"williamhgates\"). A full profile URL is accepted too and is reduced to the username.",
               "type": "string"
@@ -271,7 +275,8 @@
             }
           },
           "required": [
-            "linkedin_username"
+            "linkedin_username",
+            "confirm"
           ],
           "type": "object"
         },
@@ -615,7 +620,7 @@
             },
             "unfollow": {
               "default": false,
-              "description": "Set True to request unfollowing instead of following.\nThe click is the same toggle either way; this only affects\nthe returned message and the ``requested`` field.",
+              "description": "True to stop following. The requested direction is\nchecked against the control's aria-pressed state before any\nclick.",
               "type": "boolean"
             }
           },

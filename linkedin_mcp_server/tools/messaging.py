@@ -219,7 +219,7 @@ def register_messaging_tools(
         timeout=tool_timeout,
         title="Send Message",
         annotations={"destructiveHint": True, "openWorldHint": True},
-        tags={"messaging", "actions"},
+        tags={"messaging", "actions", "write"},
         exclude_args=["extractor"],
     )
     async def send_message(

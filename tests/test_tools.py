@@ -426,6 +426,7 @@ class TestPersonTool:
         result = await tool_fn(
             "test-user",
             mock_context,
+            confirm=True,
             note="Let us connect.",
             extractor=mock_extractor,
         )
@@ -455,6 +456,7 @@ class TestPersonTool:
         result = await tool_fn(
             "test-user",
             mock_context,
+            confirm=True,
             extractor=mock_extractor,
         )
 
@@ -483,6 +485,7 @@ class TestPersonTool:
         result = await tool_fn(
             "test-user",
             mock_context,
+            confirm=True,
             note="Hello!",
             extractor=mock_extractor,
         )
@@ -544,8 +547,31 @@ class TestPersonTool:
         with pytest.raises(ToolError, match="Session expired"):
             await mcp.call_tool(
                 "connect_with_person",
-                {"linkedin_username": "test"},
+                {"linkedin_username": "test", "confirm": True},
             )
+
+    async def test_connect_with_person_preview_never_acquires_a_browser(
+        self, mock_context
+    ):
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        mcp = FastMCP("test")
+        register_person_tools(mcp)
+        tool_fn = await get_tool_fn(mcp, "connect_with_person")
+        refuse = AsyncMock(side_effect=AssertionError("preview acquired a browser"))
+
+        with patch("linkedin_mcp_server.tools.person.get_ready_extractor", refuse):
+            result = await tool_fn(
+                "https://www.linkedin.com/in/test-user/",
+                mock_context,
+                confirm=False,
+                note="Hello",
+            )
+
+        refuse.assert_not_awaited()
+        assert result["status"] == "preview"
+        assert result["url"] == "https://www.linkedin.com/in/test-user/"
+        assert result["note_sent"] is False
 
 
 class TestCompanyTools:
@@ -1707,8 +1733,28 @@ class TestNetworkTools:
         )
 
     async def test_withdraw_invitation_forwards_confirm(self, mock_context):
-        expected = {"url": "...", "status": "preview", "message": "..."}
+        expected = {"url": "...", "status": "withdrawn", "message": "..."}
         mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.network import register_network_tools
+
+        mcp = FastMCP("test")
+        register_network_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "withdraw_invitation")
+        result = await tool_fn(
+            "stickerdaniel", True, mock_context, extractor=mock_extractor
+        )
+
+        assert result["status"] == "withdrawn"
+        mock_extractor.withdraw_invitation.assert_awaited_once_with(
+            "stickerdaniel", confirm=True
+        )
+
+    async def test_withdraw_invitation_preview_never_touches_the_extractor(
+        self, mock_context
+    ):
+        mock_extractor = _make_mock_extractor({})
 
         from linkedin_mcp_server.tools.network import register_network_tools
 
@@ -1721,9 +1767,8 @@ class TestNetworkTools:
         )
 
         assert result["status"] == "preview"
-        mock_extractor.withdraw_invitation.assert_awaited_once_with(
-            "stickerdaniel", confirm=False
-        )
+        assert result["url"] == "https://www.linkedin.com/in/stickerdaniel/"
+        mock_extractor.withdraw_invitation.assert_not_awaited()
 
     async def test_respond_to_invitation_forwards_action_and_confirm(
         self, mock_context

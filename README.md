@@ -44,7 +44,7 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 |------|-------------|
 | `get_person_profile` | Get profile info with explicit section selection (experience, education, interests, honors, languages, certifications, skills, projects, contact_info, posts) |
 | `get_my_profile` | Get the authenticated user's own LinkedIn profile (same sections as get_person_profile) |
-| `connect_with_person` | Send a connection request or accept an incoming one, with optional note |
+| `connect_with_person` | Send a connection request or accept an incoming one, with optional note (requires `confirm`; `confirm=false` previews without a browser) |
 | `get_sidebar_profiles` | Extract profile URLs from sidebar recommendation sections ("More profiles for you", "Explore premium profiles", "People you may know") on a profile page |
 | `get_inbox` | List recent conversations from the LinkedIn messaging inbox |
 | `get_conversation` | Read a specific messaging conversation by username or thread ID |
@@ -75,7 +75,7 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_invitations` | List outgoing or incoming connection-request invitations |
 | `withdraw_invitation` | Withdraw a previously-sent, still-pending connection request, identified by profile URL (requires confirmation) |
 | `respond_to_invitation` | Accept or ignore an incoming connection request, identified by profile URL (requires confirmation) |
-| `follow` | Follow or unfollow a person or company page (requires confirmation) |
+| `follow` | Follow or unfollow a person or company page (requires confirmation; clicks only when the control's `aria-pressed` state shows the change is needed, so a follow never undoes an existing one) |
 | `search_groups` | Search for LinkedIn groups by keyword |
 | `get_group_posts` | List recent posts from a LinkedIn group's home feed |
 | `get_group_members` | List members of a LinkedIn group from its /members/ page, with optional keyword filter (full list requires the account to be a group member) |

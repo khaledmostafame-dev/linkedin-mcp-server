@@ -20,6 +20,10 @@ from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_er
 from linkedin_mcp_server.error_handler import raise_tool_error
 from linkedin_mcp_server.scraping import parse_person_sections
 from linkedin_mcp_server.scraping.contracts import FilterValidationError
+from linkedin_mcp_server.scraping.identifiers import (
+    normalize_person_identifier,
+    person_profile_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -223,12 +227,13 @@ def register_person_tools(
         timeout=tool_timeout,
         title="Connect With Person",
         annotations={"destructiveHint": True, "openWorldHint": True},
-        tags={"person", "actions"},
+        tags={"person", "actions", "write"},
         exclude_args=["extractor"],
     )
     async def connect_with_person(
         linkedin_username: str,
         ctx: Context,
+        confirm: bool,
         note: str | None = None,
         extractor: Any | None = None,
     ) -> dict[str, Any]:
@@ -236,16 +241,20 @@ def register_person_tools(
         Send a LinkedIn connection request or accept an incoming one.
 
         The tool is annotated with destructiveHint so MCP clients will
-        prompt for user confirmation before execution.
+        prompt for user confirmation before execution. With confirm=False it
+        only returns a preview of the target profile: no browser is started
+        and nothing is sent or accepted.
 
         Args:
             linkedin_username: LinkedIn username (e.g., "stickerdaniel", "williamhgates"). A full profile URL is accepted too and is reduced to the username.
             ctx: FastMCP context for progress reporting
+            confirm: Must be True to send the request or accept an incoming
+                one; False returns a browser-free preview
             note: Optional note to include with the invitation
 
         Returns:
             Dict with url, status, message, and note_sent.
-            Statuses: pending, already_connected, follow_only,
+            Statuses: preview (confirm=False), pending, already_connected, follow_only,
             connect_unavailable, unavailable, send_failed,
             note_not_supported, custom_note_limit_reached,
             connected, or accepted.
@@ -256,6 +265,22 @@ def register_person_tools(
             text read from LinkedIn.
         """
         try:
+            if not confirm:
+                # Resolved before any browser work, so a preview can neither
+                # start Chromium nor touch LinkedIn.
+                username = normalize_person_identifier(linkedin_username)
+                return {
+                    "url": person_profile_url(username, "/"),
+                    "status": "preview",
+                    "message": (
+                        f"Would send a connection request to {username}, or "
+                        "accept theirs if one is pending"
+                        + (" with the given note" if note else "")
+                        + ". Pass confirm=True to proceed."
+                    ),
+                    "note_sent": False,
+                }
+
             extractor = extractor or await get_ready_extractor(
                 ctx, tool_name="connect_with_person"
             )

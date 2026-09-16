@@ -20,7 +20,7 @@ a page-owning collaborator.
 | `comments` | `COMMENT_INTERRUPTED_WARNING`, `COMMENT_MAX_LENGTH`, `CommentReference`, `CommentScraper`, `CommentSort`, `CommentUrn`, `MAX_COMMENTS_LIMIT`, `build_comment_references()`, `comment_action_result()`, `comment_permalink()`, `normalize_comment_text()`, `normalize_comment_urn()`, `parse_comment_urn()`, `posted_at_from_id()`, `prepare_comment_reaction()`, `prepare_comment_write()` | `browser-free` |
 | `company` | `CompanyScraper` | `browser-free` |
 | `connection` | `ActionSignals`, `ConnectionState`, `detect_connection_state()` | `browser-free` |
-| `connection_actions` | `ACTION_SIGNALS_JS`, `CLICK_INCOMING_ACCEPT_JS`, `CLICK_INCOMING_IGNORE_JS`, `CLICK_PENDING_ANCHOR_JS`, `ConnectionActions`, `OPEN_MORE_BUTTON_JS`, `ReadMainProfile` | `page-owning` |
+| `connection_actions` | `ACTION_SIGNALS_JS`, `CLICK_INCOMING_ACCEPT_JS`, `CLICK_INCOMING_IGNORE_JS`, `CLICK_PENDING_ANCHOR_JS`, `ConnectionActions`, `OPEN_MORE_BUTTON_JS`, `ReadMainProfile`, `respond_to_invitation_preview()`, `withdraw_invitation_preview()` | `page-owning` |
 | `content` | `PageContentReader` | `page-owning` |
 | `contracts` | `ExtractedSection`, `FilterValidationError`, `RATE_LIMITED_SECTION_TEXT`, `SEND_INTERRUPTED_WARNING`, `message_action_result()`, `rate_limited_section_error()`, `refuse_an_invalid_message()` | `browser-free` |
 | `conversations` | `ConversationReader`, `strip_select_conversation_prefix()` | `page-owning` |
@@ -36,7 +36,7 @@ a page-owning collaborator.
 | `link_metadata` | `JOB_PATH_RE`, `RawReference`, `Reference`, `ReferenceKind`, `build_references()`, `choose_reference_text()`, `classify_link()`, `clean_heading()`, `clean_label()`, `dedupe_references()`, `derive_context()`, `normalize_reference()`, `normalize_url()` | `browser-free` |
 | `message_sender` | `MessageSender` | `page-owning` |
 | `navigation` | `PageNavigator`, `WaitUntil` | `page-owning` |
-| `network` | `ConnectionSort`, `InvitationDirection`, `NetworkScraper` | `page-owning` |
+| `network` | `ConnectionSort`, `InvitationDirection`, `NetworkScraper`, `follow_preview()`, `resolve_follow_target()` | `page-owning` |
 | `person` | `PersonScraper` | `page-owning` |
 | `post_composer` | `FEED_URL`, `PostComposer`, `SHARE_URL`, `collapse_whitespace()`, `evidence_keys()`, `evidence_matches()`, `post_result()`, `scheduled_identifier()` | `page-owning` |
 | `post_content` | `LINKEDIN_POST_CHARACTER_LIMIT`, `MentionKind`, `MentionSegment`, `MentionTarget`, `PostAttachment`, `PostEdit`, `PostRequest`, `PostValidationError`, `SCHEDULE_MAX_AHEAD`, `SCHEDULE_MIN_LEAD`, `TextSegment`, `VISIBILITIES`, `Visibility`, `attachment_summary()`, `build_post_edit()`, `build_post_request()`, `date_matches()`, `format_schedule_date()`, `format_schedule_time()`, `identity_key_from_url()`, `identity_key_from_urn()`, `normalize_text()`, `parse_mention_target()`, `parse_post_as()`, `parse_post_text()`, `parse_post_url()`, `parse_schedule_at()`, `post_preview()`, `render_segments()`, `resolve_date_order()`, `schedule_summary()`, `time_matches()`, `utf16_length()` | `browser-free` |

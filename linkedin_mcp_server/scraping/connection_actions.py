@@ -350,6 +350,32 @@ def _connection_result(
 ReadMainProfile = Callable[[str], Awaitable[dict[str, Any]]]
 
 
+def respond_to_invitation_preview(username: str, action: str) -> dict[str, Any]:
+    """The ``confirm=False`` answer for an invitation response, browser-free."""
+    username = normalize_person_identifier(username)
+    return {
+        "url": person_profile_url(username, "/"),
+        "status": "preview",
+        "message": (
+            f"Would {action} the incoming connection request from "
+            f"{username}. Pass confirm=True to proceed."
+        ),
+    }
+
+
+def withdraw_invitation_preview(username: str) -> dict[str, Any]:
+    """The ``confirm=False`` answer for a withdrawal, browser-free."""
+    username = normalize_person_identifier(username)
+    return {
+        "url": person_profile_url(username, "/"),
+        "status": "preview",
+        "message": (
+            "Would withdraw the pending connection request sent to "
+            f"{username}. Pass confirm=True to proceed."
+        ),
+    }
+
+
 class ConnectionActions:
     """Send, accept and probe invitations for one LinkedIn member."""
 
@@ -956,18 +982,10 @@ class ConnectionActions:
         verified here. ``confirm=False`` returns a preview with no browser
         interaction and no state change.
         """
+        if not confirm:
+            return respond_to_invitation_preview(username, action)
         username = normalize_person_identifier(username)
         url = person_profile_url(username, "/")
-
-        if not confirm:
-            return {
-                "url": url,
-                "status": "preview",
-                "message": (
-                    f"Would {action} the incoming connection request from "
-                    f"{username}. Pass confirm=True to proceed."
-                ),
-            }
 
         profile = await self._read_main_profile(username)
         page_text = profile.get("sections", {}).get("main_profile", "")
@@ -1060,18 +1078,10 @@ class ConnectionActions:
         for the invite dialog. ``confirm=False`` returns a preview with no
         browser interaction and no state change.
         """
+        if not confirm:
+            return withdraw_invitation_preview(username)
         username = normalize_person_identifier(username)
         url = person_profile_url(username, "/")
-
-        if not confirm:
-            return {
-                "url": url,
-                "status": "preview",
-                "message": (
-                    "Would withdraw the pending connection request sent to "
-                    f"{username}. Pass confirm=True to proceed."
-                ),
-            }
 
         profile = await self._read_main_profile(username)
         page_text = profile.get("sections", {}).get("main_profile", "")

@@ -19,8 +19,9 @@ work, health checks, or background maintenance.
   a login flow merely because LinkedIn might be useful. If either component is
   disabled, explain that state and stop.
 - `send_message`, `connect_with_person`, the comment writes, `create_post`,
-  `edit_scheduled_post`, `delete_scheduled_post`, `edit_post` and
-  `delete_post` are write actions. Use them only when the user
+  `edit_scheduled_post`, `delete_scheduled_post`, `edit_post`, `delete_post`,
+  `follow`, `withdraw_invitation` and `respond_to_invitation` are write
+  actions. Each requires `confirm` (`confirm_send` for `send_message`). Use them only when the user
   explicitly authorizes the exact recipient and action (for a post, the exact
   post). Call `create_post` with `confirm=false` first and show the preview. Confirm the
   final message or connection note unless the user has already supplied it.
@@ -50,6 +51,9 @@ instances, clear profiles, or replace the user's browser session.
 - Posting: `get_scheduled_posts` (read); `create_post`,
   `edit_scheduled_post`, `delete_scheduled_post`, `edit_post` and
   `delete_post` (writes).
+- Network: `list_connections`, `get_mutual_connections`, `get_invitations`,
+  `search_groups`, `get_group_posts`, and `get_group_members` (reads);
+  `follow`, `withdraw_invitation`, and `respond_to_invitation` (writes).
 - Writes: `send_message`, `connect_with_person`, `comment_on_post`,
   `reply_to_comment`, and `react_to_comment`, subject to the explicit
   authorization rules above. Call the comment writes with `confirm=false` first

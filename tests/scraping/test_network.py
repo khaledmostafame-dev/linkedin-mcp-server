@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from linkedin_mcp_server.scraping.capture import SectionCapture
 from linkedin_mcp_server.scraping.content import PageContentReader
 from linkedin_mcp_server.scraping.contracts import ExtractedSection
@@ -258,12 +260,12 @@ class TestFollow:
         assert result["status"] == "toggled"
         assert result["requested"] == "follow"
 
-    async def test_no_attribute_change_reports_uncertain(self, mock_page):
+    async def test_no_state_change_reports_uncertain(self, mock_page):
         scraper = _scraper(mock_page)
         same = {
             "ok": True,
             "count": 1,
-            "ariaPressed": None,
+            "ariaPressed": "false",
             "ariaExpanded": None,
             "ariaHasPopup": None,
         }
@@ -282,12 +284,78 @@ class TestFollow:
 
         assert result["status"] == "uncertain"
 
-    async def test_click_that_does_not_land_is_reported_as_unavailable(self, mock_page):
+    async def test_an_attribute_change_away_from_the_request_is_not_toggled(
+        self, mock_page
+    ):
+        """An unfollow whose control still reports pressed is not a success."""
+        scraper = _scraper(mock_page)
+        before = {"ok": True, "count": 1, "ariaPressed": "true"}
+        after = {"ok": True, "count": 1, "ariaPressed": "true", "ariaExpanded": "x"}
+        mock_page.evaluate = AsyncMock(side_effect=[before, True, after])
+
+        with (
+            patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock),
+            patch(
+                "linkedin_mcp_server.scraping.session.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+        ):
+            result = await scraper.follow(
+                "https://www.linkedin.com/company/anthropic/",
+                confirm=True,
+                unfollow=True,
+            )
+
+        assert result["status"] == "uncertain"
+
+    async def test_missing_pressed_state_is_refused_without_clicking(self, mock_page):
+        """Without aria-pressed the current state is unknown, so the toggle
+        could undo an existing follow: nothing is clicked."""
         scraper = _scraper(mock_page)
         before = {
             "ok": True,
             "count": 1,
             "ariaPressed": None,
+            "ariaExpanded": None,
+            "ariaHasPopup": None,
+        }
+        mock_page.evaluate = AsyncMock(side_effect=[before, True])
+
+        with patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock):
+            result = await scraper.follow(
+                "https://www.linkedin.com/company/anthropic/", confirm=True
+            )
+
+        assert result["status"] == "action_unavailable"
+        assert mock_page.evaluate.await_count == 1
+
+    @pytest.mark.parametrize(
+        ("pressed", "unfollow", "status"),
+        [("true", False, "already_following"), ("false", True, "already_unfollowed")],
+    )
+    async def test_requested_state_already_holding_clicks_nothing(
+        self, mock_page, pressed, unfollow, status
+    ):
+        scraper = _scraper(mock_page)
+        before = {"ok": True, "count": 1, "ariaPressed": pressed}
+        mock_page.evaluate = AsyncMock(side_effect=[before, True])
+
+        with patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock):
+            result = await scraper.follow(
+                "https://www.linkedin.com/company/anthropic/",
+                confirm=True,
+                unfollow=unfollow,
+            )
+
+        assert result["status"] == status
+        assert mock_page.evaluate.await_count == 1
+
+    async def test_click_that_does_not_land_is_reported_as_unavailable(self, mock_page):
+        scraper = _scraper(mock_page)
+        before = {
+            "ok": True,
+            "count": 1,
+            "ariaPressed": "false",
             "ariaExpanded": None,
             "ariaHasPopup": None,
         }

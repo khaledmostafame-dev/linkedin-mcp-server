@@ -169,6 +169,29 @@ def _listing_result(
     return result
 
 
+def resolve_follow_target(target_url: str) -> str:
+    """Resolve a person or company reference to its canonical page URL."""
+    if "/company/" in target_url:
+        return company_page_url(normalize_company_identifier(target_url), "/")
+    if "/in/" in target_url:
+        return person_profile_url(normalize_person_identifier(target_url), "/")
+    # A bare slug with no path context: assume a person, the more common
+    # case for search_people-driven prospecting workflows.
+    return person_profile_url(normalize_person_identifier(target_url), "/")
+
+
+def follow_preview(target_url: str, *, unfollow: bool) -> dict[str, Any]:
+    """The ``confirm=False`` answer for follow/unfollow, browser-free."""
+    resolved = resolve_follow_target(target_url)
+    requested = "unfollow" if unfollow else "follow"
+    return {
+        "url": resolved,
+        "status": "preview",
+        "requested": requested,
+        "message": f"Would {requested} {resolved}. Pass confirm=True to proceed.",
+    }
+
+
 class NetworkScraper:
     """Own network-graph read workflows: connections, invitations, follow."""
 
@@ -271,13 +294,7 @@ class NetworkScraper:
 
     def _resolve_follow_target(self, target_url: str) -> str:
         """Resolve a person or company reference to its canonical page URL."""
-        if "/company/" in target_url:
-            return company_page_url(normalize_company_identifier(target_url), "/")
-        if "/in/" in target_url:
-            return person_profile_url(normalize_person_identifier(target_url), "/")
-        # A bare slug with no path context: assume a person, the more common
-        # case for search_people-driven prospecting workflows.
-        return person_profile_url(normalize_person_identifier(target_url), "/")
+        return resolve_follow_target(target_url)
 
     async def follow(
         self,
@@ -293,21 +310,17 @@ class NetworkScraper:
         AGENTS.md, button labels are never inspected). Detection is
         therefore structural and deliberately conservative: the tool acts
         only when exactly one unambiguous, non-menu labeled button exists in
-        the top card, and reports the *observed* accessible-attribute change
-        after clicking rather than asserting which direction (followed vs
-        unfollowed) the toggle landed in. confirm=False returns a preview
-        with no browser interaction and no state change.
+        the top card and that button reports its state through
+        ``aria-pressed``. If the page is already in the requested state
+        nothing is clicked, so a follow request can never undo an existing
+        follow; success is reported only when ``aria-pressed`` afterwards
+        shows the requested state. confirm=False returns a preview with no
+        browser interaction and no state change.
         """
+        if not confirm:
+            return follow_preview(target_url, unfollow=unfollow)
         resolved = self._resolve_follow_target(target_url)
         requested = "unfollow" if unfollow else "follow"
-
-        if not confirm:
-            return {
-                "url": resolved,
-                "status": "preview",
-                "requested": requested,
-                "message": f"Would {requested} {resolved}. Pass confirm=True to proceed.",
-            }
 
         await self._navigator._navigate_to_page(resolved)
         await self._session.check_rate_limit()
@@ -336,6 +349,35 @@ class NetworkScraper:
                 ),
             }
 
+        # The toggle flips whatever state the page is in, so clicking without
+        # knowing that state could undo an existing follow when a follow was
+        # asked for. ``aria-pressed`` is the only structural, locale-independent
+        # signal of the current state; without it nothing is clicked.
+        pressed = before.get("ariaPressed")
+        if pressed not in ("true", "false"):
+            return {
+                "url": resolved,
+                "status": "action_unavailable",
+                "requested": requested,
+                "message": (
+                    "The follow control exposes no aria-pressed state, so whether "
+                    "this account already follows the page cannot be read "
+                    "structurally. Refusing to click a toggle that could undo an "
+                    "existing follow."
+                ),
+            }
+        wanted = "false" if unfollow else "true"
+        if pressed == wanted:
+            return {
+                "url": resolved,
+                "status": "already_unfollowed" if unfollow else "already_following",
+                "requested": requested,
+                "message": (
+                    f"Nothing clicked: the follow control already reports the "
+                    f"{requested} state."
+                ),
+            }
+
         try:
             clicked = bool(await self._session.page.evaluate(_FOLLOW_CLICK_JS))
         except Exception:
@@ -359,28 +401,14 @@ class NetworkScraper:
             )
             after = None
 
-        changed = (
-            bool(after)
-            and bool(after.get("ok"))
-            and (
-                after.get("ariaPressed") != before.get("ariaPressed")
-                or after.get("ariaExpanded") != before.get("ariaExpanded")
-                or after.get("ariaHasPopup") != before.get("ariaHasPopup")
-            )
-        )
-
-        if changed:
+        if after and after.get("ok") and after.get("ariaPressed") == wanted:
             return {
                 "url": resolved,
                 "status": "toggled",
                 "requested": requested,
                 "message": (
                     f"Clicked the follow control ({requested} requested) and its "
-                    "accessible state changed. LinkedIn does not expose Follow vs "
-                    "Following as locale-independent structure, so this confirms "
-                    "a toggle happened, not which direction it landed in -- "
-                    "verify with get_person_profile/get_company_profile if that "
-                    "matters."
+                    "aria-pressed state now reports the requested state."
                 ),
             }
         return {
@@ -388,9 +416,9 @@ class NetworkScraper:
             "status": "uncertain",
             "requested": requested,
             "message": (
-                "Clicked the follow control but detected no accessible-attribute "
-                "change. The click may not have registered, or this LinkedIn "
-                "surface may not expose a structural signal for the toggle -- "
+                "Clicked the follow control but its aria-pressed state does not "
+                "report the requested state yet. The click may not have "
+                "registered, or LinkedIn may be asking for confirmation -- "
                 "verify manually before relying on this outcome."
             ),
         }
