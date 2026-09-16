@@ -44,7 +44,7 @@ from linkedin_mcp_server.scraping.link_metadata import build_references
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.session import ScrapingSession
 from linkedin_mcp_server.scraping.text import (
-    JOB_SAVE_EN_US,
+    JOB_SAVE_TABLES,
     filter_linkedin_noise_lines,
     truncate_linkedin_noise,
 )
@@ -100,12 +100,17 @@ JOB_IDS_JS = (
 
 
 # The job-posting Save control's text is the only state signal LinkedIn
-# exposes — no distinguishing URL or attribute — so both the read and the
-# click below are guarded by `JOB_SAVE_EN_US` (CLAUDE.md -> Scraping Rules)
-# and fail closed on an unsupported browser locale rather than guessing at a
-# translated label. `aria-expanded` excludes menu openers that happen to
-# carry the same visible word, and `disabled` excludes a control mid-transition.
-_JOB_SAVE_CONTROL_JS = r"""({ labels }) => {
+# exposes — no distinguishing URL, attribute or icon that has been found (an
+# `aria-pressed` toggle or a filled/outline bookmark icon would be preferred
+# per CLAUDE.md -> Scraping Rules, but the control was not observed to carry
+# either) — so both the read and the click below are guarded by
+# `JOB_SAVE_TABLES`, every listed locale's labels tried in the same pass
+# (matching `core/utils.py`'s `_MODAL_DISMISS_ARIA_LABELS` shape) rather than
+# gated on a single detected locale, and fail closed when the control's text
+# matches none of them rather than guessing at an untabled translation.
+# `aria-expanded` excludes menu openers that happen to carry the same visible
+# word, and `disabled` excludes a control mid-transition.
+_JOB_SAVE_CONTROL_JS = r"""({ savedLabels, unsavedLabels }) => {
     const root = document.querySelector('main') || document.body;
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
     const controls = Array.from(
@@ -114,14 +119,14 @@ _JOB_SAVE_CONTROL_JS = r"""({ labels }) => {
         if (element.hasAttribute('aria-expanded')) return false;
         if (element.hasAttribute('disabled')) return false;
         const text = normalize(element.innerText || element.textContent);
-        return text === labels.saved || text === labels.unsaved;
+        return savedLabels.includes(text) || unsavedLabels.includes(text);
     });
     if (controls.length !== 1) return null;
     const text = normalize(controls[0].innerText || controls[0].textContent);
-    return text === labels.saved ? 'saved' : 'unsaved';
+    return savedLabels.includes(text) ? 'saved' : 'unsaved';
 }"""
 
-_JOB_SAVE_CLICK_JS = r"""({ expectedLabel }) => {
+_JOB_SAVE_CLICK_JS = r"""({ expectedLabels }) => {
     const root = document.querySelector('main') || document.body;
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
     const controls = Array.from(
@@ -129,7 +134,7 @@ _JOB_SAVE_CLICK_JS = r"""({ expectedLabel }) => {
     ).filter(element =>
         !element.hasAttribute('aria-expanded') &&
         !element.hasAttribute('disabled') &&
-        normalize(element.innerText || element.textContent) === expectedLabel
+        expectedLabels.includes(normalize(element.innerText || element.textContent))
     );
     if (controls.length !== 1) return false;
     controls[0].click();
@@ -619,27 +624,21 @@ class JobPageReader:
         )
         return int(value) if value is not None else None
 
-    async def _job_save_labels(self) -> dict[str, str] | None:
-        """Labels for the active browser locale, or ``None`` on an unknown one."""
-        locale = await self._session.page.evaluate("() => navigator.language || ''")
-        if locale != "en-US":
-            # BrowserManager forces en-US (core/browser.py); an unsupported
-            # locale is reported rather than guessed at.
-            return None
-        return {"saved": JOB_SAVE_EN_US.saved, "unsaved": JOB_SAVE_EN_US.unsaved}
-
     async def _job_save_state(self) -> Literal["saved", "unsaved"] | None:
         """Read the job Save control's state, or ``None`` if it cannot be told.
 
-        ``None`` covers both an unsupported locale and a page where the
-        control cannot be uniquely identified — callers treat either as
-        "could not determine" rather than guessing which one happened.
+        Every locale in ``JOB_SAVE_TABLES`` is tried in the same call rather
+        than gated on a detected `navigator.language` — a session's actual
+        LinkedIn UI locale is not guaranteed to match what the browser
+        reports. ``None`` covers a page where the control cannot be uniquely
+        identified against any tabled label — callers treat that as "could
+        not determine" rather than guessing which state it is in.
         """
-        labels = await self._job_save_labels()
-        if labels is None:
-            return None
+        saved_labels = [table.saved for table in JOB_SAVE_TABLES]
+        unsaved_labels = [table.unsaved for table in JOB_SAVE_TABLES]
         state = await self._session.page.evaluate(
-            _JOB_SAVE_CONTROL_JS, {"labels": labels}
+            _JOB_SAVE_CONTROL_JS,
+            {"savedLabels": saved_labels, "unsavedLabels": unsaved_labels},
         )
         return state if state in ("saved", "unsaved") else None
 
@@ -647,13 +646,14 @@ class JobPageReader:
         self, current_state: Literal["saved", "unsaved"]
     ) -> bool:
         """Click the unique Save control while it shows ``current_state``."""
-        labels = await self._job_save_labels()
-        if labels is None:
-            return False
+        expected_labels = [
+            table.saved if current_state == "saved" else table.unsaved
+            for table in JOB_SAVE_TABLES
+        ]
         try:
             return bool(
                 await self._session.page.evaluate(
-                    _JOB_SAVE_CLICK_JS, {"expectedLabel": labels[current_state]}
+                    _JOB_SAVE_CLICK_JS, {"expectedLabels": expected_labels}
                 )
             )
         except Exception:
@@ -685,8 +685,7 @@ class JobPageReader:
         if state is None:
             raise LinkedInScraperException(
                 "Could not uniquely identify the LinkedIn job Save control, "
-                "or save-state detection is not supported for the active "
-                "browser locale."
+                "or its label did not match any known locale's Save/Saved text."
             )
         if state == target_state:
             return {

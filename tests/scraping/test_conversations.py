@@ -1142,6 +1142,21 @@ class TestMarkConversationRead:
         assert result["changed"] is True
         assert result["read"] is True
 
+    async def test_arabic_labels_are_recognized_without_locale_detection(
+        self, mock_page
+    ):
+        """No locale is read anywhere here: every table is tried at once."""
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(
+            side_effect=_menu_evaluate(items=["وضع علامة كمقروءة"])
+        )
+        reader = _reader(mock_page)
+
+        result = await reader.mark_conversation_read("2-abc", read=True, confirm=True)
+
+        assert result["status"] == "ok"
+        assert result["changed"] is True
+
     async def test_neither_label_present_fails_closed(self, mock_page):
         mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
         mock_page.evaluate = AsyncMock(side_effect=_menu_evaluate(items=["Report"]))
@@ -1208,7 +1223,10 @@ class TestArchiveConversation:
         assert result["status"] == "ok"
         assert result["changed"] is True
         assert result["archived"] is False
-        assert clicked_labels == ["Unarchive"]
+        # Every known locale's spelling is offered to the click JS at once
+        # (fail-closed still applies inside the page: it clicks only when
+        # exactly one menu item's text matches any of them).
+        assert clicked_labels == [["Unarchive", "إلغاء الأرشفة"]]
 
     async def test_dry_run_previews_without_clicking(self, mock_page):
         mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"

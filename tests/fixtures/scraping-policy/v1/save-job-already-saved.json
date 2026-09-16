@@ -74,22 +74,20 @@
       "kind": "boundary.modal"
     },
     {
-      "call": "save_job",
-      "kind": "evaluate",
-      "operation": "browser_locale",
-      "program_digest": "77274072586e"
-    },
-    {
       "arg": {
-        "labels": {
-          "saved": "Saved",
-          "unsaved": "Save"
-        }
+        "savedLabels": [
+          "Saved",
+          "تم الحفظ"
+        ],
+        "unsavedLabels": [
+          "Save",
+          "حفظ"
+        ]
       },
       "call": "save_job",
       "kind": "evaluate",
       "operation": "job_save_state",
-      "program_digest": "b0a91fe3de78"
+      "program_digest": "72284f482a59"
     }
   ],
   "result": {

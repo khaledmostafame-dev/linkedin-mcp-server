@@ -27,7 +27,7 @@ from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.profile_page import ProfilePageReader
 from linkedin_mcp_server.scraping.session import ScrapingSession
 from linkedin_mcp_server.scraping.text import (
-    CONVERSATION_OPTIONS_EN,
+    CONVERSATION_OPTIONS_TABLES,
     strip_conversation_chrome,
     strip_linkedin_noise,
 )
@@ -57,7 +57,7 @@ def strip_select_conversation_prefix(aria_label: str) -> str:
 # ancestor within a few levels — the same bounded-ancestor-walk shape
 # `connection_actions.py` uses to find a profile's own More button — and
 # clicks it. Returns false rather than guessing when no such ancestor exists.
-_OPEN_CONVERSATION_OPTIONS_JS = r"""(prefix) => {
+_OPEN_CONVERSATION_OPTIONS_JS = r"""(prefixes) => {
     const visible = element => {
         const visibility = element && getComputedStyle(element).visibility;
         return !!(
@@ -70,10 +70,16 @@ _OPEN_CONVERSATION_OPTIONS_JS = r"""(prefix) => {
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
     const main = document.querySelector('main');
     if (!main) return false;
+    // Every known locale's opener prefix is tried in the same pass (the
+    // shape core/utils.py's `_MODAL_DISMISS_ARIA_LABELS` uses) rather than
+    // gated on a detected locale, so a session in any listed language is
+    // recognized without first proving which one it is.
     const labels = Array.from(main.querySelectorAll('*')).filter(
-        element =>
-            element.children.length === 0 &&
-            normalize(element.textContent).startsWith(prefix)
+        element => {
+            if (element.children.length !== 0) return false;
+            const text = normalize(element.textContent);
+            return prefixes.some(prefix => text.startsWith(prefix));
+        }
     );
     for (const label of labels) {
         let ancestor = label;
@@ -103,11 +109,11 @@ _READ_CONVERSATION_MENU_ITEMS_JS = r"""() => {
         .filter(Boolean);
 }"""
 
-_CLICK_CONVERSATION_MENU_ITEM_JS = r"""(label) => {
+_CLICK_CONVERSATION_MENU_ITEM_JS = r"""(labels) => {
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
     const items = Array.from(
         document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] button')
-    ).filter(element => normalize(element.innerText || element.textContent) === label);
+    ).filter(element => labels.includes(normalize(element.innerText || element.textContent)));
     if (items.length !== 1) return false;
     items[0].click();
     return true;
@@ -633,17 +639,19 @@ class ConversationReader:
         conversation_url_or_thread_id: str,
         *,
         confirm: bool,
-        action_label: str,
-        opposite_label: str,
+        action_labels: tuple[str, ...],
+        opposite_labels: tuple[str, ...],
         action_description: str,
     ) -> dict[str, Any]:
         """Open the thread's options menu and act on one toggle-labelled item.
 
         The menu item names the action it offers, not the current state (a
         thread already read offers "Mark as unread"), so whichever of
-        ``action_label``/``opposite_label`` is present tells the two apart.
-        Neither present, or the menu itself unreachable, fails closed as
-        ``action_unavailable`` rather than guessing.
+        ``action_labels``/``opposite_labels`` is present tells the two apart.
+        Each is every known locale's spelling of the same action (built from
+        ``CONVERSATION_OPTIONS_TABLES``), tried together rather than gated on
+        a detected locale. Neither present, or the menu itself unreachable,
+        fails closed as ``action_unavailable`` rather than guessing.
         """
         navigated = await self._navigate_to_thread_for_options(
             conversation_url_or_thread_id
@@ -652,11 +660,13 @@ class ConversationReader:
             return navigated
         thread_id, url = navigated
 
+        opener_prefixes = [
+            table.menu_opener_prefix for table in CONVERSATION_OPTIONS_TABLES
+        ]
         opened = False
         try:
             opened = await self._session.page.evaluate(
-                _OPEN_CONVERSATION_OPTIONS_JS,
-                CONVERSATION_OPTIONS_EN.menu_opener_prefix,
+                _OPEN_CONVERSATION_OPTIONS_JS, opener_prefixes
             )
         except Exception:
             logger.debug("Could not open the conversation options menu", exc_info=True)
@@ -684,7 +694,7 @@ class ConversationReader:
             if not isinstance(items, list):
                 items = []
 
-            if action_label in items:
+            if any(label in items for label in action_labels):
                 if not confirm:
                     return {
                         "url": url,
@@ -694,7 +704,7 @@ class ConversationReader:
                         "message": f"Set confirm=true to {action_description}.",
                     }
                 clicked = await self._session.page.evaluate(
-                    _CLICK_CONVERSATION_MENU_ITEM_JS, action_label
+                    _CLICK_CONVERSATION_MENU_ITEM_JS, list(action_labels)
                 )
                 if not clicked:
                     return {
@@ -713,7 +723,7 @@ class ConversationReader:
                     "changed": True,
                 }
 
-            if opposite_label in items:
+            if any(label in items for label in opposite_labels):
                 # LinkedIn is already offering the reverse action, which means
                 # the requested state already holds. Nothing to click.
                 return {
@@ -753,9 +763,14 @@ class ConversationReader:
         Idempotent: a thread already in the requested state is reported
         without clicking anything, so a retry is always safe to make.
         """
-        table = CONVERSATION_OPTIONS_EN
-        action_label = table.mark_read if read else table.mark_unread
-        opposite_label = table.mark_unread if read else table.mark_read
+        action_labels = tuple(
+            table.mark_read if read else table.mark_unread
+            for table in CONVERSATION_OPTIONS_TABLES
+        )
+        opposite_labels = tuple(
+            table.mark_unread if read else table.mark_read
+            for table in CONVERSATION_OPTIONS_TABLES
+        )
         action_description = (
             "mark this conversation as read"
             if read
@@ -764,8 +779,8 @@ class ConversationReader:
         result = await self._toggle_conversation_option(
             conversation_url_or_thread_id,
             confirm=confirm,
-            action_label=action_label,
-            opposite_label=opposite_label,
+            action_labels=action_labels,
+            opposite_labels=opposite_labels,
             action_description=action_description,
         )
         if result["status"] == "ok":
@@ -784,17 +799,22 @@ class ConversationReader:
         Idempotent: a thread already in the requested state is reported
         without clicking anything, so a retry is always safe to make.
         """
-        table = CONVERSATION_OPTIONS_EN
-        action_label = table.unarchive if unarchive else table.archive
-        opposite_label = table.archive if unarchive else table.unarchive
+        action_labels = tuple(
+            table.unarchive if unarchive else table.archive
+            for table in CONVERSATION_OPTIONS_TABLES
+        )
+        opposite_labels = tuple(
+            table.archive if unarchive else table.unarchive
+            for table in CONVERSATION_OPTIONS_TABLES
+        )
         action_description = (
             "unarchive this conversation" if unarchive else "archive this conversation"
         )
         result = await self._toggle_conversation_option(
             conversation_url_or_thread_id,
             confirm=confirm,
-            action_label=action_label,
-            opposite_label=opposite_label,
+            action_labels=action_labels,
+            opposite_labels=opposite_labels,
             action_description=action_description,
         )
         if result["status"] == "ok":

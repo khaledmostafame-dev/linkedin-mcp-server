@@ -1035,7 +1035,6 @@ async def _save_job_already_saved_scenario() -> dict[str, Any]:
     recorder = TraceRecorder("save_job__already_saved", _COMMON_ALLOWED)
     clock = FakeClock(recorder)
     page = _page(recorder)
-    page.script("evaluate:browser_locale", "en-US")
     page.script("evaluate:job_save_state", "saved")
     extractor = _extractor(page)
     async with boundaries(recorder, clock):

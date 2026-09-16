@@ -4,8 +4,10 @@ import re
 
 from linkedin_mcp_server.scraping.text import (
     CONVERSATION_OPTIONS_EN,
+    CONVERSATION_OPTIONS_TABLES,
     DETAIL_CAPTURE_EN_US,
     JOB_SAVE_EN_US,
+    JOB_SAVE_TABLES,
     JOB_SEARCH_EN_US,
     strip_conversation_chrome,
     strip_linkedin_noise,
@@ -280,6 +282,15 @@ class TestJobSaveLabels:
         assert JOB_SAVE_EN_US.saved == "Saved"
         assert JOB_SAVE_EN_US.unsaved == "Save"
 
+    def test_every_listed_locale_is_in_the_tried_table(self):
+        locales = {"Saved": "en", "تم الحفظ": "ar"}
+        assert {table.saved for table in JOB_SAVE_TABLES} == set(locales)
+        assert JOB_SAVE_EN_US in JOB_SAVE_TABLES
+
+    def test_arabic_table_holds_its_own_two_states(self):
+        arabic = next(table for table in JOB_SAVE_TABLES if table.saved == "تم الحفظ")
+        assert arabic.unsaved == "حفظ"
+
 
 class TestConversationOptionsLabels:
     def test_en_table_holds_the_opener_and_four_toggle_labels(self):
@@ -291,3 +302,18 @@ class TestConversationOptionsLabels:
         assert CONVERSATION_OPTIONS_EN.mark_unread == "Mark as unread"
         assert CONVERSATION_OPTIONS_EN.archive == "Archive"
         assert CONVERSATION_OPTIONS_EN.unarchive == "Unarchive"
+
+    def test_every_listed_locale_is_in_the_tried_tables(self):
+        assert CONVERSATION_OPTIONS_EN in CONVERSATION_OPTIONS_TABLES
+        assert len(CONVERSATION_OPTIONS_TABLES) == 2
+
+    def test_arabic_table_holds_its_own_four_toggle_labels(self):
+        arabic = next(
+            table
+            for table in CONVERSATION_OPTIONS_TABLES
+            if table is not CONVERSATION_OPTIONS_EN
+        )
+        assert arabic.mark_read == "وضع علامة كمقروءة"
+        assert arabic.mark_unread == "وضع علامة كغير مقروءة"
+        assert arabic.archive == "أرشفة"
+        assert arabic.unarchive == "إلغاء الأرشفة"

@@ -39,7 +39,7 @@ a page-owning collaborator.
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `page-owning` |
 | `search_urls` | `CONTENT_DATE_POSTED_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
 | `session` | `NAV_DELAY`, `ScrapingSession` | `page-owning` |
-| `text` | `CONVERSATION_OPTIONS_EN`, `ConversationOptionsTextTable`, `DETAIL_CAPTURE_EN_US`, `DetailCaptureTextTable`, `JOB_SAVE_EN_US`, `JOB_SEARCH_EN_US`, `JobSaveTextTable`, `JobSearchTextTable`, `SIDEBAR_CHROME_EN`, `SidebarChromeTable`, `filter_linkedin_noise_lines()`, `strip_conversation_chrome()`, `strip_linkedin_noise()`, `truncate_linkedin_noise()` | `browser-free` |
+| `text` | `CONVERSATION_OPTIONS_EN`, `CONVERSATION_OPTIONS_TABLES`, `ConversationOptionsTextTable`, `DETAIL_CAPTURE_EN_US`, `DetailCaptureTextTable`, `JOB_SAVE_EN_US`, `JOB_SAVE_TABLES`, `JOB_SEARCH_EN_US`, `JobSaveTextTable`, `JobSearchTextTable`, `SIDEBAR_CHROME_EN`, `SidebarChromeTable`, `filter_linkedin_noise_lines()`, `strip_conversation_chrome()`, `strip_linkedin_noise()`, `truncate_linkedin_noise()` | `browser-free` |
 
 ## Internal import graph
 

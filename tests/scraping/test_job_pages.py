@@ -1377,20 +1377,18 @@ class TestExtractJobIds:
         assert "No results rail" in caplog.text
 
 
-def _save_evaluate(*, locale: str = "en-US", state: str = "unsaved"):
-    """A page.evaluate double for the locale + save-control-state JS.
+def _save_evaluate(*, state: str = "unsaved"):
+    """A page.evaluate double for the save-control-state JS.
 
     Dispatches on a marker substring unique to each script; anything else
     (the diagnostic body-text read on every navigation) gets a harmless
-    empty string.
+    empty string. No locale is read anywhere — every table is tried at once.
     """
 
     async def fake_evaluate(script, *args, **kwargs):
-        if "navigator.language" in script:
-            return locale
-        if "labels.saved ? 'saved' : 'unsaved'" in script:
+        if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
             return state
-        if "expectedLabel" in script:
+        if "expectedLabels" in script:
             return True
         return ""
 
@@ -1424,11 +1422,9 @@ class TestSaveJob:
         current = {"state": "unsaved"}
 
         async def fake_evaluate(script, *args, **kwargs):
-            if "navigator.language" in script:
-                return "en-US"
-            if "labels.saved ? 'saved' : 'unsaved'" in script:
+            if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
                 return current["state"]
-            if "expectedLabel" in script:
+            if "expectedLabels" in script:
                 current["state"] = "saved"  # the click sticks
                 return True
             return ""
@@ -1450,11 +1446,9 @@ class TestSaveJob:
         current = {"state": "saved"}
 
         async def fake_evaluate(script, *args, **kwargs):
-            if "navigator.language" in script:
-                return "en-US"
-            if "labels.saved ? 'saved' : 'unsaved'" in script:
+            if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
                 return current["state"]
-            if "expectedLabel" in script:
+            if "expectedLabels" in script:
                 current["state"] = "unsaved"  # the click sticks
                 return True
             return ""
@@ -1468,10 +1462,28 @@ class TestSaveJob:
         assert result["saved"] is False
         assert result["changed"] is True
 
-    async def test_unsupported_locale_raises_rather_than_guesses(self, mock_page):
+    async def test_arabic_saved_label_is_recognized_without_locale_detection(
+        self, mock_page
+    ):
+        """No `navigator.language` read exists any more: every table is tried."""
+
+        async def fake_evaluate(script, *args, **kwargs):
+            if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
+                return "saved"  # matched against the Arabic "تم الحفظ" entry
+            return ""
+
+        mock_page.evaluate = AsyncMock(side_effect=fake_evaluate)
+        reader = _reader(mock_page)
+
+        result = await reader.save_job("12345", confirm=True)
+
+        assert result["saved"] is True
+        assert result["changed"] is False
+
+    async def test_an_unmatched_control_raises_rather_than_guesses(self, mock_page):
         from linkedin_mcp_server.core.exceptions import LinkedInScraperException
 
-        mock_page.evaluate = AsyncMock(side_effect=_save_evaluate(locale="de-DE"))
+        mock_page.evaluate = AsyncMock(side_effect=_save_evaluate(state=None))
         reader = _reader(mock_page)
 
         with pytest.raises(
@@ -1484,11 +1496,9 @@ class TestSaveJob:
         from linkedin_mcp_server.core.exceptions import LinkedInScraperException
 
         async def fake_evaluate(script, *args, **kwargs):
-            if "navigator.language" in script:
-                return "en-US"
-            if "labels.saved ? 'saved' : 'unsaved'" in script:
+            if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
                 return "unsaved"  # never flips, even after the click
-            if "expectedLabel" in script:
+            if "expectedLabels" in script:
                 return True
             return ""
 
