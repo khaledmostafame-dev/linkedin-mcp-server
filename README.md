@@ -60,9 +60,12 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
 | `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) |
-| `create_post` | Publish or schedule a post with real @mentions (`@[Name](profile or company URL)`, verified by identity, fails closed), up to 20 images or one PDF/PPTX document carousel, visibility, and LinkedIn-native scheduling (requires `confirm`; `confirm=false` previews without a browser) |
+| `create_post` | Publish or schedule a post with real @mentions (`@[Name](profile or company URL)`, verified by identity, fails closed), up to 20 images or one PDF/PPTX document carousel, visibility, posting as a company page you admin (`post_as`), and LinkedIn-native scheduling (requires `confirm`; `confirm=false` previews without a browser) |
 | `get_scheduled_posts` | List scheduled posts with identifiers |
+| `edit_scheduled_post` | Change a scheduled post's text and/or time by identifier (requires `confirm`) |
 | `delete_scheduled_post` | Delete a scheduled post by identifier (requires `confirm`) |
+| `edit_post` | Replace the text of your own published post after verifying authorship (requires `confirm`; LinkedIn re-evaluates distribution on edits) |
+| `delete_post` | Delete your own published post after verifying authorship (requires `confirm`) |
 | `close_session` | Close browser session and clean up resources |
 
 <br/>
