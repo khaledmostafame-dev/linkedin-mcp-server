@@ -14,6 +14,7 @@ import pytest
 from linkedin_mcp_server.scraping.contracts import FilterValidationError
 from linkedin_mcp_server.scraping.search_urls import (
     CONTENT_DATE_POSTED_MAP,
+    CONTENT_SORT_BY_MAP,
     EXPERIENCE_LEVEL_MAP,
     JOB_DATE_POSTED_MAP,
     JOB_TYPE_MAP,
@@ -111,6 +112,14 @@ class TestFilterTables:
             "past-24h",
             "past-week",
             "past-month",
+        }
+
+    def test_content_sort_by_codes(self):
+        assert CONTENT_SORT_BY_MAP == {
+            "relevance": "relevance",
+            "latest": "date_posted",
+            "date": "date_posted",
+            "date_posted": "date_posted",
         }
 
 
@@ -297,12 +306,20 @@ class TestBuildPeopleSearchUrl:
     def test_every_parameter_keeps_its_recorded_position(self):
         assert build_people_search_url(
             "engineer",
-            location="Seattle",
+            location="104116203",
             network=["F"],
-            current_company="1115",
+            current_company=["1115"],
+            past_company=["2573558"],
+            school=["19014"],
+            industry=["4"],
+            title="Product Manager",
+            profile_language=["en"],
         ) == (
-            f"{PEOPLE}keywords=engineer&location=Seattle"
+            f"{PEOPLE}keywords=engineer&geoUrn=%5B%22104116203%22%5D"
             "&network=%5B%22F%22%5D&currentCompany=%5B%221115%22%5D"
+            "&pastCompany=%5B%222573558%22%5D&school=%5B%2219014%22%5D"
+            "&industry=%5B%224%22%5D&title=Product+Manager"
+            "&profileLanguage=%5B%22en%22%5D"
         )
 
     @pytest.mark.parametrize("keywords,encoded", ENCODED_KEYWORDS)
@@ -358,8 +375,15 @@ class TestBuildPeopleSearchUrl:
         )
 
     def test_numeric_current_company_becomes_a_json_facet(self):
-        assert build_people_search_url("engineer", current_company="1115") == (
+        assert build_people_search_url("engineer", current_company=["1115"]) == (
             f"{PEOPLE}keywords=engineer&currentCompany=%5B%221115%22%5D"
+        )
+
+    def test_multiple_current_company_ids_share_one_json_facet(self):
+        assert build_people_search_url(
+            "engineer", current_company=["1115", "2573558"]
+        ) == (
+            f"{PEOPLE}keywords=engineer&currentCompany=%5B%221115%22%2C%222573558%22%5D"
         )
 
     @pytest.mark.parametrize(
@@ -380,26 +404,68 @@ class TestBuildPeopleSearchUrl:
     )
     def test_non_numeric_current_company_is_refused(self, value: str):
         with pytest.raises(FilterValidationError) as error:
-            build_people_search_url("engineer", current_company=value)
+            build_people_search_url("engineer", current_company=[value])
 
-        assert repr(value) in str(error.value)
-        assert "numeric LinkedIn company URN id" in str(error.value)
+        assert repr([value]) in str(error.value)
+        assert "numeric LinkedIn URN ids" in str(error.value)
+
+    def test_past_company_rejects_non_numeric_values(self):
+        with pytest.raises(FilterValidationError, match="past_company"):
+            build_people_search_url("engineer", past_company=["SAP"])
+
+    def test_school_rejects_non_numeric_values(self):
+        with pytest.raises(FilterValidationError, match="school"):
+            build_people_search_url("engineer", school=["SAP"])
+
+    def test_industry_rejects_non_numeric_values(self):
+        with pytest.raises(FilterValidationError, match="industry"):
+            build_people_search_url("engineer", industry=["SAP"])
 
     def test_empty_current_company_is_omitted_rather_than_refused(self):
-        assert build_people_search_url("engineer", current_company="") == (
+        assert build_people_search_url("engineer", current_company=[]) == (
             f"{PEOPLE}keywords=engineer"
         )
 
-    def test_location_is_percent_encoded(self):
-        assert build_people_search_url("engineer", location="São Paulo") == (
-            f"{PEOPLE}keywords=engineer&location=S%C3%A3o+Paulo"
+    def test_numeric_location_becomes_a_geo_urn_facet(self):
+        assert build_people_search_url("engineer", location="104116203") == (
+            f"{PEOPLE}keywords=engineer&geoUrn=%5B%22104116203%22%5D"
         )
+        assert "&location=" not in build_people_search_url(
+            "engineer", location="104116203"
+        )
+
+    def test_plain_text_location_is_refused(self):
+        with pytest.raises(FilterValidationError) as error:
+            build_people_search_url("engineer", location="São Paulo")
+
+        assert repr("São Paulo") in str(error.value)
+        assert "numeric LinkedIn geo URN id" in str(error.value)
+
+    def test_empty_location_is_omitted_rather_than_refused(self):
+        assert build_people_search_url("engineer", location="") == (
+            f"{PEOPLE}keywords=engineer"
+        )
+
+    def test_title_is_percent_encoded(self):
+        assert build_people_search_url("engineer", title="Product Manager") == (
+            f"{PEOPLE}keywords=engineer&title=Product+Manager"
+        )
+
+    def test_profile_language_accepts_lowercase_iso_codes(self):
+        assert build_people_search_url("engineer", profile_language=["en", "ar"]) == (
+            f"{PEOPLE}keywords=engineer&profileLanguage=%5B%22en%22%2C%22ar%22%5D"
+        )
+
+    @pytest.mark.parametrize("code", ["EN", "eng", "e1", ""])
+    def test_invalid_profile_language_is_refused(self, code: str):
+        with pytest.raises(FilterValidationError, match="profile_language"):
+            build_people_search_url("engineer", profile_language=[code])
 
     def test_network_is_refused_before_a_company_urn_is_looked_at(self):
         # Order matters for the message a caller reads back: both filters are
         # wrong here and the network token is the one reported.
         with pytest.raises(FilterValidationError, match="Invalid network token"):
-            build_people_search_url("engineer", network=["X"], current_company="SAP")
+            build_people_search_url("engineer", network=["X"], current_company=["SAP"])
 
 
 class TestBuildCompanySearchUrl:
@@ -498,3 +564,42 @@ class TestBuildContentSearchUrl:
 
         assert repr(date_posted) in str(error.value)
         assert "past-24h" in str(error.value)
+
+    @pytest.mark.parametrize(
+        "sort_by,token",
+        [
+            ("relevance", "relevance"),
+            ("latest", "date_posted"),
+            ("date", "date_posted"),
+            ("date_posted", "date_posted"),
+        ],
+    )
+    def test_sort_by_aliases(self, sort_by: str, token: str):
+        assert build_content_search_url("python", sort_by=sort_by) == (
+            f"{CONTENT}keywords=python&origin=FACETED_SEARCH&sortBy=%5B%22{token}%22%5D"
+        )
+
+    def test_absent_sort_by_omits_the_facet(self):
+        assert "sortBy" not in build_content_search_url("python")
+
+    @pytest.mark.parametrize("sort_by", ["", "   "])
+    def test_blank_sort_by_omits_the_facet(self, sort_by: str):
+        assert build_content_search_url("python", sort_by=sort_by) == (
+            f"{CONTENT}keywords=python&origin=FACETED_SEARCH"
+        )
+
+    @pytest.mark.parametrize("sort_by", ["DD", "R", "oldest", "Relevance"])
+    def test_unknown_sort_by_is_refused_rather_than_passed_through(self, sort_by: str):
+        with pytest.raises(FilterValidationError) as error:
+            build_content_search_url("python", sort_by=sort_by)
+
+        assert repr(sort_by) in str(error.value)
+        assert "relevance" in str(error.value)
+
+    def test_date_posted_and_sort_by_can_combine(self):
+        assert build_content_search_url(
+            "python", date_posted="past-week", sort_by="latest"
+        ) == (
+            f"{CONTENT}keywords=python&origin=FACETED_SEARCH"
+            "&datePosted=%5B%22past-week%22%5D&sortBy=%5B%22date_posted%22%5D"
+        )
