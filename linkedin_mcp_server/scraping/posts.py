@@ -35,6 +35,7 @@ class PostSearch:
         keywords: str,
         date_posted: str | None = None,
         max_pages: int = 3,
+        sort_by: str | None = None,
     ) -> dict[str, Any]:
         """Search LinkedIn posts/content and extract the results page.
 
@@ -54,18 +55,32 @@ class PostSearch:
                 3). Content search is an infinite scroll with no per-page URL,
                 so this caps how far the page is scrolled rather than fetching
                 discrete ``&start=`` pages.
+            sort_by: Optional sort order, one of the keys of
+                ``search_urls.CONTENT_SORT_BY_MAP`` ("relevance", default, or
+                "latest"/"date"/"date_posted"). Invalid values raise
+                ``FilterValidationError`` for the same reason as
+                ``date_posted``.
 
         Returns:
-            {url, sections: {search_results: text}} plus optional ``references``
-            (post authors, companies, linked jobs) and ``section_errors``.
+            {url, sections: {search_results: text}, stopped_reason:
+            "scroll_cap"|"end_of_results"|"error", truncated: bool} plus
+            optional ``references`` (post authors, companies, linked jobs)
+            and ``section_errors``. ``truncated`` is True when the scroll
+            budget (``max_pages`` x
+            ``_CONTENT_SCROLLS_PER_REQUESTED_PAGE``) was spent without the
+            page confirming it had reached the end of what LinkedIn would
+            lazy-load -- more posts may exist past what was captured, and
+            asking again with a larger ``max_pages`` may surface them.
             Verified live: the results page carries no per-post permalink
             anchors, so a post is addressable only through its author.
             The LLM should parse the raw text to extract each post's author,
             headline, body, date, and reaction counts.
         """
-        # Builds before it navigates, so a recency filter LinkedIn would
+        # Builds before it navigates, so a recency/sort filter LinkedIn would
         # ignore is refused rather than answered with unfiltered results.
-        url = build_content_search_url(keywords, date_posted=date_posted)
+        url = build_content_search_url(
+            keywords, date_posted=date_posted, sort_by=sort_by
+        )
         max_scrolls = max(1, max_pages) * _CONTENT_SCROLLS_PER_REQUESTED_PAGE
         extracted = await self._capture.capture(
             url,
@@ -76,19 +91,34 @@ class PostSearch:
         sections: dict[str, str] = {}
         references: dict[str, list[Reference]] = {}
         section_errors: dict[str, dict[str, Any]] = {}
+        stopped_reason: str
         if extracted.text and extracted.text != RATE_LIMITED_SECTION_TEXT:
             sections["search_results"] = extracted.text
             if extracted.references:
                 references["search_results"] = extracted.references
+            stopped_reason = (
+                "scroll_cap" if extracted.scroll_capped else "end_of_results"
+            )
         elif extracted.text == RATE_LIMITED_SECTION_TEXT:
             section_errors["search_results"] = {
                 "error_type": "rate_limit",
                 "error_message": extracted.text,
             }
+            stopped_reason = "error"
         elif extracted.error:
             section_errors["search_results"] = extracted.error
+            stopped_reason = "error"
+        else:
+            # Empty text and no error: a real zero-result search, not a
+            # failure -- the confirmed end of the (empty) result set.
+            stopped_reason = "end_of_results"
 
-        result: dict[str, Any] = {"url": url, "sections": sections}
+        result: dict[str, Any] = {
+            "url": url,
+            "sections": sections,
+            "stopped_reason": stopped_reason,
+            "truncated": stopped_reason in ("scroll_cap", "error"),
+        }
         if references:
             result["references"] = references
         if section_errors:
