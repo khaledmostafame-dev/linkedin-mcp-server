@@ -374,6 +374,17 @@
           "type": "object"
         }
       },
+      "get_pacing_status": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_person_profile": {
         "input": {
           "additionalProperties": false,
