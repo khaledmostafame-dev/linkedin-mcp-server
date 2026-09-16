@@ -152,6 +152,22 @@
         "coroutine": true,
         "signature": "(self, linkedin_username: 'str', *, action: \"Literal['accept', 'ignore']\", confirm: 'bool') -> 'dict[str, Any]'"
       },
+      "sales_nav_get_list": {
+        "coroutine": true,
+        "signature": "(self, list_url: 'str', max_items: 'int' = 100) -> 'dict[str, Any]'"
+      },
+      "sales_nav_get_lists": {
+        "coroutine": true,
+        "signature": "(self, kind: 'str' = 'leads') -> 'dict[str, Any]'"
+      },
+      "sales_nav_search_accounts": {
+        "coroutine": true,
+        "signature": "(self, keywords: 'str', filters: 'dict[str, Any] | None' = None, max_pages: 'int' = 1) -> 'dict[str, Any]'"
+      },
+      "sales_nav_search_leads": {
+        "coroutine": true,
+        "signature": "(self, keywords: 'str', filters: 'dict[str, Any] | None' = None, max_pages: 'int' = 1) -> 'dict[str, Any]'"
+      },
       "scrape_company": {
         "coroutine": true,
         "signature": "(self, company_name: 'str', requested: 'set[str]', callbacks: 'ProgressCallback | None' = None) -> 'dict[str, Any]'"
@@ -235,6 +251,10 @@
       "reply_to_comment",
       "resolve_geo_location",
       "respond_to_invitation",
+      "sales_nav_get_list",
+      "sales_nav_get_lists",
+      "sales_nav_search_accounts",
+      "sales_nav_search_leads",
       "scrape_company",
       "scrape_job",
       "scrape_person",
@@ -1535,6 +1555,127 @@
             "linkedin_username",
             "action",
             "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_get_list": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "list_url": {
+              "description": "A Sales Navigator list URL, e.g. one returned by\nsales_nav_get_lists in references[\"lists\"]. A relative path\nis joined against linkedin.com.",
+              "type": "string"
+            },
+            "max_items": {
+              "default": 100,
+              "description": "Stop once this many members have been collected\n(1-500, default 100)",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "list_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_get_lists": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "default": "leads",
+              "description": "\"leads\" or \"accounts\" (default \"leads\")",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_search_accounts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "filters": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional filter key/value pairs appended to the search\nURL. The exact filter names Sales Navigator accepts have not\nbeen verified live; pass LinkedIn's own URL parameter names."
+            },
+            "keywords": {
+              "description": "Search keywords (e.g., \"fintech Series B\")",
+              "type": "string"
+            },
+            "max_pages": {
+              "default": 1,
+              "description": "Maximum number of result pages to load (1-10, default 1)",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keywords"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_search_leads": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "filters": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional filter key/value pairs appended to the search\nURL. The exact filter names Sales Navigator accepts have not\nbeen verified live; pass LinkedIn's own URL parameter names."
+            },
+            "keywords": {
+              "description": "Search keywords (e.g., \"VP Engineering fintech\")",
+              "type": "string"
+            },
+            "max_pages": {
+              "default": 1,
+              "description": "Maximum number of result pages to load (1-10, default 1)",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keywords"
           ],
           "type": "object"
         },

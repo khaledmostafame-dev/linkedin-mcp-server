@@ -64,6 +64,7 @@ from linkedin_mcp_server.tools.person import register_person_tools
 from linkedin_mcp_server.tools.post import register_post_tools
 from linkedin_mcp_server.tools.posting import register_posting_tools
 from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+from linkedin_mcp_server.tools.sales_navigator import register_sales_navigator_tools
 
 if TYPE_CHECKING:
     from linkedin_mcp_server.daemon_proxy import DaemonProxyBackend
@@ -319,6 +320,7 @@ def create_mcp_server(
         register_saved_posts_tools(mcp, tool_timeout=tool_timeout)
         register_event_tools(mcp, tool_timeout=tool_timeout)
         register_analytics_tools(mcp, tool_timeout=tool_timeout)
+        register_sales_navigator_tools(mcp, tool_timeout=tool_timeout)
 
         # Inside the gate with the rest, and easy to miss because it is the one
         # tool defined here rather than in a `register_*` call. Left out of the

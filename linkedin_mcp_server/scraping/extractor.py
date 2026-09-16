@@ -32,6 +32,7 @@ from linkedin_mcp_server.scraping.post_composer import PostComposer
 from linkedin_mcp_server.scraping.post_content import PostEdit, PostRequest
 from linkedin_mcp_server.scraping.posts import PostSearch
 from linkedin_mcp_server.scraping.profile_page import ProfilePageReader
+from linkedin_mcp_server.scraping.sales_navigator import SalesNavigatorScraper
 from linkedin_mcp_server.scraping.session import ScrapingSession
 from linkedin_mcp_server.scraping.text import (
     strip_conversation_chrome as strip_conversation_chrome,
@@ -81,6 +82,7 @@ class LinkedInExtractor:
         self._network = NetworkScraper(session, navigator, capture)
         self._group = GroupScraper(session, navigator, capture)
         self._event = EventScraper(capture)
+        self._sales_navigator = SalesNavigatorScraper(session, navigator, content)
 
     async def get_page_text(self) -> str:
         """Extract innerText from the main content area of the current page."""
@@ -492,3 +494,31 @@ class LinkedInExtractor:
     async def create_poll(self, request: PostRequest) -> dict[str, Any]:
         """Publish or schedule a validated poll through the share composer."""
         return await self._post_composer.create_poll(request)
+
+    async def sales_nav_search_leads(
+        self,
+        keywords: str,
+        filters: dict[str, Any] | None = None,
+        max_pages: int = 1,
+    ) -> dict[str, Any]:
+        """Search Sales Navigator leads (people). Requires a Sales Navigator seat."""
+        return await self._sales_navigator.search_leads(keywords, filters, max_pages)
+
+    async def sales_nav_search_accounts(
+        self,
+        keywords: str,
+        filters: dict[str, Any] | None = None,
+        max_pages: int = 1,
+    ) -> dict[str, Any]:
+        """Search Sales Navigator accounts (companies). Requires a seat."""
+        return await self._sales_navigator.search_accounts(keywords, filters, max_pages)
+
+    async def sales_nav_get_lists(self, kind: str = "leads") -> dict[str, Any]:
+        """List the authenticated user's Sales Navigator lead/account lists."""
+        return await self._sales_navigator.get_lists(kind)
+
+    async def sales_nav_get_list(
+        self, list_url: str, max_items: int = 100
+    ) -> dict[str, Any]:
+        """Read one Sales Navigator list's members, bounded by max_items."""
+        return await self._sales_navigator.get_list(list_url, max_items)

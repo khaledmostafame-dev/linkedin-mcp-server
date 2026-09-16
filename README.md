@@ -89,6 +89,10 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_post_analytics` | Analytics of one of your own posts (impressions, members reached, reactions, comments, reposts, saves, profile viewers, followers gained, demographics when shown); other people's posts return a `not_authorized` section error |
 | `get_profile_analytics` | Your own profile and creator dashboards as separate sections (profile_viewers, search_appearances, followers, post_impressions) |
 | `get_company_page_analytics` | Admin analytics of a company page you administer (visitors, followers with count and growth, content), one navigation per section; non-admin sections return a `not_authorized` section error |
+| `sales_nav_search_leads` | Search Sales Navigator leads (people) by keyword and optional filters. Requires a Sales Navigator seat — see [Sales Navigator tools](#sales-navigator-tools) |
+| `sales_nav_search_accounts` | Search Sales Navigator accounts (companies) by keyword and optional filters. Requires a Sales Navigator seat |
+| `sales_nav_get_lists` | List the authenticated user's Sales Navigator lead or account lists. Requires a Sales Navigator seat |
+| `sales_nav_get_list` | Read one Sales Navigator list's members, bounded by `max_items`. Requires a Sales Navigator seat |
 | `close_session` | Close browser session and clean up resources |
 | `get_pacing_status` | Show LinkedIn pacing: call counters, when the next read and write are allowed, any cooldown, and the effective limits. Never contacts LinkedIn |
 
@@ -682,6 +686,36 @@ LinkedIn restricts accounts, not clients, so the server paces every tool call th
 For every number, `0` switches that limit off. An unreadable value stops the server at startup rather than silently falling back.
 
 To clear a cooldown early, for example after resolving a checkpoint in a normal browser, stop the server, delete `pacing-state.json`, and start it again. Deleting the file while the server runs has no effect, because the running server keeps its own copy.
+
+<a id="sales-navigator-tools"></a>
+
+## 🧭 Sales Navigator tools
+
+`sales_nav_search_leads`, `sales_nav_search_accounts`, `sales_nav_get_lists`
+and `sales_nav_get_list` are read-only: no InMail, connect, save, or
+list-membership writes. All four require the authenticated account to hold a
+paid Sales Navigator seat.
+
+**Seat detection is automatic and locale-independent.** An account without a
+seat is redirected by LinkedIn away from `/sales/` the moment any Sales
+Navigator page loads. Every tool here checks the *landed URL* for that,
+never page text, and stops immediately — no scrolling, no further
+navigation — returning a `section_errors` entry with `error_type:
+"sales_navigator_unavailable"` instead of an empty or misleading result.
+
+**The URL shapes these tools navigate to are this project's own
+construction** (`/sales/search/people`, `/sales/search/companies`,
+`/sales/lists/people`, `/sales/lists/company`, plus flat `keywords=`/filter
+query parameters), not confirmed against a live Sales Navigator seat.
+LinkedIn's real Sales Navigator search is widely reported to encode filters
+inside one structured `query` parameter rather than flat parameters; that
+exact grammar has not been reproduced here for lack of a live capture to
+verify it against. Treat `filters` as best-effort until verified: pass
+LinkedIn's own parameter names if you know them, and expect that an unknown
+filter may simply be ignored by LinkedIn rather than rejected.
+
+<br/>
+<br/>
 
 <a id="non-english-linkedin-ui"></a>
 

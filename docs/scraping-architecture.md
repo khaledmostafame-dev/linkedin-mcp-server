@@ -47,6 +47,7 @@ a page-owning collaborator.
 | `posts` | `PostSearch` | `browser-free` |
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `page-owning` |
 | `response_capture` | `drain_listener_tasks()` | `browser-free` |
+| `sales_navigator` | `SALES_NAVIGATOR_UNAVAILABLE_ERROR`, `SALES_NAVIGATOR_UNAVAILABLE_MESSAGE`, `SalesNavigatorScraper` | `page-owning` |
 | `search_urls` | `CONTENT_DATE_POSTED_MAP`, `CONTENT_SORT_BY_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_event_search_url()`, `build_group_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
 | `session` | `NAV_DELAY`, `ScrapingSession` | `page-owning` |
 | `text` | `DETAIL_CAPTURE_EN_US`, `DetailCaptureTextTable`, `SIDEBAR_CHROME_EN`, `SidebarChromeTable`, `filter_linkedin_noise_lines()`, `normalize_localized_digits()`, `strip_conversation_chrome()`, `strip_linkedin_noise()`, `truncate_linkedin_noise()` | `browser-free` |
@@ -65,7 +66,7 @@ a page-owning collaborator.
 - `conversations` -> `content`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `session`, `text`
 - `entity_search` -> `capture`, `contracts`, `job_policy`, `link_metadata`, `session`
 - `events` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `search_urls`
-- `extractor` -> `analytics`, `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `events`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `session`, `text`
+- `extractor` -> `analytics`, `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `events`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `sales_navigator`, `session`, `text`
 - `feed` -> `content`, `contracts`, `feed_payload`, `navigation`, `response_capture`, `session`, `text`
 - `feed_payload` -> `link_metadata`
 - `fields` -> `capture`
@@ -85,6 +86,7 @@ a page-owning collaborator.
 - `posts` -> `capture`, `contracts`, `link_metadata`, `search_urls`
 - `profile_page` -> `session`
 - `response_capture` -> _(none)_
+- `sales_navigator` -> `content`, `contracts`, `link_metadata`, `navigation`, `session`, `text`
 - `search_urls` -> `contracts`
 - `session` -> _(none)_
 - `text` -> _(none)_
@@ -126,6 +128,10 @@ a page-owning collaborator.
 - `reply_to_comment`
 - `resolve_geo_location`
 - `respond_to_invitation`
+- `sales_nav_get_list`
+- `sales_nav_get_lists`
+- `sales_nav_search_accounts`
+- `sales_nav_search_leads`
 - `scrape_company`
 - `scrape_job`
 - `scrape_person`
@@ -157,6 +163,7 @@ a page-owning collaborator.
 - `_person`
 - `_post_composer`
 - `_posts`
+- `_sales_navigator`
 
 ## Dependency-direction violations
 

@@ -236,6 +236,22 @@
       "description": "Read the admin analytics of a LinkedIn company page the signed-in member administers: visitors, followers and follower growth, and content performance"
     },
     {
+      "name": "sales_nav_search_leads",
+      "description": "Search Sales Navigator leads (people) by keyword and optional filters. Requires a Sales Navigator seat; returns a clear error when the account does not have one."
+    },
+    {
+      "name": "sales_nav_search_accounts",
+      "description": "Search Sales Navigator accounts (companies) by keyword and optional filters. Requires a Sales Navigator seat; returns a clear error when the account does not have one."
+    },
+    {
+      "name": "sales_nav_get_lists",
+      "description": "List the authenticated user's Sales Navigator lead or account lists. Requires a Sales Navigator seat."
+    },
+    {
+      "name": "sales_nav_get_list",
+      "description": "Read one Sales Navigator list's members, bounded by max_items. Requires a Sales Navigator seat."
+    },
+    {
       "name": "close_session",
       "description": "Properly close browser session and clean up resources"
     },

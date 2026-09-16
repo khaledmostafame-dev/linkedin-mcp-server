@@ -1,0 +1,97 @@
+{
+  "call": {
+    "arguments": {
+      "kind": "leads"
+    },
+    "method": "sales_nav_get_lists"
+  },
+  "events": [
+    {
+      "call": "sales_nav_get_lists",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "sales_nav_get_lists",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/lists/people",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "sales_nav_get_lists",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/sales/lists/people",
+      "requested_url": "https://www.linkedin.com/sales/lists/people",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "sales_nav_get_lists",
+      "description": "goto https://www.linkedin.com/sales/lists/people",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "sales_nav_get_lists",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/lists/people",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "sales_nav_get_lists",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "sales_nav_get_lists",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "sales_nav_get_lists",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "sales_nav_get_lists",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "sales_nav_get_lists",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 5,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "sales_nav_get_lists",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "8f7f95c2d74d"
+    }
+  ],
+  "result": {
+    "section_names": [
+      "lists"
+    ],
+    "sections": {
+      "lists": "Sales Navigator content"
+    },
+    "url": "https://www.linkedin.com/sales/lists/people"
+  },
+  "scenario": "sales_nav_get_lists__baseline",
+  "schema_version": 1
+}
