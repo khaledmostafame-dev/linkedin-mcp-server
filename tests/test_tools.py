@@ -44,6 +44,15 @@ def _make_mock_extractor(scrape_result: dict) -> MagicMock:
     mock.search_companies = AsyncMock(return_value=scrape_result)
     mock.search_posts = AsyncMock(return_value=scrape_result)
     mock.get_company_employees = AsyncMock(return_value=scrape_result)
+    mock.get_mutual_connections = AsyncMock(return_value=scrape_result)
+    mock.list_connections = AsyncMock(return_value=scrape_result)
+    mock.get_invitations = AsyncMock(return_value=scrape_result)
+    mock.withdraw_invitation = AsyncMock(return_value=scrape_result)
+    mock.respond_to_invitation = AsyncMock(return_value=scrape_result)
+    mock.follow = AsyncMock(return_value=scrape_result)
+    mock.search_groups = AsyncMock(return_value=scrape_result)
+    mock.get_group_posts = AsyncMock(return_value=scrape_result)
+    mock.get_group_members = AsyncMock(return_value=scrape_result)
     mock.extract_page = AsyncMock(
         return_value=ExtractedSection(text="some text", references=[])
     )
@@ -1623,6 +1632,242 @@ class TestPostTools:
             await mcp.call_tool("search_posts", {"keywords": "python", "max_pages": 0})
 
 
+class TestNetworkTools:
+    async def test_get_mutual_connections_success(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/search/results/people/?facetConnectionOf=%22X%22",
+            "sections": {"mutual_connections": "Jane Doe"},
+            "stopped_reason": "end_of_results",
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.network import register_network_tools
+
+        mcp = FastMCP("test")
+        register_network_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_mutual_connections")
+        result = await tool_fn("stickerdaniel", mock_context, extractor=mock_extractor)
+
+        assert result["sections"]["mutual_connections"] == "Jane Doe"
+        mock_extractor.get_mutual_connections.assert_awaited_once_with(
+            "stickerdaniel", max_results=50
+        )
+
+    async def test_list_connections_forwards_sort_and_max_results(self, mock_context):
+        expected = {"url": "...", "sections": {"connections": "Alice\nBob"}}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.network import register_network_tools
+
+        mcp = FastMCP("test")
+        register_network_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "list_connections")
+        result = await tool_fn(
+            mock_context, max_results=25, sort="first_name", extractor=mock_extractor
+        )
+
+        assert result["sections"]["connections"] == "Alice\nBob"
+        mock_extractor.list_connections.assert_awaited_once_with(
+            max_results=25, sort="first_name"
+        )
+
+    async def test_get_invitations_defaults_to_received(self, mock_context):
+        expected = {"url": "...", "sections": {"received_invitations": "Jane"}}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.network import register_network_tools
+
+        mcp = FastMCP("test")
+        register_network_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_invitations")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+
+        assert result["sections"]["received_invitations"] == "Jane"
+        mock_extractor.get_invitations.assert_awaited_once_with(
+            direction="received", max_results=50
+        )
+
+    async def test_get_invitations_sent_direction(self, mock_context):
+        expected = {"url": "...", "sections": {"sent_invitations": "Pending"}}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.network import register_network_tools
+
+        mcp = FastMCP("test")
+        register_network_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_invitations")
+        await tool_fn(mock_context, direction="sent", extractor=mock_extractor)
+
+        mock_extractor.get_invitations.assert_awaited_once_with(
+            direction="sent", max_results=50
+        )
+
+    async def test_withdraw_invitation_forwards_confirm(self, mock_context):
+        expected = {"url": "...", "status": "preview", "message": "..."}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.network import register_network_tools
+
+        mcp = FastMCP("test")
+        register_network_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "withdraw_invitation")
+        result = await tool_fn(
+            "stickerdaniel", False, mock_context, extractor=mock_extractor
+        )
+
+        assert result["status"] == "preview"
+        mock_extractor.withdraw_invitation.assert_awaited_once_with(
+            "stickerdaniel", confirm=False
+        )
+
+    async def test_respond_to_invitation_forwards_action_and_confirm(
+        self, mock_context
+    ):
+        expected = {"url": "...", "status": "accepted", "message": "..."}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.network import register_network_tools
+
+        mcp = FastMCP("test")
+        register_network_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "respond_to_invitation")
+        result = await tool_fn(
+            "stickerdaniel", "accept", True, mock_context, extractor=mock_extractor
+        )
+
+        assert result["status"] == "accepted"
+        mock_extractor.respond_to_invitation.assert_awaited_once_with(
+            "stickerdaniel", action="accept", confirm=True
+        )
+
+    async def test_follow_forwards_unfollow_and_confirm(self, mock_context):
+        expected = {"url": "...", "status": "toggled", "requested": "unfollow"}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.network import register_network_tools
+
+        mcp = FastMCP("test")
+        register_network_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "follow")
+        result = await tool_fn(
+            "https://www.linkedin.com/company/anthropic/",
+            True,
+            mock_context,
+            unfollow=True,
+            extractor=mock_extractor,
+        )
+
+        assert result["status"] == "toggled"
+        mock_extractor.follow.assert_awaited_once_with(
+            "https://www.linkedin.com/company/anthropic/",
+            confirm=True,
+            unfollow=True,
+        )
+
+    async def test_network_tool_error_is_mapped(self, mock_context):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.exceptions import SessionExpiredError
+
+        mock_extractor = MagicMock()
+        mock_extractor.get_mutual_connections = AsyncMock(
+            side_effect=SessionExpiredError()
+        )
+
+        from linkedin_mcp_server.tools.network import register_network_tools
+
+        mcp = FastMCP("test")
+        register_network_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_mutual_connections")
+        with pytest.raises(ToolError, match="Session expired"):
+            await tool_fn("stickerdaniel", mock_context, extractor=mock_extractor)
+
+
+class TestGroupTools:
+    async def test_search_groups_success(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/search/results/groups/?keywords=rpa",
+            "sections": {"search_results": "RPA Group"},
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.group import register_group_tools
+
+        mcp = FastMCP("test")
+        register_group_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "search_groups")
+        result = await tool_fn("rpa", mock_context, extractor=mock_extractor)
+
+        assert result["sections"]["search_results"] == "RPA Group"
+        mock_extractor.search_groups.assert_awaited_once_with("rpa")
+
+    async def test_get_group_posts_forwards_max_posts(self, mock_context):
+        expected = {"url": "...", "sections": {"posts": "Post 1"}}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.group import register_group_tools
+
+        mcp = FastMCP("test")
+        register_group_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_group_posts")
+        result = await tool_fn(
+            "12345", mock_context, max_posts=10, extractor=mock_extractor
+        )
+
+        assert result["sections"]["posts"] == "Post 1"
+        mock_extractor.get_group_posts.assert_awaited_once_with("12345", max_posts=10)
+
+    async def test_get_group_members_forwards_keywords(self, mock_context):
+        expected = {"url": "...", "sections": {"members": "Jane Doe"}}
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.group import register_group_tools
+
+        mcp = FastMCP("test")
+        register_group_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_group_members")
+        result = await tool_fn(
+            "12345",
+            mock_context,
+            max_members=100,
+            keywords="jane",
+            extractor=mock_extractor,
+        )
+
+        assert result["sections"]["members"] == "Jane Doe"
+        mock_extractor.get_group_members.assert_awaited_once_with(
+            "12345", max_members=100, keywords="jane"
+        )
+
+    async def test_get_group_members_error(self, mock_context):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.exceptions import SessionExpiredError
+
+        mock_extractor = MagicMock()
+        mock_extractor.get_group_members = AsyncMock(side_effect=SessionExpiredError())
+
+        from linkedin_mcp_server.tools.group import register_group_tools
+
+        mcp = FastMCP("test")
+        register_group_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_group_members")
+        with pytest.raises(ToolError, match="Session expired"):
+            await tool_fn("12345", mock_context, extractor=mock_extractor)
+
+
 class TestToolTimeouts:
     async def test_all_tools_have_global_timeout(self):
         from linkedin_mcp_server.server import create_mcp_server
@@ -1646,6 +1891,15 @@ class TestToolTimeouts:
             "send_message",
             "get_feed",
             "search_posts",
+            "get_mutual_connections",
+            "list_connections",
+            "get_invitations",
+            "withdraw_invitation",
+            "respond_to_invitation",
+            "follow",
+            "search_groups",
+            "get_group_posts",
+            "get_group_members",
             "close_session",
         )
 
@@ -1679,6 +1933,15 @@ class TestToolTimeouts:
             "send_message",
             "get_feed",
             "search_posts",
+            "get_mutual_connections",
+            "list_connections",
+            "get_invitations",
+            "withdraw_invitation",
+            "respond_to_invitation",
+            "follow",
+            "search_groups",
+            "get_group_posts",
+            "get_group_members",
             "close_session",
         )
 

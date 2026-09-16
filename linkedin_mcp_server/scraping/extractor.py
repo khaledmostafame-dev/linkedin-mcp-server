@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from patchright.async_api import Page
 
@@ -18,10 +18,12 @@ from linkedin_mcp_server.scraping.contracts import (
 )
 from linkedin_mcp_server.scraping.conversations import ConversationReader
 from linkedin_mcp_server.scraping.feed import FeedScraper
+from linkedin_mcp_server.scraping.group import GroupScraper
 from linkedin_mcp_server.scraping.job_pages import JobPageReader
 from linkedin_mcp_server.scraping.jobs import JobScraper
 from linkedin_mcp_server.scraping.message_sender import MessageSender
 from linkedin_mcp_server.scraping.navigation import PageNavigator
+from linkedin_mcp_server.scraping.network import NetworkScraper
 from linkedin_mcp_server.scraping.person import PersonScraper
 from linkedin_mcp_server.scraping.posts import PostSearch
 from linkedin_mcp_server.scraping.profile_page import ProfilePageReader
@@ -68,6 +70,8 @@ class LinkedInExtractor:
         self._conversations = ConversationReader(
             session, navigator, content, profile_page
         )
+        self._network = NetworkScraper(session, navigator, capture)
+        self._group = GroupScraper(session, navigator, capture)
 
     async def get_page_text(self) -> str:
         """Extract innerText from the main content area of the current page."""
@@ -256,3 +260,80 @@ class LinkedInExtractor:
             confirm_send=confirm_send,
             profile_urn=profile_urn,
         )
+
+    async def get_mutual_connections(
+        self, linkedin_username: str, max_results: int = 50
+    ) -> dict[str, Any]:
+        """List connections shared between the authenticated user and a profile."""
+        return await self._network.get_mutual_connections(
+            linkedin_username, max_results
+        )
+
+    async def list_connections(
+        self,
+        max_results: int = 100,
+        sort: Literal["recently_added", "first_name", "last_name"] = "recently_added",
+    ) -> dict[str, Any]:
+        """List the authenticated user's 1st-degree connections."""
+        return await self._network.list_connections(max_results, sort)
+
+    async def get_invitations(
+        self,
+        direction: Literal["received", "sent"] = "received",
+        max_results: int = 50,
+    ) -> dict[str, Any]:
+        """List outgoing or incoming connection-request invitations."""
+        return await self._network.get_invitations(direction, max_results)
+
+    async def withdraw_invitation(
+        self, linkedin_username: str, *, confirm: bool
+    ) -> dict[str, Any]:
+        """Withdraw a previously-sent, still-pending connection request."""
+        return await self._connection.withdraw_invitation(
+            linkedin_username, confirm=confirm
+        )
+
+    async def respond_to_invitation(
+        self,
+        linkedin_username: str,
+        *,
+        action: Literal["accept", "ignore"],
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Accept or ignore an incoming connection request."""
+        return await self._connection.respond_to_invitation(
+            linkedin_username,
+            action=action,
+            confirm=confirm,
+        )
+
+    async def follow(
+        self,
+        target_url: str,
+        *,
+        confirm: bool,
+        unfollow: bool = False,
+    ) -> dict[str, Any]:
+        """Follow or unfollow a person or company page."""
+        return await self._network.follow(
+            target_url, confirm=confirm, unfollow=unfollow
+        )
+
+    async def search_groups(self, keywords: str) -> dict[str, Any]:
+        """Search for LinkedIn groups by keyword."""
+        return await self._group.search_groups(keywords)
+
+    async def get_group_posts(
+        self, group_id: str, max_posts: int = 20
+    ) -> dict[str, Any]:
+        """List recent posts from a group's home feed."""
+        return await self._group.get_group_posts(group_id, max_posts)
+
+    async def get_group_members(
+        self,
+        group_id: str,
+        max_members: int = 50,
+        keywords: str | None = None,
+    ) -> dict[str, Any]:
+        """List members of a LinkedIn group from its /members/ page."""
+        return await self._group.get_group_members(group_id, max_members, keywords)

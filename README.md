@@ -60,6 +60,15 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
 | `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) |
+| `get_mutual_connections` | List LinkedIn connections shared between you and another profile, reached via the profile's own shared-connections search link |
+| `list_connections` | List the authenticated user's 1st-degree connections, sorted by recently-added/first-name/last-name |
+| `get_invitations` | List outgoing or incoming connection-request invitations |
+| `withdraw_invitation` | Withdraw a previously-sent, still-pending connection request, identified by profile URL (requires confirmation) |
+| `respond_to_invitation` | Accept or ignore an incoming connection request, identified by profile URL (requires confirmation) |
+| `follow` | Follow or unfollow a person or company page (requires confirmation) |
+| `search_groups` | Search for LinkedIn groups by keyword |
+| `get_group_posts` | List recent posts from a LinkedIn group's home feed |
+| `get_group_members` | List members of a LinkedIn group from its /members/ page, with optional keyword filter (full list requires the account to be a group member) |
 | `close_session` | Close browser session and clean up resources |
 
 <br/>
