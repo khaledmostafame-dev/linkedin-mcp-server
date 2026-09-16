@@ -1,0 +1,15 @@
+{
+  "call": {
+    "arguments": {
+      "company": "analytical-engine",
+      "sections": "bogus"
+    },
+    "method": "get_company_page_analytics"
+  },
+  "events": [],
+  "result": {
+    "refused": "Unknown company analytics sections: bogus. Valid: visitors, followers, content."
+  },
+  "scenario": "get_company_page_analytics__sections__refused",
+  "schema_version": 1
+}

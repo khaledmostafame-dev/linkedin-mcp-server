@@ -6,6 +6,8 @@ import time
 
 from patchright.async_api import Page, TimeoutError as PlaywrightTimeoutError
 
+from linkedin_mcp_server import pacing_signals
+
 from .exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)
@@ -126,6 +128,7 @@ async def detect_rate_limit(page: Page) -> None:
     # Check URL for security challenges
     current_url = page.url
     if "linkedin.com/checkpoint" in current_url or "authwall" in current_url:
+        pacing_signals.report(pacing_signals.SECURITY_CHALLENGE, current_url)
         raise RateLimitError(
             "LinkedIn security checkpoint detected. "
             "You may need to verify your identity or wait before continuing.",
@@ -165,13 +168,21 @@ async def detect_rate_limit(page: Page) -> None:
 
 async def scroll_to_bottom(
     page: Page, pause_time: float = 1.0, max_scrolls: int = 10
-) -> None:
+) -> bool:
     """Scroll to the bottom of the page to trigger lazy loading.
 
     Args:
         page: Patchright page object
         pause_time: Time to pause between scrolls (seconds)
         max_scrolls: Maximum number of scroll attempts
+
+    Returns:
+        True when the page's height stopped growing before the scroll budget
+        ran out -- the confirmed end of what lazy-loads. False when
+        ``max_scrolls`` was spent without that confirmation, which callers
+        pacing an infinite-scroll surface (content search) use to tell "we
+        stopped" from "LinkedIn stopped" -- more content may still be behind
+        a scroll this call never took.
     """
     for i in range(max_scrolls):
         previous_height = await page.evaluate("document.body.scrollHeight")
@@ -181,7 +192,8 @@ async def scroll_to_bottom(
         new_height = await page.evaluate("document.body.scrollHeight")
         if new_height == previous_height:
             logger.debug("Reached bottom after %d scrolls", i + 1)
-            break
+            return True
+    return False
 
 
 async def scroll_job_sidebar(
@@ -437,6 +449,34 @@ async def scroll_job_sidebar(
     return False
 
 
+# Screen-reader labels LinkedIn's popup/modal dismiss control carries, keyed
+# by locale. ``button.artdeco-modal__dismiss`` below is locale-independent (a
+# design-system class, not user-facing text) and always stays in the built
+# selector; these ``aria-label`` values are the fallback for a modal that
+# doesn't carry that class. Guarded per CLAUDE.md -> Scraping Rules ("where
+# text is genuinely the only signal, guard it behind an explicit per-locale
+# table and document the limitation in code"). The "ar" entry is a
+# best-effort transcription (Dismiss -> "تجاهل", Close -> "إغلاق"), not
+# verified against a live LinkedIn Arabic session; a locale missing here, or
+# a mistranscribed entry, still falls through to the class-based selector or
+# to this function's own no-modal-found return of ``False`` -- see
+# docs/i18n-audit.md.
+_MODAL_DISMISS_ARIA_LABELS: dict[str, tuple[str, ...]] = {
+    "en": ("Dismiss", "Close"),
+    "ar": ("تجاهل", "إغلاق"),
+}
+
+
+def _modal_dismiss_selector() -> str:
+    """Build the modal-dismiss locator from the locale table plus the class."""
+    aria_selectors = ", ".join(
+        f'button[aria-label="{label}"]'
+        for labels in _MODAL_DISMISS_ARIA_LABELS.values()
+        for label in labels
+    )
+    return f"{aria_selectors}, button.artdeco-modal__dismiss"
+
+
 async def handle_modal_close(page: Page) -> bool:
     """Close any popup modals that might be blocking content.
 
@@ -444,11 +484,7 @@ async def handle_modal_close(page: Page) -> bool:
         True if a modal was closed, False otherwise
     """
     try:
-        close_button = page.locator(
-            'button[aria-label="Dismiss"], '
-            'button[aria-label="Close"], '
-            "button.artdeco-modal__dismiss"
-        ).first
+        close_button = page.locator(_modal_dismiss_selector()).first
 
         if await close_button.is_visible(timeout=1000):
             await close_button.click()

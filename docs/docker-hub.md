@@ -10,18 +10,33 @@ A Model Context Protocol (MCP) server that connects AI assistants to LinkedIn. A
 - **Own Profile**: Fetch the authenticated user's own profile to give agents self-context
 - **Profile Connections**: Send connection requests or accept incoming ones, with optional notes
 - **Sidebar Profiles**: Extract profile URLs from the sidebar recommendation sections on a profile page ("More profiles for you", "Explore premium profiles", "People you may know")
-- **Messaging**: List the inbox, read a conversation by username or thread ID, search messages by keyword, and compose/send a new message with explicit confirmation (profile-based send may open a separate DM rather than reply in an existing thread)
+- **Messaging**: List the inbox, read a conversation by username or thread ID, search messages by keyword, compose/send a new message with explicit confirmation (profile-based send may open a separate DM rather than reply in an existing thread), reply within an existing thread by thread ID, and mark a thread read/unread or archive/unarchive it via its options menu (all writes require explicit confirmation)
 - **Company Profiles**: Extract comprehensive company data, including the LinkedIn company URN id (used by LinkedIn's people-search `currentCompany` URL facet)
 - **Company Employees**: List employees at a company with optional keyword filtering
 - **Company Search**: Search for companies by keyword
 - **Job Details**: Retrieve job posting information
-- **Job Search**: Search for jobs with keywords and location filters
+- **Job Search**: Search for jobs with keywords and location filters, reporting LinkedIn's own advertised result total when available
 - **Saved Jobs**: List job postings saved by the authenticated user
+- **Save Job**: Save or unsave a job posting for the authenticated account, with explicit confirmation
 - **People Search**: Search for people by keywords and location
 - **Person Posts**: Get recent activity/posts from a person's profile
 - **Company Posts**: Get recent posts from a company's LinkedIn feed
 - **Home Feed**: Get recent posts from the authenticated user's LinkedIn home feed
+- **Notifications**: List recent notifications (replies, reactions, mentions, connection requests) with an optional "my_posts"/"mentions" filter
+- **Hashtag Feed**: Get recent posts from a LinkedIn hashtag feed
 - **Post Search**: Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter
+- **Saved Posts**: List and save/unsave posts (structural toggle detection, confirmation required to write)
+- **Post Reactions**: List who reacted to a post via its reactions dialog
+- **Job Alerts**: List the authenticated user's job alerts, each alert's own search returned as a section
+- **Location Resolution**: Resolve a free-text place name to LinkedIn geo URN id candidates for people search
+- **Comments**: Read a post's comments and replies, comment on a post, reply to or like one comment (writes require explicit confirmation)
+- **Posting**: Publish or schedule posts and polls with @mentions, images or a document, list/edit/delete scheduled posts, and edit or delete your own published posts (writes require explicit confirmation)
+- **Analytics**: Read your own post, profile/creator and administered company page analytics
+- **Network**: List your connections, mutual connections with a profile and pending invitations; withdraw or respond to invitations and follow/unfollow a person or company (writes require explicit confirmation)
+- **Groups**: Search groups and list a group's posts or members
+- **Events**: Search events, read an event's details and list its attendees
+- **Sales Navigator**: Search leads and accounts and read your lead/account lists (read-only; requires a Sales Navigator seat)
+- **Pacing**: Every LinkedIn call is paced with rolling caps and a cooldown after a 429 or checkpoint; `get_pacing_status` reports the counters without contacting LinkedIn
 - **Compact References**: Return typed per-section links alongside readable text without shipping full-page markdown
 
 ## Quick Start
@@ -131,6 +146,14 @@ Use `$env:USERPROFILE\.linkedin-mcp` when constructing the host path outside JSO
 | `BROWSER_WAIT` | `25` | How long to wait for another server process to hand over the shared browser, in seconds (max 45; `0` = report busy at once). |
 | `BROWSER_MIN_HOLD` | `20` | Shortest time a process keeps the shared browser before handing it over, in seconds. Clamped to 3 seconds below `BROWSER_WAIT`, so raise that one along with it. Higher means fewer browser restarts but longer waits for other clients. |
 | `BROWSER_IDLE_TIMEOUT` | `600` | Close an idle browser and release the profile after this many seconds without a tool call (`0` = keep it open). |
+| `PACING_ENABLED` | `true` | Pace, cap and cool down tool calls that reach LinkedIn, across every client. See [Pacing and account safety](https://github.com/stickerdaniel/linkedin-mcp-server#pacing). |
+| `PACING_MIN_INTERVAL_SECONDS` | `8` | Gap after any LinkedIn call, in seconds (`0` = none). |
+| `PACING_JITTER_SECONDS` | `7` | Random extra, up to this many seconds, added to every gap. |
+| `PACING_WRITE_MIN_INTERVAL_SECONDS` | `90` | Gap between write calls such as `send_message` and `connect_with_person` (`0` = none). |
+| `PACING_MAX_READS_PER_HOUR` | `40` | Read calls allowed in any 60 minutes; over it, calls fail with the time to retry (`0` = no cap). |
+| `PACING_MAX_WRITES_PER_HOUR` | `6` | Write calls allowed in any 60 minutes (`0` = no cap). |
+| `PACING_MAX_WRITES_PER_DAY` | `20` | Write calls allowed in any 24 hours (`0` = no cap). |
+| `PACING_COOLDOWN_BASE_SECONDS` | `1800` | After an HTTP 429 or a checkpoint redirect, refuse LinkedIn calls this long, doubling on repeats within a day (`0` = no cooldown). State persists in `pacing-state.json` in the mounted `~/.linkedin-mcp`. |
 | `AUTO_IMPORT_FROM_BROWSER` | on | Import a session from a signed-in local browser on the first tool call that needs one. Skipped in containers, which have no host browser or keychain. |
 | `TRANSPORT` | `stdio` | Transport mode: stdio, streamable-http |
 | `HOST` | `127.0.0.1` | HTTP server host (for streamable-http transport) |

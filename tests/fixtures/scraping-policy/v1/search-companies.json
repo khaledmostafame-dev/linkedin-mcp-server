@@ -96,16 +96,19 @@
       "call": "search_companies",
       "kind": "evaluate",
       "operation": "root_content",
-      "program_digest": "e8a0e21ac6f5"
+      "program_digest": "8f7f95c2d74d"
     }
   ],
   "result": {
+    "pages_fetched": 1,
     "section_names": [
       "search_results"
     ],
     "sections": {
       "search_results": "Result content"
     },
+    "stopped_reason": "no_more_results",
+    "truncated": false,
     "url": "https://www.linkedin.com/search/results/companies/?keywords=engine"
   },
   "scenario": "search_companies__baseline",

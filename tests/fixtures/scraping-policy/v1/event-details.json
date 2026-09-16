@@ -1,0 +1,105 @@
+{
+  "call": {
+    "arguments": {
+      "event_url": "1234567890"
+    },
+    "method": "get_event_details"
+  },
+  "events": [
+    {
+      "call": "get_event_details",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "get_event_details",
+      "extra": {
+        "target_url": "https://www.linkedin.com/events/1234567890/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "get_event_details",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/events/1234567890/",
+      "requested_url": "https://www.linkedin.com/events/1234567890/",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "get_event_details",
+      "description": "goto https://www.linkedin.com/events/1234567890/",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "get_event_details",
+      "extra": {
+        "target_url": "https://www.linkedin.com/events/1234567890/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "get_event_details",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "get_event_details",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "get_event_details",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "get_event_details",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "get_event_details",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "get_event_details",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 5,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "get_event_details",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "8f7f95c2d74d"
+    }
+  ],
+  "result": {
+    "section_names": [
+      "event_details"
+    ],
+    "sections": {
+      "event_details": "Result content"
+    },
+    "url": "https://www.linkedin.com/events/1234567890/"
+  },
+  "scenario": "get_event_details__baseline",
+  "schema_version": 1
+}

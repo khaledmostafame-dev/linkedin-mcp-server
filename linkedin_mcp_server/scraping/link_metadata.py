@@ -16,7 +16,15 @@ ReferenceKind = Literal[
     "newsletter",
     "school",
     "conversation",
+    "group",
+    "event",
     "external",
+    # One comment on a post (get_post_comments). `url` is the comment author's
+    # profile or company page and `value` the comment URN; see
+    # `scraping/comments.CommentReference` for the extra keys it carries.
+    "comment",
+    "image",
+    "job_alert",
 ]
 
 
@@ -43,34 +51,97 @@ class RawReference(TypedDict, total=False):
     in_footer: bool
 
 
-_GENERIC_LABELS = {
-    "show all",
-    "follow",
-    "following",
-    "connect",
-    "send",
-    "like",
-    "comment",
-    "repost",
-    "post",
-    "play",
-    "pause",
-    "fullscreen",
-    "close",
-    "manage notifications",
-    "view my newsletter",
-    "my newsletter",
-}
+class RawImage(TypedDict, total=False):
+    """Raw ``<img>`` data collected from the browser DOM."""
 
-_CONTEXT_LABELS = {
-    "about",
-    "experience",
-    "education",
-    "interests",
-    "honors",
-    "languages",
-    "featured",
-    "contact info",
+    src: str
+    alt: str
+
+
+# Generic control/action words LinkedIn attaches to anchors as visible text,
+# aria-label or title. Never useful as a reference label, so a match
+# (case-insensitively, see `clean_label`) drops the label rather than
+# surfacing UI chrome as if it were a person's or a company's name.
+#
+# Keyed by locale per CLAUDE.md -> Scraping Rules ("where text is genuinely
+# the only signal, guard it behind an explicit per-locale table and document
+# the limitation in code"); this module reads no locale off the page, so
+# every locale's set is matched at once via the `_GENERIC_LABELS` union below
+# rather than picking one table. A label from a locale missing here, or a
+# mistranscribed entry, only makes the drop-list under-inclusive -- the
+# label leaks through as reference text instead of being dropped, never the
+# reverse (a section heading is never a UI control the fixture below claims
+# to model, so nothing legitimate is ever dropped by a false-positive match).
+# The "ar" entries are a best-effort transcription, not verified against a
+# live LinkedIn Arabic session -- see docs/i18n-audit.md.
+_GENERIC_LABELS_BY_LOCALE: dict[str, frozenset[str]] = {
+    "en": frozenset(
+        {
+            "show all",
+            "follow",
+            "following",
+            "connect",
+            "send",
+            "like",
+            "comment",
+            "repost",
+            "post",
+            "play",
+            "pause",
+            "fullscreen",
+            "close",
+            "manage notifications",
+            "view my newsletter",
+            "my newsletter",
+        }
+    ),
+    "ar": frozenset(
+        {
+            "عرض الكل",
+            "متابعة",
+            "إلغاء المتابعة",
+            "اتصال",
+            "إرسال",
+            "إعجاب",
+            "تعليق",
+            "مشاركة منشور",
+            "منشور",
+            "تشغيل",
+            "إيقاف مؤقت",
+            "ملء الشاشة",
+            "إغلاق",
+            "إدارة الإشعارات",
+        }
+    ),
+}
+_GENERIC_LABELS: frozenset[str] = frozenset().union(*_GENERIC_LABELS_BY_LOCALE.values())
+
+# Section headings worth keeping as a reference's `context`, matched against
+# a normalized (lowercased, whitespace-collapsed) `h1`/`h2`/`h3`. Same
+# per-locale-table guard as `_GENERIC_LABELS_BY_LOCALE` above, but here the
+# matched text becomes API output (the `context` field), so a localized
+# heading is translated back to its canonical English tag rather than
+# returned verbatim -- a caller sees the same fixed vocabulary regardless of
+# which locale's heading matched. The "ar" entries are equally unverified
+# best-effort transcriptions; see docs/i18n-audit.md.
+_CONTEXT_LABEL_TRANSLATIONS: dict[str, dict[str, str]] = {
+    "about": {"ar": "نبذة عني"},
+    "experience": {"ar": "الخبرة"},
+    "education": {"ar": "التعليم"},
+    "interests": {"ar": "الاهتمامات"},
+    "honors": {"ar": "التكريمات والجوائز"},
+    "languages": {"ar": "اللغات"},
+    "featured": {"ar": "مميز"},
+    "contact info": {"ar": "معلومات الاتصال"},
+}
+# Localized heading -> its canonical English tag; the canonical tags map to
+# themselves so `clean_heading` needs no separate English-only branch.
+_CONTEXT_LABEL_CANONICAL: dict[str, str] = {
+    canonical: canonical for canonical in _CONTEXT_LABEL_TRANSLATIONS
+} | {
+    translated: canonical
+    for canonical, translations in _CONTEXT_LABEL_TRANSLATIONS.items()
+    for translated in translations.values()
 }
 
 _SECTION_CONTEXTS = {
@@ -87,9 +158,20 @@ _SECTION_CONTEXTS = {
     "job_posting": "job posting",
     "inbox": "inbox",
     "conversation": "conversation",
+    "members": "group member",
+    "attendees": "event attendee",
+    "event_details": "event details",
+    "connections": "connection",
+    "received_invitations": "received invitation",
+    "sent_invitations": "sent invitation",
+    "mutual_connections": "mutual connection",
     "jobs": "jobs",
     "saved_jobs": "saved jobs",
     "feed": "feed",
+    "notifications": "notification",
+    "saved_posts": "saved post",
+    "feed_hashtag": "hashtag feed",
+    "reactions": "reactor",
 }
 
 _DEFAULT_REFERENCE_CAP = 12
@@ -113,10 +195,32 @@ _REFERENCE_CAPS = {
     "contact_info": 8,
     "inbox": 30,
     "conversation": 12,
+    # Member listings are the payload of get_group_members: profile URLs per
+    # member are the point of the tool, so the cap matches LinkedIn's
+    # ~500-row serving limit per listing rather than the compact default.
+    "members": 500,
+    "attendees": 500,
+    # Network listings (list_connections, get_invitations, get_mutual_connections)
+    # are likewise the payload themselves, not incidental links found while
+    # reading something else -- cap generously so a caller's own max_results
+    # is what limits the listing, not this table.
+    "connections": 200,
+    "received_invitations": 100,
+    "sent_invitations": 100,
+    "mutual_connections": 200,
     # Headroom for get_feed's num_posts ceiling (Field(ge=1, le=50)).
     # Kept in sync with the literal cap=50 in feed_payload.build_feed_references
     # where SDUI-derived /posts/<slug> permalinks are appended.
     "feed": 50,
+    # Notification cards each carry an actor plus (often) a target entity;
+    # kept proportional to get_notifications' max_items ceiling (also 50).
+    "notifications": 50,
+    # Kept in sync with get_saved_posts' max_posts ceiling.
+    "saved_posts": 50,
+    # Kept in sync with get_hashtag_feed's max_posts ceiling.
+    "feed_hashtag": 50,
+    # Kept in sync with get_post_reactions' max_reactors ceiling.
+    "reactions": 50,
 }
 
 # A label must carry at least one letter or digit in any script, so the class is
@@ -150,6 +254,10 @@ _NEWSLETTER_PATH_RE = re.compile(r"^/newsletters/([^/?#]+)")
 _PULSE_PATH_RE = re.compile(r"^/pulse/([^/?#]+)")
 _FEED_PATH_RE = re.compile(r"^/feed/update/([^/?#]+)")
 _MESSAGING_THREAD_PATH_RE = re.compile(r"^/messaging/thread/([^/?#]+)")
+_GROUP_PATH_RE = re.compile(r"^/groups/([0-9]+)")
+# Same slugged-id shape as JOB_PATH_RE: LinkedIn serves an event under both
+# /events/<id>/ and /events/<title>-<id>/, both resolving to the same page.
+_EVENT_PATH_RE = re.compile(r"^/events/(?:[^/?#]*-)?([0-9]+)(?=[/?#]|$)")
 _MAX_REDIRECT_UNWRAP_DEPTH = 5
 
 # Accept both quoted-string and bare-integer JSON list elements, e.g.
@@ -317,6 +425,12 @@ def classify_link(href: str) -> tuple[ReferenceKind, str] | None:
     if match := JOB_PATH_RE.match(path):
         return "job", f"/jobs/view/{match.group(1)}/"
 
+    # A saved job-alert's own search — get_job_alerts is the only reader
+    # that emits these paths today; kept as a query-preserving passthrough
+    # since an alert's filters live entirely in the query string.
+    if path.rstrip("/") in ("/jobs/search", "/jobs/search-results"):
+        return "job_alert", href
+
     if match := _NEWSLETTER_PATH_RE.match(path):
         return "newsletter", f"/newsletters/{match.group(1)}/"
 
@@ -328,6 +442,12 @@ def classify_link(href: str) -> tuple[ReferenceKind, str] | None:
 
     if match := _MESSAGING_THREAD_PATH_RE.match(path):
         return "conversation", f"/messaging/thread/{match.group(1)}/"
+
+    if match := _GROUP_PATH_RE.match(path):
+        return "group", f"/groups/{match.group(1)}/"
+
+    if match := _EVENT_PATH_RE.match(path):
+        return "event", f"/events/{match.group(1)}/"
 
     return None
 
@@ -426,21 +546,28 @@ def derive_context(
         return "post attachment"
 
     if section_name in {"main_profile", "about"}:
-        if heading in _CONTEXT_LABELS:
+        if heading is not None:
             return heading
         if raw.get("in_article"):
             return "featured"
         return "top card"
 
-    return heading if heading in _CONTEXT_LABELS else None
+    return heading
 
 
 def clean_heading(value: str) -> str | None:
-    """Normalize a raw heading into a short supported context label."""
+    """Normalize a raw heading into a short supported context label.
+
+    Matches against every locale in `_CONTEXT_LABEL_TRANSLATIONS` and always
+    returns the canonical English tag, so a caller sees the same fixed
+    vocabulary regardless of which locale's heading text matched. `.lower()`
+    is a no-op on the Arabic entries (Arabic has no letter case) and is kept
+    for the English ones.
+    """
     value = _WHITESPACE_RE.sub(" ", value).strip().lower()
     if not value:
         return None
-    return value if value in _CONTEXT_LABELS else None
+    return _CONTEXT_LABEL_CANONICAL.get(value)
 
 
 def _choose_better_reference(existing: Reference, new: Reference) -> Reference:
@@ -524,3 +651,126 @@ def _is_linkedin_chrome(path: str) -> bool:
 
 def _is_linkedin_host(host: str) -> bool:
     return host == "linkedin.com" or host.endswith(".linkedin.com")
+
+
+# --- images -----------------------------------------------------------------
+
+# LinkedIn serves media from its CDN under a path naming both the kind of
+# image and its size variant, and a page renders its own subject from a
+# larger variant than anyone else:
+#
+#   /dms/image/v2/<id>/profile-displayphoto-shrink_800_800/...  the member
+#   /dms/image/v2/<id>/profile-displayphoto-shrink_100_100/...  someone else
+#   /dms/image/v2/<id>/company-logo_200_200/...                 the company
+#   /dms/image/v2/<id>/company-logo_100_100/...                 another company
+#   /dms/image/v2/<id>/profile-displaybackgroundimage-shrink... the banner
+#   /dms/image/v2/<id>/feedshare-shrink_480/...                 a post
+#
+# The grammar is the whole signal. Rendered size is not usable: extraction
+# runs before LinkedIn lays the image out, so the subject's own image reports
+# 0x0 as often as not, and class names are hashed and change between deploys.
+_MEDIA_CDN = re.compile(r"^https://media\.licdn\.com/dms/image/", re.IGNORECASE)
+
+_SUBJECT_IMAGE = re.compile(
+    r"/(?P<kind>profile-displayphoto-(?:shrink|scale)|company-logo)_(\d+)_(\d+)/",
+    re.IGNORECASE,
+)
+
+# LinkedIn renders every non-subject from its 100px thumbnail — post authors,
+# mutual connections, suggested profiles, employer logos on a member page.
+# Used only to judge a candidate that has nothing to be compared against.
+_THUMBNAIL_VARIANT = 100
+
+_IMAGE_CONTEXT = {"company-logo": "company logo"}
+
+
+def _image_kind(match: re.Match[str]) -> str:
+    return "company-logo" if match.group("kind").lower() == "company-logo" else "photo"
+
+
+def build_image_references(
+    raw_images: list[RawImage],
+    section_name: str,
+) -> list[Reference]:
+    """Normalize raw ``<img>`` data into ``image`` references.
+
+    Kept separate from :func:`build_references` because an image is not an
+    anchor: there is no href to classify, and the signal is the CDN path
+    rather than a link target.
+
+    Only the subject of the page is returned — the member on a profile, the
+    company on a company page. It is identified *relative to the page*
+    rather than against a fixed size: the subject is the largest variant of
+    its kind present, and it must be strictly larger than the next one down.
+
+    At most one image per kind is returned, so a page yields the member's
+    photo and — where the page renders one larger than the rest — a company
+    logo, never a list of strangers.
+
+    That comparison is what makes the rule safe. A page carries dozens of
+    other members' and companies' thumbnails, so when every candidate of a
+    kind is the same size there is nothing distinguishing a subject and none
+    is returned — which is the correct answer on a search-results page, and
+    on a company page where the only member photos are visitor avatars. A
+    fixed threshold cannot express that, and would emit a stranger the
+    moment LinkedIn rendered one card larger.
+    """
+    # One entry per distinct image, keyed by the path up to the size segment.
+    # That prefix is the media id, which is stable across both signings and
+    # size variants; the whole URL is not. LinkedIn renders the same photo
+    # more than once — the top-card image reappears in the sticky header —
+    # and signs each rendering separately, so identical pictures arrive as
+    # different strings. Counted apart they tie for largest, and a tie is
+    # read below as "no subject": the photo would be dropped on exactly the
+    # pages that show it most prominently.
+    best: dict[str, tuple[str, int, RawImage]] = {}
+
+    for raw in raw_images:
+        src = (raw.get("src") or "").strip()
+        if not src or not _MEDIA_CDN.match(src):
+            continue
+        match = _SUBJECT_IMAGE.search(src)
+        if match is None:
+            continue
+        variant = max(int(match.group(2)), int(match.group(3)))
+        identity = src[: match.start()]
+        previous = best.get(identity)
+        # The same image offered at several sizes is still one image, and is
+        # represented by the largest size it offers.
+        if previous is None or variant > previous[1]:
+            best[identity] = (_image_kind(match), variant, raw)
+
+    candidates = list(best.values())
+
+    out: list[Reference] = []
+
+    for kind in dict.fromkeys(k for k, _, _ in candidates):
+        of_kind = [(v, raw) for k, v, raw in candidates if k == kind]
+        largest = max(v for v, _ in of_kind)
+        tied = [raw for v, raw in of_kind if v == largest]
+
+        # Nothing of this kind to compare against, so size is the only
+        # evidence: a lone thumbnail is an employer logo on a member page or
+        # a visitor avatar on a company page, and neither is the subject.
+        if len(of_kind) == 1 and largest <= _THUMBNAIL_VARIANT:
+            continue
+        # Distinct images sharing the largest size: none stands out, so none
+        # is the subject. Returning them all would be worse than returning
+        # none — a caller reading "the subject" would get a stranger half
+        # the time. This is also the right answer on a search-results page,
+        # where every card is an equal-sized thumbnail.
+        if len(tied) > 1:
+            continue
+
+        raw = tied[0]
+        reference: Reference = {
+            "kind": "image",
+            "url": (raw.get("src") or "").strip(),
+        }
+        alt = (raw.get("alt") or "").strip()
+        if alt:
+            reference["text"] = alt
+        reference["context"] = _IMAGE_CONTEXT.get(kind, "profile photo")
+        out.append(reference)
+
+    return out

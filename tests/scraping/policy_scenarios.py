@@ -17,7 +17,9 @@ from patchright.async_api import Page
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from linkedin_mcp_server.callbacks import ProgressCallback
+from linkedin_mcp_server.core.exceptions import InvalidReferenceError
 from linkedin_mcp_server.scraping import capture as capture_module
+from linkedin_mcp_server.scraping.contracts import FilterValidationError
 from linkedin_mcp_server.scraping import company as company_module
 from linkedin_mcp_server.scraping import feed as feed_module
 from linkedin_mcp_server.scraping import job_pages as job_pages_module
@@ -27,6 +29,11 @@ from linkedin_mcp_server.scraping import person as person_module
 from linkedin_mcp_server.scraping import session as session_module
 from linkedin_mcp_server.scraping import LinkedInExtractor
 from linkedin_mcp_server.scraping.fields import COMPANY_SECTIONS, PERSON_SECTIONS
+from linkedin_mcp_server.scraping.post_content import (
+    build_poll,
+    build_post_edit,
+    build_post_request,
+)
 from linkedin_mcp_server.server import create_mcp_server
 
 from .support.policy_trace import (
@@ -832,6 +839,138 @@ async def _invalid_message_scenario(message: str, label: str) -> dict[str, Any]:
     )
 
 
+_COMMENT_POST = "urn:li:activity:7300000000000000000"
+_COMMENT_URN = "urn:li:comment:(activity:7300000000000000000,7300000000000000101)"
+
+
+async def _comment_browser_free_scenario(method: str) -> dict[str, Any]:
+    """Comment calls answered before the page is touched.
+
+    Previews, refused text and refused arguments never reach LinkedIn, and the
+    trace proves it: no page operation is recorded. The browser flows themselves
+    are exercised against real Chromium in ``tests/test_comments_dom.py``.
+    """
+    recorder = TraceRecorder(f"{method}__browser_free", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "comments"):
+            if method == "get_post_comments":
+                arguments = {"post_url": _COMMENT_POST, "sort": "oldest"}
+                try:
+                    await extractor.get_post_comments(**arguments)
+                except InvalidReferenceError as error:
+                    result: dict[str, Any] = {"refused": str(error)}
+                else:  # pragma: no cover - the refusal is the scenario
+                    raise AssertionError("an unknown sort must be refused")
+            elif method == "reply_to_comment":
+                arguments = {
+                    "post_url": _COMMENT_POST,
+                    "comment_urn": _COMMENT_URN,
+                    "text": "Thanks for this",
+                    "confirm": False,
+                }
+                result = await extractor.reply_to_comment(**arguments)
+            elif method == "comment_on_post":
+                arguments = {
+                    "post_url": _COMMENT_POST,
+                    "text": "line	break",
+                    "confirm": True,
+                }
+                result = await extractor.comment_on_post(**arguments)
+            elif method == "react_to_comment":
+                arguments = {
+                    "post_url": _COMMENT_POST,
+                    "comment_urn": _COMMENT_URN,
+                    "confirm": False,
+                }
+                result = await extractor.react_to_comment(**arguments)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
+async def _analytics_refusal_scenario(method: str) -> dict[str, Any]:
+    """Analytics calls refused before the page is touched.
+
+    An address that names no post, and a section list naming no dashboard, are
+    answered without a navigation. The page flows are exercised against real
+    Chromium in ``tests/test_analytics_dom.py``.
+    """
+    recorder = TraceRecorder(f"{method}__refused", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "analytics"):
+            try:
+                if method == "get_post_analytics":
+                    arguments = {
+                        "post_url": "https://www.linkedin.com/in/ada-lovelace/"
+                    }
+                    await extractor.get_post_analytics(**arguments)
+                elif method == "get_profile_analytics":
+                    arguments = {"sections": "bogus"}
+                    await extractor.get_profile_analytics(**arguments)
+                elif method == "get_company_page_analytics":
+                    arguments = {"company": "analytical-engine/../../feed"}
+                    await extractor.get_company_page_analytics(**arguments)
+                elif method == "get_company_page_analytics__sections":
+                    arguments = {"company": "analytical-engine", "sections": "bogus"}
+                    await extractor.get_company_page_analytics(**arguments)
+                else:
+                    raise AssertionError(method)
+            except InvalidReferenceError as error:
+                result: dict[str, Any] = {"refused": str(error)}
+            else:  # pragma: no cover - the refusal is the scenario
+                raise AssertionError("the call must be refused")
+    page.assert_clean()
+    return recorder.trace(
+        {"method": method.split("__")[0], "arguments": arguments}, result
+    )
+
+
+async def _post_action_early_refusal_scenario(method: str) -> dict[str, Any]:
+    """An invalid ``post_url`` refuses before any navigation.
+
+    Both ``get_post_reactions`` and ``save_post`` normalize their
+    ``post_url`` argument before touching the page (``normalize_post_url``
+    in ``identifiers.py``), so a value that cannot name a post raises
+    without ever navigating, clicking, or opening a dialog -- the one
+    path the DOM-interaction heuristics in ``reactions.py`` /
+    ``post_actions.py`` do not need live verification to prove, since no
+    browser interaction happens at all.
+    """
+    name = f"{method}__early_refusal"
+    recorder = TraceRecorder(name, _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method):
+            try:
+                if method == "get_post_reactions":
+                    arguments = {"post_url": "https://example.com/not-a-post"}
+                    await extractor.get_post_reactions(**arguments)
+                else:
+                    arguments = {
+                        "post_url": "https://example.com/not-a-post",
+                        "confirm": True,
+                    }
+                    await extractor.save_post(**arguments)
+            except InvalidReferenceError as e:
+                result = {"raised": "InvalidReferenceError", "message": str(e)}
+            else:
+                raise AssertionError(f"{method} did not refuse an invalid post_url")
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
 async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     name = f"{method}__baseline"
     recorder = TraceRecorder(name, _COMMON_ALLOWED)
@@ -856,11 +995,81 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
             elif method == "search_posts":
                 arguments = {"keywords": "mathematics", "max_pages": 2}
                 result = await extractor.search_posts(**arguments)
+            elif method == "search_events":
+                arguments = {"keywords": "computing history", "max_pages": 2}
+                result = await extractor.search_events(**arguments)
+            elif method == "get_event_details":
+                arguments = {"event_url": "1234567890"}
+                result = await extractor.get_event_details(**arguments)
+            elif method == "get_event_attendees":
+                arguments = {"event_url": "1234567890", "max_attendees": 25}
+                result = await extractor.get_event_attendees(**arguments)
             else:
                 raise AssertionError(method)
     page.assert_clean()
     return recorder.trace(
         {"method": method, "arguments": arguments},
+        _complete_mapping_result(result, section_names=list(result["sections"])),
+    )
+
+
+async def _sales_navigator_scenario(method: str) -> dict[str, Any]:
+    """Happy-path Sales Navigator call: the account holds a seat."""
+    name = f"{method}__baseline"
+    recorder = TraceRecorder(name, _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder).script(
+        "evaluate:root_content", _root("Sales Navigator content")
+    )
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method):
+            if method == "sales_nav_search_leads":
+                arguments = {"keywords": "VP Engineering"}
+                result = await extractor.sales_nav_search_leads(**arguments)
+            elif method == "sales_nav_search_accounts":
+                arguments = {"keywords": "fintech"}
+                result = await extractor.sales_nav_search_accounts(**arguments)
+            elif method == "sales_nav_get_lists":
+                arguments = {"kind": "leads"}
+                result = await extractor.sales_nav_get_lists(**arguments)
+            elif method == "sales_nav_get_list":
+                arguments = {
+                    "list_url": "https://www.linkedin.com/sales/lists/people/12345"
+                }
+                result = await extractor.sales_nav_get_list(**arguments)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": method, "arguments": arguments},
+        _complete_mapping_result(result, section_names=list(result["sections"])),
+    )
+
+
+async def _sales_navigator_seat_unavailable_scenario() -> dict[str, Any]:
+    """Minimal early-refusal trace: LinkedIn redirects away from /sales/.
+
+    Detected by the landed URL (never text), per AGENTS.md's
+    locale-independence rule: this proves the redirect check runs *and* that
+    nothing else -- no scroll, no content extraction -- happens after it, by
+    leaving the ``evaluate:root_content`` script unscripted-with-values (see
+    ``_page()``); any code path that tried to consume it would fail here.
+    """
+    name = "sales_nav_search_leads__seat_unavailable"
+    recorder = TraceRecorder(name, _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.goto_landings.append("https://www.linkedin.com/premium/products/")
+    extractor = _extractor(page)
+    arguments = {"keywords": "VP Engineering"}
+    async with boundaries(recorder, clock):
+        with recorder.context("sales_nav_search_leads"):
+            result = await extractor.sales_nav_search_leads(**arguments)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": "sales_nav_search_leads", "arguments": arguments},
         _complete_mapping_result(result, section_names=list(result["sections"])),
     )
 
@@ -984,6 +1193,297 @@ async def _conversation_scenario(method: str) -> dict[str, Any]:
     )
 
 
+async def _posting_composer_unavailable_scenario(method: str) -> dict[str, Any]:
+    """Every posting method opens the share composer by URL first.
+
+    The composer never appears here, so the trace pins the part all three
+    share: one navigation to the share URL, the rate-limit boundary, and a
+    bounded wait for the editor that ends in a refusal with nothing typed.
+    """
+    recorder = TraceRecorder(f"{method}__composer_unavailable", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.declare_locator('div[role="textbox"][contenteditable="true"]', "post_editor")
+    page.declare_derived("post_editor", "first", "post_editor_first")
+    page.script(
+        "post_editor_first.wait_for", PlaywrightTimeoutError("no share composer")
+    )
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "posting"):
+            if method == "create_post":
+                request = build_post_request("Synthetic post body")
+                arguments = {"text": request.rendered_text}
+                result = await extractor.create_post(request)
+            elif method == "create_poll":
+                request = build_post_request(
+                    "",
+                    poll=build_poll("Synthetic question?", ["Yes", "No"], 3),
+                )
+                arguments = {"question": "Synthetic question?", "duration_days": 3}
+                result = await extractor.create_poll(request)
+            elif method == "get_scheduled_posts":
+                arguments = {}
+                result = await extractor.get_scheduled_posts()
+            elif method == "edit_scheduled_post":
+                edit = build_post_edit("Synthetic replacement")
+                arguments = {"identifier": "sched-0123456789abcdef", "confirm": True}
+                result = await extractor.edit_scheduled_post(
+                    "sched-0123456789abcdef", edit, confirm=True
+                )
+            elif method == "delete_scheduled_post":
+                arguments = {"identifier": "sched-0123456789abcdef", "confirm": True}
+                result = await extractor.delete_scheduled_post(
+                    "sched-0123456789abcdef", confirm=True
+                )
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
+async def _own_post_unresolved_member_scenario(method: str) -> dict[str, Any]:
+    """Own-post writes resolve the logged-in member before touching the post.
+
+    Here /in/me/ never resolves to a member path, so authorship cannot be
+    proven and the call is refused before the post page is even opened.
+    """
+    recorder = TraceRecorder(f"{method}__member_unresolved", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.goto_landings.append("https://www.linkedin.com/in/me/")
+    extractor = _extractor(page)
+    post_url = "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "posting"):
+            if method == "delete_post":
+                result = await extractor.delete_post(post_url, confirm=True)
+            elif method == "edit_post":
+                result = await extractor.edit_post(
+                    post_url,
+                    build_post_edit("Synthetic replacement", allow_schedule=False),
+                    confirm=True,
+                )
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": method, "arguments": {"post_url": post_url, "confirm": True}},
+        result,
+    )
+
+
+async def _resolve_geo_location_blank_query_scenario() -> dict[str, Any]:
+    """Early refusal: a blank query never reaches the browser.
+
+    The only ``resolve_geo_location`` path this harness can express without
+    fabricating LinkedIn's own typeahead DOM structure -- driving it for
+    real is exercised in ``tests/scraping/test_geo_resolver.py`` against a
+    directly-mocked page instead. This scenario exists to keep
+    ``resolve_geo_location`` inside the exhaustively-checked facade-method
+    inventory (``TOOL_FACADE_METHODS``) and to pin the zero-navigation
+    refusal shape.
+    """
+    recorder = TraceRecorder("resolve_geo_location__blank_query", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("resolve_geo_location"):
+            try:
+                await extractor.resolve_geo_location("   ")
+            except FilterValidationError as e:
+                result: dict[str, Any] = {
+                    "raised": "FilterValidationError",
+                    "message": str(e),
+                }
+            else:
+                raise AssertionError("blank query should have been refused")
+    page.assert_clean()
+    return recorder.trace(
+        {"method": "resolve_geo_location", "arguments": {"query": "   "}},
+        result,
+    )
+
+
+_NETWORK_PROFILE = "ada-lovelace"
+_NETWORK_GROUP = "1234567"
+
+
+async def _network_preview_scenario(method: str) -> dict[str, Any]:
+    """Network writes answer ``confirm=False`` before the page is touched.
+
+    Follow, withdraw and respond each return a preview built from the
+    normalized target alone, and the trace proves it: no page operation is
+    recorded, so a preview can never change anything on LinkedIn.
+    """
+    recorder = TraceRecorder(f"{method}__preview", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "network"):
+            if method == "follow":
+                arguments = {
+                    "target_url": "https://www.linkedin.com/company/analytical-engine/",
+                    "confirm": False,
+                }
+                result = await extractor.follow(**arguments)
+            elif method == "withdraw_invitation":
+                arguments = {"linkedin_username": _NETWORK_PROFILE, "confirm": False}
+                result = await extractor.withdraw_invitation(**arguments)
+            elif method == "respond_to_invitation":
+                arguments = {
+                    "linkedin_username": _NETWORK_PROFILE,
+                    "action": "ignore",
+                    "confirm": False,
+                }
+                result = await extractor.respond_to_invitation(**arguments)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
+async def _network_capture_scenario(method: str) -> dict[str, Any]:
+    """Network and group listings are one bounded section capture each."""
+    recorder = TraceRecorder(f"{method}__baseline", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder).script("evaluate:root_content", _root("Listing content"))
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method):
+            if method == "list_connections":
+                arguments = {"max_results": 20, "sort": "first_name"}
+                result = await extractor.list_connections(**arguments)
+            elif method == "get_invitations":
+                arguments = {"direction": "sent", "max_results": 10}
+                result = await extractor.get_invitations(**arguments)
+            elif method == "search_groups":
+                arguments = {"keywords": "mathematics"}
+                result = await extractor.search_groups(**arguments)
+            elif method == "get_group_posts":
+                arguments = {"group_id": _NETWORK_GROUP, "max_posts": 10}
+                result = await extractor.get_group_posts(**arguments)
+            elif method == "get_group_members":
+                arguments = {"group_id": _NETWORK_GROUP, "max_members": 20}
+                result = await extractor.get_group_members(**arguments)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": method, "arguments": arguments},
+        _complete_mapping_result(result, section_names=list(result["sections"])),
+    )
+
+
+async def _mutual_connections_no_link_scenario() -> dict[str, Any]:
+    """Without the profile's shared-connections link nothing else is opened.
+
+    The member URN the people search needs is only reachable through that
+    anchor, so when the profile exposes none the call ends on the profile page
+    with an explicit stop reason instead of guessing a search URL.
+    """
+    method = "get_mutual_connections"
+    recorder = TraceRecorder(f"{method}__no_link", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder).script("evaluate:mutual_connections_link", None)
+    extractor = _extractor(page)
+    arguments = {"linkedin_username": _NETWORK_PROFILE, "max_results": 20}
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "mutual_connections"):
+            result = await extractor.get_mutual_connections(**arguments)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
+async def _job_alerts_error_scenario() -> dict[str, Any]:
+    """The minimal early-refusal trace for a new facade method: a capture
+    failure surfaces as a section error rather than propagating, the same
+    shape `scrape-job-error.json` already covers for `scrape_job`.
+    """
+    recorder = TraceRecorder("get_job_alerts__capture_error", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder).script(
+        "evaluate:root_content", RuntimeError("synthetic capture failure")
+    )
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("get_job_alerts"):
+            result = await extractor.get_job_alerts()
+    page.assert_clean()
+    return recorder.trace(
+        {"method": "get_job_alerts", "arguments": {}},
+        _complete_mapping_result(result, section_names=list(result["sections"])),
+    )
+
+
+async def _reply_invalid_scenario() -> dict[str, Any]:
+    """The browser-free refusal path: no navigation, no scripting needed."""
+    recorder = TraceRecorder("reply_to_conversation__invalid_blank", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("reply_to_conversation", "message"):
+            result = await extractor.reply_to_conversation("2-abc", "   ", confirm=True)
+    page.assert_clean()
+    return recorder.trace(
+        {
+            "method": "reply_to_conversation",
+            "arguments": {
+                "conversation_url_or_thread_id": "2-abc",
+                "message_case": "blank",
+                "confirm": True,
+            },
+        },
+        result,
+    )
+
+
+async def _conversation_option_unavailable_scenario(method: str) -> dict[str, Any]:
+    """LinkedIn landed somewhere other than the requested thread route.
+
+    The route check runs on `page.url` alone (no evaluate), so this is the
+    cheapest representative failure path for both toggle tools.
+    """
+    recorder = TraceRecorder(f"{method}__thread_unavailable", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.goto_landings.append("https://www.linkedin.com/messaging/")
+    extractor = _extractor(page)
+    arguments = {"conversation_url_or_thread_id": "2-abc", "confirm": True}
+    async with boundaries(recorder, clock):
+        with recorder.context(method):
+            if method == "mark_conversation_read":
+                result = await extractor.mark_conversation_read("2-abc", confirm=True)
+            elif method == "archive_conversation":
+                result = await extractor.archive_conversation("2-abc", confirm=True)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
+async def _save_job_already_saved_scenario() -> dict[str, Any]:
+    recorder = TraceRecorder("save_job__already_saved", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.script("evaluate:job_save_state", "saved")
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("save_job"):
+            result = await extractor.save_job("123", confirm=True)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": "save_job", "arguments": {"job_id": "123", "confirm": True}},
+        result,
+    )
+
+
 async def _facade_contract_trace() -> dict[str, Any]:
     global _TOOL_SCHEMAS
 
@@ -1018,24 +1518,62 @@ async def _facade_contract_trace() -> dict[str, Any]:
 
 
 TOOL_FACADE_METHODS = {
+    "archive_conversation",
+    "comment_on_post",
     "connect_with_person",
+    "create_poll",
+    "create_post",
+    "delete_post",
+    "delete_scheduled_post",
+    "edit_post",
+    "edit_scheduled_post",
     "extract_feed",
     "extract_page",
+    "follow",
     "get_company_employees",
+    "get_company_page_analytics",
     "get_conversation",
+    "get_event_attendees",
+    "get_event_details",
+    "get_group_members",
+    "get_group_posts",
     "get_inbox",
+    "get_invitations",
+    "get_job_alerts",
+    "get_mutual_connections",
     "get_my_profile",
+    "get_post_analytics",
+    "get_post_comments",
+    "get_post_reactions",
+    "get_profile_analytics",
     "get_saved_jobs",
+    "get_scheduled_posts",
     "get_sidebar_profiles",
+    "list_connections",
+    "mark_conversation_read",
+    "react_to_comment",
+    "reply_to_comment",
+    "reply_to_conversation",
+    "resolve_geo_location",
+    "respond_to_invitation",
+    "sales_nav_get_list",
+    "sales_nav_get_lists",
+    "sales_nav_search_accounts",
+    "sales_nav_search_leads",
+    "save_job",
+    "save_post",
     "scrape_company",
     "scrape_job",
     "scrape_person",
     "search_companies",
     "search_conversations",
+    "search_events",
+    "search_groups",
     "search_jobs",
     "search_people",
     "search_posts",
     "send_message",
+    "withdraw_invitation",
 }
 COMPATIBILITY_METHODS = {"get_page_text", "click_button_by_text"}
 
@@ -1108,11 +1646,109 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
             "search_companies"
         ),
         "search-posts.json": await _single_capture_facade_scenario("search_posts"),
+        "comments-read-refused.json": await _comment_browser_free_scenario(
+            "get_post_comments"
+        ),
+        "comments-reply-preview.json": await _comment_browser_free_scenario(
+            "reply_to_comment"
+        ),
+        "comments-invalid-text.json": await _comment_browser_free_scenario(
+            "comment_on_post"
+        ),
+        "comments-react-preview.json": await _comment_browser_free_scenario(
+            "react_to_comment"
+        ),
+        "search-events.json": await _single_capture_facade_scenario("search_events"),
+        "event-details.json": await _single_capture_facade_scenario(
+            "get_event_details"
+        ),
+        "event-attendees.json": await _single_capture_facade_scenario(
+            "get_event_attendees"
+        ),
+        "analytics-post-refused.json": await _analytics_refusal_scenario(
+            "get_post_analytics"
+        ),
+        "analytics-profile-refused.json": await _analytics_refusal_scenario(
+            "get_profile_analytics"
+        ),
+        "analytics-company-refused.json": await _analytics_refusal_scenario(
+            "get_company_page_analytics"
+        ),
+        "analytics-company-sections-refused.json": await _analytics_refusal_scenario(
+            "get_company_page_analytics__sections"
+        ),
         "inbox.json": await _conversation_scenario("get_inbox"),
         "conversation.json": await _conversation_scenario("get_conversation"),
         "search-conversations.json": await _conversation_scenario(
             "search_conversations"
         ),
+        "post-create-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("create_post")
+        ),
+        "post-poll-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("create_poll")
+        ),
+        "post-scheduled-list-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("get_scheduled_posts")
+        ),
+        "post-scheduled-delete-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("delete_scheduled_post")
+        ),
+        "post-scheduled-edit-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("edit_scheduled_post")
+        ),
+        "post-delete-member-unresolved.json": (
+            await _own_post_unresolved_member_scenario("delete_post")
+        ),
+        "post-edit-member-unresolved.json": (
+            await _own_post_unresolved_member_scenario("edit_post")
+        ),
+        "network-follow-preview.json": await _network_preview_scenario("follow"),
+        "network-withdraw-preview.json": await _network_preview_scenario(
+            "withdraw_invitation"
+        ),
+        "network-respond-preview.json": await _network_preview_scenario(
+            "respond_to_invitation"
+        ),
+        "network-connections.json": await _network_capture_scenario("list_connections"),
+        "network-invitations.json": await _network_capture_scenario("get_invitations"),
+        "network-mutual-no-link.json": await _mutual_connections_no_link_scenario(),
+        "group-search.json": await _network_capture_scenario("search_groups"),
+        "group-posts.json": await _network_capture_scenario("get_group_posts"),
+        "group-members.json": await _network_capture_scenario("get_group_members"),
+        "resolve-geo-location-blank.json": (
+            await _resolve_geo_location_blank_query_scenario()
+        ),
+        "sales-nav-search-leads.json": await _sales_navigator_scenario(
+            "sales_nav_search_leads"
+        ),
+        "sales-nav-search-accounts.json": await _sales_navigator_scenario(
+            "sales_nav_search_accounts"
+        ),
+        "sales-nav-get-lists.json": await _sales_navigator_scenario(
+            "sales_nav_get_lists"
+        ),
+        "sales-nav-get-list.json": await _sales_navigator_scenario(
+            "sales_nav_get_list"
+        ),
+        "sales-nav-seat-unavailable.json": (
+            await _sales_navigator_seat_unavailable_scenario()
+        ),
+        "get-post-reactions-early-refusal.json": (
+            await _post_action_early_refusal_scenario("get_post_reactions")
+        ),
+        "save-post-early-refusal.json": (
+            await _post_action_early_refusal_scenario("save_post")
+        ),
+        "reply-invalid.json": await _reply_invalid_scenario(),
+        "mark-conversation-read-unavailable.json": (
+            await _conversation_option_unavailable_scenario("mark_conversation_read")
+        ),
+        "archive-conversation-unavailable.json": (
+            await _conversation_option_unavailable_scenario("archive_conversation")
+        ),
+        "save-job-already-saved.json": await _save_job_already_saved_scenario(),
+        "job-alerts-error.json": await _job_alerts_error_scenario(),
     }
     return traces
 

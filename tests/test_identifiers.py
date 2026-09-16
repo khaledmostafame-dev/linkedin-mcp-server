@@ -15,9 +15,13 @@ from linkedin_mcp_server.core.exceptions import (
 )
 from linkedin_mcp_server.scraping.identifiers import (
     company_page_url,
+    group_page_url,
+    hashtag_feed_url,
     job_view_url,
     messaging_thread_url,
     normalize_company_identifier,
+    normalize_group_id,
+    normalize_hashtag,
     normalize_job_id,
     normalize_opaque_id,
     normalize_person_identifier,
@@ -249,6 +253,42 @@ class TestNormalizeCompanyIdentifier:
             normalize_company_identifier(value)
 
 
+class TestNormalizeHashtag:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "womenintech",
+            "#womenintech",
+            "# womenintech",
+            "https://www.linkedin.com/feed/hashtag/womenintech",
+            "https://www.linkedin.com/feed/hashtag/womenintech/",
+            "https://de.linkedin.com/feed/hashtag/womenintech/",
+        ],
+    )
+    def test_reduces_a_hashtag_link_to_the_tag(self, value: str):
+        assert normalize_hashtag(value) == "womenintech"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "https://www.linkedin.com/in/williamhgates",
+            "https://www.linkedin.com/company/microsoft/",
+            "https://www.linkedin.com/feed/",
+            "womenintech/../../feed",
+            "",
+            "#",
+        ],
+    )
+    def test_refuses_a_value_that_cannot_name_a_hashtag(self, value: str):
+        with pytest.raises(LinkedInScraperException):
+            normalize_hashtag(value)
+
+    def test_hashtag_feed_url_escapes_the_tag(self):
+        assert hashtag_feed_url("womenintech", "/") == (
+            "https://www.linkedin.com/feed/hashtag/womenintech/"
+        )
+
+
 class TestNormalizeOpaqueId:
     def test_passes_an_ordinary_id_through(self):
         assert normalize_opaque_id("4021126051", field="job_id") == "4021126051"
@@ -338,6 +378,15 @@ class TestReferencesThisServerEmits:
     def test_job_reference_yields_the_id(self):
         assert normalize_job_id("/jobs/view/4252026496/") == "4252026496"
 
+    def test_group_reference_yields_the_id(self):
+        assert normalize_group_id("/groups/12345/") == "12345"
+
+    def test_group_reference_from_a_full_url(self):
+        assert (
+            normalize_group_id("https://www.linkedin.com/groups/12345/members/")
+            == "12345"
+        )
+
     def test_a_relative_path_of_the_wrong_kind_is_still_refused(self):
         with pytest.raises(InvalidReferenceError):
             normalize_person_identifier("/company/microsoft/")
@@ -362,6 +411,23 @@ class TestJobIdIsANumber:
         assert normalize_job_id("4252026496") == "4252026496"
 
 
+class TestGroupIdIsANumber:
+    """Same discipline as job ids: LinkedIn groups are numeric, and a word
+    navigates to a 404 that costs a page load to learn."""
+
+    def test_a_word_is_refused(self):
+        with pytest.raises(InvalidReferenceError):
+            normalize_group_id("automation-anywhere-users")
+
+    def test_the_number_passes(self):
+        assert normalize_group_id("12345") == "12345"
+
+    def test_group_page_url_escapes_the_id_as_one_segment(self):
+        assert group_page_url("12345", "/members/") == (
+            "https://www.linkedin.com/groups/12345/members/"
+        )
+
+
 class TestLoneSurrogate:
     """A lone surrogate survives JSON parsing and every syntax check, then
     raises inside `quote` while the URL is built. The caller would see an
@@ -370,7 +436,12 @@ class TestLoneSurrogate:
 
     @pytest.mark.parametrize(
         "normalize",
-        [normalize_person_identifier, normalize_company_identifier, normalize_job_id],
+        [
+            normalize_person_identifier,
+            normalize_company_identifier,
+            normalize_job_id,
+            normalize_group_id,
+        ],
     )
     def test_it_is_refused_rather_than_crashing_the_url_builder(self, normalize):
         with pytest.raises(InvalidReferenceError):

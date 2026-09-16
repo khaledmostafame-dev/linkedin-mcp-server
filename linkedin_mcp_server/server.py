@@ -37,6 +37,11 @@ from linkedin_mcp_server.daemon_auth import (
     OwnerAuthSignalMiddleware,
 )
 from linkedin_mcp_server.error_handler import raise_tool_error
+from linkedin_mcp_server.pacing import (
+    LOCAL_TAG,
+    PACING_STATUS_TOOL,
+    PacingMiddleware,
+)
 from linkedin_mcp_server.sequential_tool_middleware import (
     SequentialToolExecutionMiddleware,
 )
@@ -46,12 +51,21 @@ from linkedin_mcp_server.server_role import (
     set_process_role,
 )
 from linkedin_mcp_server.update_check import UpdateNoticeMiddleware
+from linkedin_mcp_server.tools.analytics import register_analytics_tools
+from linkedin_mcp_server.tools.comments import register_comment_tools
 from linkedin_mcp_server.tools.company import register_company_tools
+from linkedin_mcp_server.tools.event import register_event_tools
 from linkedin_mcp_server.tools.feed import register_feed_tools
+from linkedin_mcp_server.tools.group import register_group_tools
 from linkedin_mcp_server.tools.job import register_job_tools
 from linkedin_mcp_server.tools.messaging import register_messaging_tools
+from linkedin_mcp_server.tools.network import register_network_tools
 from linkedin_mcp_server.tools.person import register_person_tools
 from linkedin_mcp_server.tools.post import register_post_tools
+from linkedin_mcp_server.tools.posting import register_posting_tools
+from linkedin_mcp_server.tools.reactions import register_reaction_tools
+from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+from linkedin_mcp_server.tools.sales_navigator import register_sales_navigator_tools
 
 if TYPE_CHECKING:
     from linkedin_mcp_server.daemon_proxy import DaemonProxyBackend
@@ -262,8 +276,15 @@ def create_mcp_server(
     # only forwards calls must not take the lease: it would either block itself
     # until its own timeout, or take the lease and leave the process that
     # actually needs it waiting for one held by a caller that never uses it.
+    pacing: PacingMiddleware | None = None
     if role.drives_browser:
         mcp.add_middleware(SequentialToolExecutionMiddleware())
+        # After the serializing middleware, which makes it the inner one, and
+        # that order is the whole guarantee: pacing reads, waits on and writes
+        # shared state, and only the lock and the profile lease around it stop
+        # two clients from being admitted into the same slot.
+        pacing = PacingMiddleware()
+        mcp.add_middleware(pacing)
     # The notice is appended to one tool result per process, so it belongs
     # wherever a user reads results. On a shared owner it would reach whichever
     # client happened to call first and nobody after that, however many clients
@@ -293,6 +314,15 @@ def create_mcp_server(
         register_messaging_tools(mcp, tool_timeout=tool_timeout)
         register_feed_tools(mcp, tool_timeout=tool_timeout)
         register_post_tools(mcp, tool_timeout=tool_timeout)
+        register_comment_tools(mcp, tool_timeout=tool_timeout)
+        register_posting_tools(mcp, tool_timeout=tool_timeout)
+        register_network_tools(mcp, tool_timeout=tool_timeout)
+        register_group_tools(mcp, tool_timeout=tool_timeout)
+        register_saved_posts_tools(mcp, tool_timeout=tool_timeout)
+        register_event_tools(mcp, tool_timeout=tool_timeout)
+        register_analytics_tools(mcp, tool_timeout=tool_timeout)
+        register_sales_navigator_tools(mcp, tool_timeout=tool_timeout)
+        register_reaction_tools(mcp, tool_timeout=tool_timeout)
 
         # Inside the gate with the rest, and easy to miss because it is the one
         # tool defined here rather than in a `register_*` call. Left out of the
@@ -314,5 +344,26 @@ def create_mcp_server(
                 }
             except Exception as e:
                 raise_tool_error(e, "close_session")  # NoReturn
+
+        assert pacing is not None  # installed under the same role gate above
+        pacer = pacing
+
+        @mcp.tool(
+            name=PACING_STATUS_TOOL,
+            timeout=tool_timeout,
+            title="Get Pacing Status",
+            annotations={"readOnlyHint": True, "openWorldHint": False},
+            # "local": never touches LinkedIn or the browser, so it is neither
+            # paced nor queued behind a scrape (`pacing.classify_tool`).
+            tags={LOCAL_TAG, "pacing"},
+        )
+        async def get_pacing_status() -> dict[str, Any]:
+            """Report LinkedIn pacing: call counters, when the next read and write
+            are allowed, any active cooldown, and the effective limits.
+
+            Never contacts LinkedIn and never waits for the browser. Use it before
+            a batch of calls, or after a pacing refusal, to see when to retry.
+            """
+            return pacer.status()
 
     return mcp

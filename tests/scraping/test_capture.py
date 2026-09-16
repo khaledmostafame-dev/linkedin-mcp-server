@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import asyncio
 import ast
 import re
 
@@ -815,6 +817,102 @@ class TestActivityFeedExtraction:
 
         # Should return whatever text is available, not crash
         assert result.text == tab_headers
+
+
+class TestPostListingPermalinkCapture:
+    """End-to-end: a posts-listing page's captured network permalink
+    (unreachable via DOM anchors — see feed_payload.is_post_listing_page)
+    survives into the final references (issue #788)."""
+
+    async def test_company_posts_page_merges_captured_permalink(self, mock_page):
+        mock_page.evaluate = AsyncMock(
+            return_value={
+                "source": "root",
+                "text": "Post content " * 50,
+                "references": [
+                    {
+                        "href": "https://www.linkedin.com/company/idsa/",
+                        "text": "International Data Spaces Association",
+                    }
+                ],
+            }
+        )
+        capture = _capture(mock_page)
+
+        async def fake_body():
+            return (
+                b'{"postSlugUrl":"https://www.linkedin.com/posts/'
+                b'idsa_some-slug-activity-1234567890-xxXX"}'
+            )
+
+        fake_response = SimpleNamespace(
+            headers={"content-type": "application/json"},
+            body=fake_body,
+        )
+
+        with (
+            patch(
+                "linkedin_mcp_server.scraping.session.scroll_to_bottom",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "linkedin_mcp_server.scraping.session.detect_rate_limit",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "linkedin_mcp_server.scraping.session.handle_modal_close",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            call = asyncio.ensure_future(
+                capture._capture_once(
+                    "https://www.linkedin.com/company/idsa/posts/",
+                    section_name="posts",
+                    plan=CapturePlan(CaptureMode.ACTIVITY),
+                )
+            )
+            # Let _capture_post_listing install its "response" listener
+            # before firing the simulated network event.
+            await asyncio.sleep(0)
+            for handler in list(mock_page.listeners.get("response", [])):
+                handler(fake_response)
+            result = await call
+
+        urls = [r["url"] for r in result.references]
+        assert "/posts/idsa_some-slug-activity-1234567890-xxXX" in urls
+        assert any(r["url"] == "/company/idsa/" for r in result.references)
+        # The listener installed for the capture is unsubscribed again once
+        # the section has been read, same as FeedScraper's own teardown.
+        assert mock_page.listeners.get("response", []) == []
+
+    async def test_plain_profile_page_installs_no_response_listener(self, mock_page):
+        mock_page.evaluate = AsyncMock(
+            return_value={"source": "root", "text": "Profile text", "references": []}
+        )
+        capture = _capture(mock_page)
+        with (
+            patch(
+                "linkedin_mcp_server.scraping.session.scroll_to_bottom",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "linkedin_mcp_server.scraping.session.detect_rate_limit",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "linkedin_mcp_server.scraping.session.handle_modal_close",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            await capture._capture_once(
+                "https://www.linkedin.com/in/testuser/",
+                section_name="main_profile",
+                plan=CapturePlan(),
+            )
+
+        assert mock_page.listeners.get("response", []) == []
 
 
 class TestCompanyPeopleExtraction:

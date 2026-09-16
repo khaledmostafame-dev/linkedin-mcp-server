@@ -49,14 +49,23 @@ from linkedin_mcp_server.core.exceptions import InvalidReferenceError
 
 __all__ = [
     "company_page_url",
+    "event_page_url",
+    "group_page_url",
+    "hashtag_feed_url",
     "job_view_url",
     "messaging_thread_url",
     "normalize_company_identifier",
+    "normalize_event_id",
+    "normalize_group_id",
+    "normalize_hashtag",
     "normalize_job_id",
     "normalize_opaque_id",
     "normalize_person_identifier",
+    "normalize_post_url",
+    "normalize_post_urn",
     "normalize_thread_id",
     "person_profile_url",
+    "post_update_url",
 ]
 
 # linkedin.com and every host under it. There is no canonical host to normalize
@@ -130,6 +139,8 @@ _ORGANIZATION_ROUTES = {"company"}
 # instructions. Refusing it would refuse this server's own output.
 _JOB_ROUTE = ("jobs", "view")
 _THREAD_ROUTE = ("messaging", "thread")
+_GROUP_ROUTE = ("groups",)
+_EVENT_ROUTE = ("events",)
 
 # A LinkedIn job id is the number in /jobs/view/<id>. Everything that produces
 # one here extracts ``\d+``, and anything else navigates to a 404 that costs a
@@ -447,6 +458,77 @@ def company_page_url(identifier: str, suffix: str = "") -> str:
     return f"https://www.linkedin.com/company/{quote(identifier, safe='')}{suffix}"
 
 
+_HASHTAG_ROUTE = ("feed", "hashtag")
+
+
+def normalize_hashtag(value: str) -> str:
+    """The tag for a hashtag feed, from a /feed/hashtag/ link or the tag itself.
+
+    Idempotent, and raises the same way :func:`normalize_company_identifier`
+    does. A leading ``#`` is stripped, since that is how a caller reads a
+    hashtag off LinkedIn's own UI; LinkedIn's own ``/feed/hashtag/`` URL
+    never carries one.
+    """
+    value = value.strip()
+    if value.startswith("#"):
+        value = value[1:].strip()
+    if not value:
+        raise InvalidReferenceError(
+            'Missing hashtag (the /feed/hashtag/ tag, e.g. "womenintech").'
+        )
+
+    reference = _id_after_route(value, _HASHTAG_ROUTE, want="/feed/hashtag/ tag")
+    if reference is None:
+        reference = _identifier(value)
+    if reference is None:
+        raise InvalidReferenceError(
+            "That is not a LinkedIn hashtag. Pass the tag without '#', or a "
+            '/feed/hashtag/ URL, for example "womenintech".'
+        )
+    return reference
+
+
+def hashtag_feed_url(tag: str, suffix: str = "") -> str:
+    """Hashtag feed URL for an already-normalized tag, escaped as one segment."""
+    return f"https://www.linkedin.com/feed/hashtag/{quote(tag, safe='')}{suffix}"
+
+
+def normalize_post_url(value: str) -> str:
+    """An absolute, canonical LinkedIn post permalink.
+
+    Accepts either shape this server's own reference lists carry (see
+    AGENTS.md Tool Return Format): a relative or absolute
+    ``/feed/update/<urn>/`` (DOM-anchor-derived) or ``/posts/<slug>``
+    (SDUI-derived) url. Raises the same way
+    :func:`normalize_company_identifier` does.
+
+    ``_usable`` rather than ``_identifier`` judges the trailing segment:
+    an activity urn (``urn:li:activity:123...``) contains colons, which
+    ``_identifier``'s ``[\\w-]+`` pattern would reject.
+    """
+    value = value.strip()
+    if not value:
+        raise InvalidReferenceError(
+            "Missing post_url (a LinkedIn post permalink, e.g. from "
+            'references["feed"] or references["posts"]).'
+        )
+    segments = _linkedin_segments(value, want="post permalink")
+    if segments:
+        lowered = [segment.lower() for segment in segments]
+        if lowered[0] == "posts" and len(segments) >= 2:
+            slug = _usable(segments[1])
+            if slug is not None:
+                return f"https://www.linkedin.com/posts/{quote(slug, safe='')}/"
+        if lowered[:2] == ["feed", "update"] and len(segments) >= 3:
+            urn = _usable(segments[2])
+            if urn is not None:
+                return f"https://www.linkedin.com/feed/update/{quote(urn, safe='')}/"
+    raise InvalidReferenceError(
+        "That is not a LinkedIn post permalink. Pass a /feed/update/<urn>/ "
+        "or /posts/<slug> url exactly as a previous result returned it."
+    )
+
+
 def job_view_url(job_id: str, suffix: str = "") -> str:
     """Job posting URL for an already-normalized id, escaped as one segment."""
     return f"https://www.linkedin.com/jobs/view/{quote(job_id, safe='')}{suffix}"
@@ -467,3 +549,93 @@ def normalize_job_id(value: str) -> str:
 def normalize_thread_id(value: str) -> str:
     """The id for a conversation, from the id or from a reference to it."""
     return normalize_opaque_id(value, field="thread_id", route=_THREAD_ROUTE)
+
+
+# The three namespaces a post detail page is addressed by. `/feed/update/<urn>/`
+# serves all of them, so the URN is the canonical form and the route is rebuilt
+# from it rather than trusted from the input.
+_POST_URN = re.compile(r"^urn:li:(activity|ugcPost|share):([0-9]+)$")
+
+# A `/posts/<slug>` permalink ends in `<namespace>-<id>-<suffix>`, the same shape
+# `feed_payload.POST_SLUG_URL_RE` reads out of SDUI payloads. The words in front
+# are the author and a title excerpt, so only the tail identifies the post.
+_POST_SLUG_TAIL = re.compile(
+    r"(?:^|[-_])(activity|ugcPost|share)-([0-9]+)(?:-[\w-]*)?$"
+)
+
+_POST_URL_HINT = (
+    "Pass a post permalink (/feed/update/urn:li:activity:<id>/ or /posts/<slug>) "
+    "or the post URN itself (urn:li:activity:<id>, urn:li:ugcPost:<id>, "
+    "urn:li:share:<id>)."
+)
+
+
+def normalize_post_urn(value: str) -> str:
+    """The canonical post URN, from a permalink, a relative path or the URN.
+
+    Accepted: ``urn:li:activity:<id>``, ``urn:li:ugcPost:<id>``,
+    ``urn:li:share:<id>`` (optionally percent-encoded once), and LinkedIn
+    addresses under ``/feed/update/<urn>/`` or ``/posts/<slug>``. The query
+    (``?commentUrn=…``, tracking parameters) is ignored, because the post is the
+    path; everything else a browser would read differently is refused the way
+    the other normalizers here refuse it.
+
+    Raises:
+        InvalidReferenceError: when the value does not name a post.
+    """
+    value = value.strip()
+    if not value:
+        raise InvalidReferenceError(f"Missing post_url. {_POST_URL_HINT}")
+
+    decoded = _decoded(value)
+    if decoded is not None and _POST_URN.match(decoded):
+        return decoded
+
+    segments = _linkedin_segments(value, want="post permalink")
+    if segments is not None:
+        route = [segment.lower() for segment in segments[:2]]
+        if route == ["feed", "update"] and len(segments) >= 3:
+            urn = _decoded(segments[2])
+            if urn is not None and _POST_URN.match(urn):
+                return urn
+        elif route[:1] == ["posts"] and len(segments) >= 2:
+            slug = _usable(segments[1])
+            match = _POST_SLUG_TAIL.search(slug) if slug is not None else None
+            if match is not None:
+                return f"urn:li:{match.group(1)}:{match.group(2)}"
+    raise InvalidReferenceError(f"That is not a LinkedIn post. {_POST_URL_HINT}")
+
+
+def post_update_url(post_urn: str) -> str:
+    """Post detail URL for an already-normalized post URN."""
+    return f"https://www.linkedin.com/feed/update/{quote(post_urn, safe=':')}/"
+
+
+def normalize_group_id(value: str) -> str:
+    """The numeric id for a LinkedIn group, from the id or from a reference to it."""
+    return normalize_opaque_id(
+        value, field="group_id", route=_GROUP_ROUTE, numeric=True
+    )
+
+
+def group_page_url(group_id: str, suffix: str = "") -> str:
+    """Group URL for an already-normalized numeric id, escaped as one segment."""
+    return f"https://www.linkedin.com/groups/{quote(group_id, safe='')}{suffix}"
+
+
+def normalize_event_id(value: str) -> str:
+    """The numeric id for a LinkedIn event, from the id or from a reference to it.
+
+    LinkedIn serves an event under both a bare id and a slugged path
+    (``/events/<slug>-<id>/``), the same shape as a job posting, so this
+    reuses the trailing-digits extraction ``normalize_job_id`` relies on
+    rather than requiring the caller to strip the slug themselves.
+    """
+    return normalize_opaque_id(
+        value, field="event_id", route=_EVENT_ROUTE, numeric=True
+    )
+
+
+def event_page_url(event_id: str, suffix: str = "") -> str:
+    """Event URL for an already-normalized numeric id, escaped as one segment."""
+    return f"https://www.linkedin.com/events/{quote(event_id, safe='')}{suffix}"

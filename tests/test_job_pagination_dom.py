@@ -127,17 +127,39 @@ class TestTotalListPages:
 
         assert await _reader(dom_page)._get_total_list_pages() is None
 
-    async def test_non_ascii_numerals_degrade_to_no_count(self, dom_page):
-        """``parseInt`` cannot read them, and a wrong count is worse than none.
+    async def test_non_ascii_numerals_are_normalized(self, dom_page):
+        """Arabic-Indic labels parse instead of degrading to no count.
 
-        Named on the method as the locale case it accepts losing. It has to
-        stay a ``None`` rather than a ``NaN`` reaching Python as a float.
+        The reader no longer asks JS ``parseInt`` to read the label (it
+        cannot read Arabic-Indic digits); it reads the raw label text and
+        parses it in Python through ``normalize_localized_digits``, which
+        does. A Latin-numeral button mixed into the same pager (LinkedIn is
+        not guaranteed to render every button in one script) still counts.
         """
         await dom_page.set_content(
             "<main><ul class='artdeco-pagination__pages'>"
             "<li><button>١</button></li>"
             "<li><button>٢</button></li>"
+            "<li><button>٩</button></li>"
+            "<li><button>3</button></li>"
             "</ul></main>"
         )
 
-        assert await _reader(dom_page)._get_total_list_pages() is None
+        assert await _reader(dom_page)._get_total_list_pages() == 9
+
+    async def test_an_unlisted_digit_script_degrades_to_no_count(self, dom_page):
+        """A script outside ``normalize_localized_digits`` still fails safe.
+
+        Devanagari digits are not in the translation table (documented as
+        out of scope on the helper). The button contributes nothing rather
+        than a wrong count, and the pager still resolves from the labels
+        that do parse.
+        """
+        await dom_page.set_content(
+            "<main><ul class='artdeco-pagination__pages'>"
+            "<li><button>१</button></li>"
+            "<li><button>4</button></li>"
+            "</ul></main>"
+        )
+
+        assert await _reader(dom_page)._get_total_list_pages() == 4

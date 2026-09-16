@@ -1,0 +1,21 @@
+{
+  "call": {
+    "arguments": {
+      "confirm": true,
+      "conversation_url_or_thread_id": "2-abc",
+      "message_case": "blank"
+    },
+    "method": "reply_to_conversation"
+  },
+  "events": [],
+  "result": {
+    "message": "Message must contain non-whitespace characters.",
+    "recipient_selected": false,
+    "retry_safe": true,
+    "sent": false,
+    "status": "invalid_message",
+    "url": "https://www.linkedin.com/messaging/thread/2-abc/"
+  },
+  "scenario": "reply_to_conversation__invalid_blank",
+  "schema_version": 1
+}

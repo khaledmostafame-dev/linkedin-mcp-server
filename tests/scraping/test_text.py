@@ -3,7 +3,13 @@
 import re
 
 from linkedin_mcp_server.scraping.text import (
+    CONVERSATION_OPTIONS_EN,
+    CONVERSATION_OPTIONS_TABLES,
     DETAIL_CAPTURE_EN_US,
+    JOB_SAVE_EN_US,
+    JOB_SAVE_TABLES,
+    JOB_SEARCH_EN_US,
+    normalize_localized_digits,
     strip_conversation_chrome,
     strip_linkedin_noise,
     truncate_linkedin_noise,
@@ -236,3 +242,109 @@ class TestStripConversationChrome:
 
     def test_empty_string(self):
         assert strip_conversation_chrome("") == ""
+
+
+class TestNormalizeLocalizedDigits:
+    def test_arabic_indic_digits_become_ascii(self):
+        # "٥٬٤٣٢ متابع" ("5,432 followers", Arabic-Indic digits + Arabic
+        # thousands separator) -> "5,432 متابع".
+        assert normalize_localized_digits("٥٬٤٣٢ متابع") == "5,432 متابع"
+
+    def test_extended_arabic_indic_digits_become_ascii(self):
+        # Persian/Urdu digit shapes (U+06F0-06F9), distinct from U+0660-0669.
+        assert normalize_localized_digits("۱۲۳") == "123"
+
+    def test_arabic_decimal_separator_becomes_ascii(self):
+        assert normalize_localized_digits("١٫٥") == "1.5"
+
+    def test_strips_bidi_marks_around_a_number(self):
+        assert normalize_localized_digits("‏123‎") == "123"
+
+    def test_ascii_input_is_unchanged(self):
+        assert normalize_localized_digits("1,234.5") == "1,234.5"
+
+    def test_empty_string(self):
+        assert normalize_localized_digits("") == ""
+
+    def test_devanagari_digits_are_left_untouched(self):
+        # Documented gap: only Arabic-Indic and Extended Arabic-Indic are
+        # covered. A caller that needs Devanagari would see non-digit output
+        # here and can fail safe on it, same as an unrecognized digit script
+        # reaching `str.isdigit()`.
+        assert normalize_localized_digits("१२३") == "१२३"
+
+
+class TestJobSearchResultCount:
+    def test_the_exact_count_under_the_heading(self):
+        assert JOB_SEARCH_EN_US.result_count(
+            "Python jobs\n28 results\nSenior policy engineer"
+        ) == (28, True)
+
+    def test_a_count_with_a_plus_is_a_lower_bound(self):
+        assert JOB_SEARCH_EN_US.result_count("1,000+ results\nGreater Paris") == (
+            1000,
+            False,
+        )
+
+    def test_a_single_result_is_counted(self):
+        assert JOB_SEARCH_EN_US.result_count("python in France\n1 result") == (
+            1,
+            True,
+        )
+
+    def test_a_count_below_the_first_three_lines_is_not_the_count(self):
+        assert (
+            JOB_SEARCH_EN_US.result_count("line one\nline two\nline three\n28 results")
+            is None
+        )
+
+    def test_a_count_inside_a_longer_line_is_not_the_count(self):
+        assert JOB_SEARCH_EN_US.result_count("Drove 28 results for clients") is None
+
+    def test_no_count_line_returns_none(self):
+        assert JOB_SEARCH_EN_US.result_count("Python jobs\nNo matching jobs") is None
+
+    def test_empty_text_returns_none(self):
+        assert JOB_SEARCH_EN_US.result_count("") is None
+
+
+class TestJobSaveLabels:
+    def test_en_us_table_holds_the_two_states(self):
+        assert JOB_SAVE_EN_US.saved == "Saved"
+        assert JOB_SAVE_EN_US.unsaved == "Save"
+
+    def test_every_listed_locale_is_in_the_tried_table(self):
+        locales = {"Saved": "en", "تم الحفظ": "ar"}
+        assert {table.saved for table in JOB_SAVE_TABLES} == set(locales)
+        assert JOB_SAVE_EN_US in JOB_SAVE_TABLES
+
+    def test_arabic_table_holds_its_own_two_states(self):
+        arabic = next(table for table in JOB_SAVE_TABLES if table.saved == "تم الحفظ")
+        assert arabic.unsaved == "حفظ"
+
+
+class TestConversationOptionsLabels:
+    def test_en_table_holds_the_opener_and_four_toggle_labels(self):
+        assert (
+            CONVERSATION_OPTIONS_EN.menu_opener_prefix
+            == "Open the options list in your conversation with"
+        )
+        assert CONVERSATION_OPTIONS_EN.mark_read == "Mark as read"
+        assert CONVERSATION_OPTIONS_EN.mark_unread == "Mark as unread"
+        assert CONVERSATION_OPTIONS_EN.archive == "Archive"
+        assert CONVERSATION_OPTIONS_EN.unarchive == "Unarchive"
+
+    def test_every_listed_locale_is_in_the_tried_tables(self):
+        assert CONVERSATION_OPTIONS_EN in CONVERSATION_OPTIONS_TABLES
+        assert len(CONVERSATION_OPTIONS_TABLES) == 2
+
+    def test_arabic_table_holds_its_own_four_toggle_labels(self):
+        arabic = next(
+            table
+            for table in CONVERSATION_OPTIONS_TABLES
+            if table is not CONVERSATION_OPTIONS_EN
+        )
+        assert arabic.mark_read == "وضع علامة كمقروءة"
+        assert arabic.mark_unread == "وضع علامة كغير مقروءة"
+        assert arabic.archive == "أرشفة"
+        assert arabic.unarchive == "إلغاء الأرشفة"

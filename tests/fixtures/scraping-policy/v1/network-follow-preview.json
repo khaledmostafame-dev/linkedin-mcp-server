@@ -1,0 +1,18 @@
+{
+  "call": {
+    "arguments": {
+      "confirm": false,
+      "target_url": "https://www.linkedin.com/company/analytical-engine/"
+    },
+    "method": "follow"
+  },
+  "events": [],
+  "result": {
+    "message": "Would follow https://www.linkedin.com/company/analytical-engine/. Pass confirm=True to proceed.",
+    "requested": "follow",
+    "status": "preview",
+    "url": "https://www.linkedin.com/company/analytical-engine/"
+  },
+  "scenario": "follow__preview",
+  "schema_version": 1
+}

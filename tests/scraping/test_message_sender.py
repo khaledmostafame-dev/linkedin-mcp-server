@@ -1363,3 +1363,123 @@ class TestMessageConfirmation:
             _MESSAGE_CONFIRMATION_DISPOSE_JS,
             {"owner": owner, "token": "confirmation-token"},
         )
+
+
+class TestReplyToConversation:
+    """reply_to_conversation: the thread id is the whole identity boundary.
+
+    Unlike send_message there is no separate recipient to resolve, so these
+    cover the fail-closed route/composer checks and the dry-run/occupied
+    branches. The full write-submit-confirm path is not covered here (it
+    would need the same owner-handle double send_message's DOM test file
+    builds); see live_verification_needed in the task report.
+    """
+
+    async def test_invalid_message_returns_refusal_without_navigating(self, mock_page):
+        sender = _sender(mock_page)
+
+        result = await sender.reply_to_conversation("2-abc", "   ", confirm=True)
+
+        assert result["status"] == "invalid_message"
+        mock_page.goto.assert_not_awaited()
+
+    async def test_control_characters_are_refused_without_navigating(self, mock_page):
+        sender = _sender(mock_page)
+
+        result = await sender.reply_to_conversation(
+            "2-abc", "line\nbreak", confirm=True
+        )
+
+        assert result["status"] == "invalid_message"
+        mock_page.goto.assert_not_awaited()
+
+    async def test_fails_closed_when_landed_off_the_thread_route(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/"
+        sender = _sender(mock_page)
+
+        result = await sender.reply_to_conversation("2-abc", "Hello!", confirm=True)
+
+        assert result["status"] == "recipient_resolution_failed"
+
+    async def test_composer_unavailable_when_the_editor_is_ambiguous(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(return_value={"status": "ambiguous_editor"})
+        sender = _sender(mock_page)
+
+        result = await sender.reply_to_conversation("2-abc", "Hello!", confirm=True)
+
+        assert result["status"] == "composer_unavailable"
+
+    async def test_dry_run_reports_confirmation_required_without_writing(
+        self, mock_page
+    ):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(
+            return_value={
+                "status": "valid",
+                "active": True,
+                "empty": True,
+                "routeOk": True,
+                "submitCount": 1,
+            }
+        )
+        sender = _sender(mock_page)
+
+        result = await sender.reply_to_conversation("2-abc", "Hello!", confirm=False)
+
+        assert result["status"] == "confirmation_required"
+        assert result["recipient_selected"] is True
+        assert result["sent"] is False
+        mock_page.evaluate_handle.assert_not_called()
+
+    async def test_existing_draft_is_left_untouched(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        composer_states = iter(
+            [
+                {
+                    "status": "valid",
+                    "active": True,
+                    "empty": True,
+                    "routeOk": True,
+                    "submitCount": 1,
+                },
+                {
+                    "status": "valid",
+                    "active": True,
+                    "empty": False,
+                    "routeOk": True,
+                    "submitCount": 1,
+                },
+            ]
+        )
+
+        async def fake_evaluate(script, *args, **kwargs):
+            if "submitCount: state.buttons" in script:
+                return next(composer_states)
+            return ""
+
+        mock_page.evaluate = AsyncMock(side_effect=fake_evaluate)
+        sender = _sender(mock_page)
+
+        result = await sender.reply_to_conversation("2-abc", "Hello!", confirm=True)
+
+        assert result["status"] == "composer_occupied"
+        assert result["sent"] is False
+        mock_page.evaluate_handle.assert_not_called()
+
+    async def test_thread_id_is_normalized_from_a_conversation_url(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(return_value={"status": "ambiguous_editor"})
+        sender = _sender(mock_page)
+
+        await sender.reply_to_conversation(
+            "https://www.linkedin.com/messaging/thread/2-abc/",
+            "Hello!",
+            confirm=True,
+        )
+
+        mock_page.goto.assert_awaited_once_with(
+            "https://www.linkedin.com/messaging/thread/2-abc/",
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )

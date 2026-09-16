@@ -20,6 +20,7 @@ from linkedin_mcp_server.scraping.contracts import (
 from linkedin_mcp_server.scraping.identifiers import job_view_url, normalize_job_id
 from linkedin_mcp_server.scraping.job_pages import JobPageReader
 from linkedin_mcp_server.scraping.job_policy import (
+    JOB_ALERTS_URL,
     JOB_SEARCH_PATHS,
     RESULTS_PER_LINKEDIN_PAGE,
     SAVED_JOBS_PAGE_SIZE,
@@ -37,6 +38,7 @@ from linkedin_mcp_server.scraping.link_metadata import Reference, dedupe_referen
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.search_urls import build_job_search_url
 from linkedin_mcp_server.scraping.session import NAV_DELAY
+from linkedin_mcp_server.scraping.text import JOB_SEARCH_EN_US
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +131,10 @@ class JobScraper:
             sort_by: Sort results (date, relevance)
 
         Returns:
-            {url, sections: {search_results: text}, job_ids: [str]}
+            {url, sections: {search_results: text}, job_ids: [str],
+            total?: {count: int, exact: bool}} — ``total`` is LinkedIn's own
+            advertised result count read from the first page, present only
+            when that line could be parsed.
         """
         base_url = build_job_search_url(
             keywords,
@@ -153,6 +158,7 @@ class JobScraper:
         filters_warning: dict[str, str] | None = None
         total_pages: int | None = None
         total_pages_queried = False
+        total_result: dict[str, Any] | None = None
 
         # The search-wide scroll budget is spent as it goes rather than
         # divided up front, because dividing it charges every navigation for
@@ -373,6 +379,16 @@ class JobScraper:
                         if total_pages is not None:
                             logger.debug("LinkedIn reports %d total pages", total_pages)
 
+                # The advertised result count, read from the same text this
+                # page already extracted (no second navigation). Only the
+                # first page is read: LinkedIn prints it once, near the top,
+                # and later pages have long since scrolled it out of frame.
+                if page_num == 0:
+                    counted = JOB_SEARCH_EN_US.result_count(extracted.text)
+                    if counted is not None:
+                        count, exact = counted
+                        total_result = {"count": count, "exact": exact}
+
                 page_ids = list(
                     dict.fromkeys(await self._pages._extract_job_ids(scoped=True))
                 )
@@ -425,6 +441,8 @@ class JobScraper:
             else {},
             "job_ids": all_job_ids,
         }
+        if total_result is not None:
+            result["total"] = total_result
         if page_references:
             result["references"] = {
                 "search_results": dedupe_references(page_references)
@@ -440,6 +458,58 @@ class JobScraper:
                 existing["error_message"] = (
                     f"{existing['error_message']} {filters_warning['error_message']}"
                 )
+        if section_errors:
+            result["section_errors"] = section_errors
+        return result
+
+    async def save_job(
+        self, job_id: str, *, confirm: bool, unsave: bool = False
+    ) -> dict[str, Any]:
+        """Save or unsave a job posting for the authenticated LinkedIn account."""
+        return await self._pages.save_job(job_id, confirm=confirm, unsave=unsave)
+
+    async def get_job_alerts(self) -> dict[str, Any]:
+        """List the authenticated user's job alerts.
+
+        Read-only port of the read half of upstream PR #847 (#846). Each
+        alert's own search — the query LinkedIn built and saved for it — is
+        surfaced as a ``job_alert`` reference rather than parsed out of text,
+        since the filters live entirely in that URL's query string.
+
+        LinkedIn's exact URL for this My Items page has not been confirmed
+        live in this fork; ``JOB_ALERTS_URL`` is a best-effort guess
+        following the ``/my-items/saved-jobs/`` sibling pattern. If wrong,
+        this returns an empty ``sections``/``references`` result rather than
+        raising, the same shape as a real account with no alerts.
+
+        Returns:
+            {url, sections: {job_alerts: text}, references?: {job_alerts:
+            [{kind: "job_alert", url, text?}, ...]}}
+        """
+        extracted = await self._capture.capture(
+            JOB_ALERTS_URL,
+            section_name="job_alerts",
+            plan=CapturePlan(),
+        )
+
+        sections: dict[str, str] = {}
+        references: dict[str, list[Reference]] = {}
+        section_errors: dict[str, dict[str, Any]] = {}
+        if extracted.text and extracted.text != RATE_LIMITED_SECTION_TEXT:
+            sections["job_alerts"] = extracted.text
+            if extracted.references:
+                references["job_alerts"] = extracted.references
+        elif extracted.text == RATE_LIMITED_SECTION_TEXT:
+            section_errors["job_alerts"] = rate_limited_section_error()
+        elif extracted.error:
+            section_errors["job_alerts"] = extracted.error
+
+        result: dict[str, Any] = {
+            "url": JOB_ALERTS_URL,
+            "sections": sections,
+        }
+        if references:
+            result["references"] = references
         if section_errors:
             result["section_errors"] = section_errors
         return result

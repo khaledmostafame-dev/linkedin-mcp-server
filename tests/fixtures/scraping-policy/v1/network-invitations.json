@@ -1,0 +1,115 @@
+{
+  "call": {
+    "arguments": {
+      "direction": "sent",
+      "max_results": 10
+    },
+    "method": "get_invitations"
+  },
+  "events": [
+    {
+      "call": "get_invitations",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "get_invitations",
+      "extra": {
+        "target_url": "https://www.linkedin.com/mynetwork/invitation-manager/sent/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "get_invitations",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/mynetwork/invitation-manager/sent/",
+      "requested_url": "https://www.linkedin.com/mynetwork/invitation-manager/sent/",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "get_invitations",
+      "description": "goto https://www.linkedin.com/mynetwork/invitation-manager/sent/",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "get_invitations",
+      "extra": {
+        "target_url": "https://www.linkedin.com/mynetwork/invitation-manager/sent/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "get_invitations",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "get_invitations",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "get_invitations",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "get_invitations",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "get_invitations",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "arg": null,
+      "call": "get_invitations",
+      "kind": "wait_for_function",
+      "operation": "company_people_ready",
+      "program_digest": "6615c14bd135",
+      "timeout_ms": 5000
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "get_invitations",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 1,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "get_invitations",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "8f7f95c2d74d"
+    }
+  ],
+  "result": {
+    "section_names": [
+      "sent_invitations"
+    ],
+    "sections": {
+      "sent_invitations": "Listing content"
+    },
+    "stopped_reason": "end_of_results",
+    "url": "https://www.linkedin.com/mynetwork/invitation-manager/sent/"
+  },
+  "scenario": "get_invitations__baseline",
+  "schema_version": 1
+}

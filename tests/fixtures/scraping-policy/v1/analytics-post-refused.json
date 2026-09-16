@@ -1,0 +1,14 @@
+{
+  "call": {
+    "arguments": {
+      "post_url": "https://www.linkedin.com/in/ada-lovelace/"
+    },
+    "method": "get_post_analytics"
+  },
+  "events": [],
+  "result": {
+    "refused": "That is not a LinkedIn post. Pass a post permalink (/feed/update/urn:li:activity:<id>/ or /posts/<slug>) or the post URN itself (urn:li:activity:<id>, urn:li:ugcPost:<id>, urn:li:share:<id>)."
+  },
+  "scenario": "get_post_analytics__refused",
+  "schema_version": 1
+}

@@ -20,6 +20,7 @@ from linkedin_mcp_server.error_handler import raise_tool_error
 from linkedin_mcp_server.scraping.contracts import (
     SEND_INTERRUPTED_WARNING,
     refuse_an_invalid_message,
+    refuse_an_invalid_reply,
 )
 
 logger = logging.getLogger(__name__)
@@ -219,7 +220,7 @@ def register_messaging_tools(
         timeout=tool_timeout,
         title="Send Message",
         annotations={"destructiveHint": True, "openWorldHint": True},
-        tags={"messaging", "actions"},
+        tags={"messaging", "actions", "write"},
         exclude_args=["extractor"],
     )
     async def send_message(
@@ -237,8 +238,9 @@ def register_messaging_tools(
         reply path for an existing recruiter/InMail or messaging thread: it may
         create a separate DM even after you inspect that thread with
         get_conversation or search_conversations. Those tools only read an
-        existing thread; they do not send a reply. Until a thread-targeted send
-        path is available, do not treat profile-based send_message as a reply.
+        existing thread; they do not send a reply. Use reply_to_conversation to
+        reply within an existing thread instead — it targets the thread by id
+        and never opens a new one.
 
         The recipient must be directly messageable from the profile page. If
         LinkedIn does not expose a normal Message action, use connect_with_person
@@ -324,3 +326,222 @@ def register_messaging_tools(
                 raise_tool_error(relogin_exc, "send_message")
         except Exception as e:
             raise_tool_error(e, "send_message")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Reply to Conversation",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"messaging", "write", "actions"},
+        exclude_args=["extractor"],
+    )
+    async def reply_to_conversation(
+        conversation_url_or_thread_id: str,
+        message: str,
+        confirm: bool,
+        ctx: Context,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Reply within an existing LinkedIn messaging thread (recruiter/InMail/DM).
+
+        Unlike send_message, there is no recipient to resolve: the thread id
+        already names the conversation, and every step re-checks that the
+        browser is still on that exact thread route before writing anything,
+        so an expired session or a thread the account cannot open fails
+        closed instead of composing into a different page. No Voyager or
+        other private API is used. This is a write operation when confirm is
+        True.
+
+        Args:
+            conversation_url_or_thread_id: LinkedIn messaging thread ID (from
+                get_inbox, get_conversation, or search_conversations
+                references), or a /messaging/thread/ URL naming one.
+            message: Single-line reply text to send. C0 control characters and
+                DEL are rejected, including CR, LF, and tab.
+            confirm: Must be True to send the reply. False does a dry run and
+                does not change LinkedIn state.
+            ctx: FastMCP context for progress reporting
+
+        Returns:
+            Dict with url, status, message, recipient_selected, sent, and
+            retry_safe — same contract as send_message. ``sent`` is true only
+            after the submitted reply's DOM node gains a different opaque
+            event ID; ``retry_safe`` is false from the moment a submission is
+            attempted, and calling again while it is false can deliver the
+            reply twice.
+        """
+        try:
+            refusal = refuse_an_invalid_reply(conversation_url_or_thread_id, message)
+            if refusal is not None:
+                return refusal
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="reply_to_conversation"
+            )
+            logger.info(
+                "Replying to conversation %s (confirm=%s)",
+                conversation_url_or_thread_id,
+                confirm,
+            )
+
+            await ctx.report_progress(progress=0, total=100, message="Sending reply")
+
+            result = await extractor.reply_to_conversation(
+                conversation_url_or_thread_id,
+                message,
+                confirm=confirm,
+            )
+
+            try:
+                await ctx.report_progress(progress=100, total=100, message="Complete")
+            except BaseException:
+                if result.get("retry_safe") is False:
+                    logger.warning(SEND_INTERRUPTED_WARNING)
+                raise
+
+            return result
+
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "reply_to_conversation")
+        except Exception as e:
+            raise_tool_error(e, "reply_to_conversation")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Mark Conversation Read",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"messaging", "write", "actions"},
+        exclude_args=["extractor"],
+    )
+    async def mark_conversation_read(
+        conversation: str,
+        confirm: bool,
+        ctx: Context,
+        read: bool = True,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Mark a LinkedIn conversation thread as read or unread, via its own
+        options menu — without opening or otherwise disturbing the thread.
+
+        Idempotent: a thread already in the requested state is reported
+        without changing anything, so a retry is always safe. Detection of
+        the menu opener is locale-independent (an already-tested aria-label
+        prefix); the menu item labels themselves are guarded by an
+        en-US-only text table and fail closed (status="action_unavailable")
+        on anything else, including a menu shape this has not been verified
+        against live. This is a write operation when confirm is True.
+
+        Args:
+            conversation: LinkedIn messaging thread ID, or a
+                /messaging/thread/ URL naming one.
+            confirm: Must be True to change the read state. False does a dry
+                run and returns {"status": "preview", ...}.
+            ctx: FastMCP context for progress reporting
+            read: True to mark as read (default), False to mark as unread.
+
+        Returns:
+            Dict with url, thread_id, status, changed, and (only when the
+            action succeeded) read.
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="mark_conversation_read"
+            )
+            logger.info(
+                "Marking conversation %s as %s (confirm=%s)",
+                conversation,
+                "read" if read else "unread",
+                confirm,
+            )
+
+            await ctx.report_progress(
+                progress=0, total=100, message="Opening conversation options"
+            )
+
+            result = await extractor.mark_conversation_read(
+                conversation, read=read, confirm=confirm
+            )
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            return result
+
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "mark_conversation_read")
+        except Exception as e:
+            raise_tool_error(e, "mark_conversation_read")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Archive Conversation",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"messaging", "write", "actions"},
+        exclude_args=["extractor"],
+    )
+    async def archive_conversation(
+        conversation: str,
+        confirm: bool,
+        ctx: Context,
+        unarchive: bool = False,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Archive or unarchive a LinkedIn conversation thread, via its own
+        options menu.
+
+        Idempotent: a thread already in the requested state is reported
+        without changing anything, so a retry is always safe. Same detection
+        discipline as mark_conversation_read: a tested aria-label prefix
+        locates the menu opener; the item labels are an en-US-only table that
+        fails closed rather than guessing. This is a write operation when
+        confirm is True.
+
+        Args:
+            conversation: LinkedIn messaging thread ID, or a
+                /messaging/thread/ URL naming one.
+            confirm: Must be True to change the archived state. False does a
+                dry run and returns {"status": "preview", ...}.
+            ctx: FastMCP context for progress reporting
+            unarchive: Restore the thread to the inbox instead of archiving
+                it (default False: archive).
+
+        Returns:
+            Dict with url, thread_id, status, changed, and (only when the
+            action succeeded) archived.
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="archive_conversation"
+            )
+            logger.info(
+                "%s conversation %s (confirm=%s)",
+                "Unarchiving" if unarchive else "Archiving",
+                conversation,
+                confirm,
+            )
+
+            await ctx.report_progress(
+                progress=0, total=100, message="Opening conversation options"
+            )
+
+            result = await extractor.archive_conversation(
+                conversation, confirm=confirm, unarchive=unarchive
+            )
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            return result
+
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "archive_conversation")
+        except Exception as e:
+            raise_tool_error(e, "archive_conversation")  # NoReturn

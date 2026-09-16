@@ -1,0 +1,15 @@
+{
+  "call": {
+    "arguments": {
+      "post_url": "urn:li:activity:7300000000000000000",
+      "sort": "oldest"
+    },
+    "method": "get_post_comments"
+  },
+  "events": [],
+  "result": {
+    "refused": "sort must be \"relevant\" or \"recent\"."
+  },
+  "scenario": "get_post_comments__browser_free",
+  "schema_version": 1
+}

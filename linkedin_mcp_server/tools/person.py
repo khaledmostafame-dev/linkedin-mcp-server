@@ -7,6 +7,7 @@ with configurable section selection.
 
 import json
 import logging
+import time
 from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
@@ -20,6 +21,10 @@ from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_er
 from linkedin_mcp_server.error_handler import raise_tool_error
 from linkedin_mcp_server.scraping import parse_person_sections
 from linkedin_mcp_server.scraping.contracts import FilterValidationError
+from linkedin_mcp_server.scraping.identifiers import (
+    normalize_person_identifier,
+    person_profile_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +151,13 @@ def register_person_tools(
         ctx: Context,
         location: str | None = None,
         network: StrList | None = None,
-        current_company: str | None = None,
+        current_company: StrList | None = None,
+        past_company: StrList | None = None,
+        school: StrList | None = None,
+        industry: StrList | None = None,
+        title: str | None = None,
+        profile_language: StrList | None = None,
+        max_pages: Annotated[int, Field(ge=1, le=10)] = 1,
         extractor: Any | None = None,
     ) -> dict[str, Any]:
         """
@@ -155,35 +166,62 @@ def register_person_tools(
         Args:
             keywords: Search keywords (e.g., "software engineer", "recruiter at Google")
             ctx: FastMCP context for progress reporting
-            location: Optional location filter (e.g., "New York", "Remote")
+            location: Optional location filter. LinkedIn's geoUrn facet only
+                filters on the numeric geo URN id (e.g. "103644278" for the
+                United States); plain-text place names are accepted by the URL
+                but ignored by LinkedIn and return the unfiltered result set.
+                If you do not have the URN, omit this and put the place name in
+                `keywords` instead.
             network: Optional connection-degree filter. Each element is one of
                 "F" (1st-degree), "S" (2nd-degree), "O" (3rd-degree and beyond).
                 Example: ["F"] to only return 1st-degree connections. A single
                 token ("F") or a comma-separated string ("F,S") is also
                 accepted, for clients that cannot transmit an array.
-            current_company: Optional current-employer filter. LinkedIn's
-                currentCompany facet only filters on the numeric company URN id
-                (e.g. "1115" for SAP); plain company names are accepted by the
-                URL but ignored by LinkedIn and return the unfiltered result
-                set. Look up a company's URN via get_company_profile -- it is
-                exposed under references["about"]. For company-wide employee
+            current_company: Optional current-employer filter -- numeric
+                LinkedIn company URN ids (e.g. "1115" for SAP, or "1115,2573558"
+                for several). Plain company names are accepted by the URL but
+                ignored by LinkedIn and return the unfiltered result set. Look
+                up a company's URN via get_company_profile -- it is exposed
+                under references["about"]. For company-wide employee
                 demographics (location/education/function breakdown) plus a
                 slug-based lookup, use get_company_employees instead.
+            past_company: Optional former-employer filter, same numeric URN
+                shape as current_company.
+            school: Optional school filter, numeric LinkedIn school URN ids.
+            industry: Optional industry filter, numeric LinkedIn industry
+                taxonomy ids. There is no in-app lookup for these; read them
+                off LinkedIn's own People search "Industry" filter panel.
+            title: Optional free-text filter matched against the member's
+                current/past title (e.g. "Product Manager"). Unlike the
+                id-based facets above, this is sent as typed, like keywords.
+            profile_language: Optional profile-language filter, lowercase
+                ISO 639-1 two-letter codes (e.g. "en", or "en,ar" for several).
+            max_pages: How many result pages to walk, roughly ten people each
+                (1-10, default 1 -- one page, unchanged from before pagination
+                existed). Costs one navigation per page; stops early once a
+                page adds no person LinkedIn had not already shown.
 
         Returns:
-            Dict with url, sections (name -> raw text), and optional references.
-            The LLM should parse the raw text to extract individual people and their profiles.
+            Dict with url, sections (search_results -> raw text),
+            pages_fetched (int), stopped_reason
+            ("max_pages"|"no_more_results"|"limit"|"error"), truncated (bool,
+            true when more results may exist past what was fetched), and
+            optional references and section_errors. The LLM should parse the
+            raw text to extract individual people and their profiles.
         """
         try:
+            started = time.monotonic()
             extractor = extractor or await get_ready_extractor(
                 ctx, tool_name="search_people"
             )
             logger.info(
-                "Searching people: keywords='%s', location='%s', network=%s, current_company='%s'",
+                "Searching people: keywords='%s', location='%s', network=%s, "
+                "current_company=%s, max_pages=%d",
                 keywords,
                 location,
                 network,
                 current_company,
+                max_pages,
             )
 
             await ctx.report_progress(
@@ -196,6 +234,15 @@ def register_person_tools(
                     location,
                     network=network,
                     current_company=current_company,
+                    past_company=past_company,
+                    school=school,
+                    industry=industry,
+                    title=title,
+                    profile_language=profile_language,
+                    max_pages=max_pages,
+                    # What is left of the figure FastMCP cancels this call on,
+                    # same idea as search_jobs's own tool_timeout handoff.
+                    tool_timeout=max(0.0, tool_timeout - (time.monotonic() - started)),
                 )
             except FilterValidationError as e:
                 # Validation messages carry actionable detail; surface
@@ -221,14 +268,78 @@ def register_person_tools(
 
     @mcp.tool(
         timeout=tool_timeout,
+        title="Resolve Geo Location",
+        annotations={"readOnlyHint": True, "openWorldHint": True},
+        tags={"person", "search"},
+        exclude_args=["extractor"],
+    )
+    async def resolve_geo_location(
+        query: str,
+        ctx: Context,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Resolve a free-text place name to LinkedIn geo URN id candidates.
+
+        Drives LinkedIn's own location typeahead (the same one search_people
+        resolves free-text `location` values against internally) without
+        running a search. Use this to inspect what a name resolves to, or to
+        pick among candidates when search_people reports a location as
+        ambiguous.
+
+        Args:
+            query: Free-text place name (e.g. "Dubai", "Saudi Arabia",
+                "United Arab Emirates", "India"). Blank raises ToolError.
+            ctx: FastMCP context for progress reporting
+
+        Returns:
+            Dict with query, candidates (list of {name, geo_urn_id}; zero
+            entries for no match, more than one when LinkedIn's own
+            typeahead considers the name ambiguous), and ambiguous (bool).
+            Each candidate's geo_urn_id is confirmed by actually selecting
+            that specific suggestion -- never guessed from its position or
+            label text.
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="resolve_geo_location"
+            )
+            logger.info("Resolving geo location: query='%s'", query)
+
+            await ctx.report_progress(
+                progress=0, total=100, message="Resolving location"
+            )
+
+            try:
+                result = await extractor.resolve_geo_location(query)
+            except FilterValidationError as e:
+                raise ToolError(str(e)) from e
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            return result
+
+        except ToolError:
+            raise
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "resolve_geo_location")
+        except Exception as e:
+            raise_tool_error(e, "resolve_geo_location")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
         title="Connect With Person",
         annotations={"destructiveHint": True, "openWorldHint": True},
-        tags={"person", "actions"},
+        tags={"person", "actions", "write"},
         exclude_args=["extractor"],
     )
     async def connect_with_person(
         linkedin_username: str,
         ctx: Context,
+        confirm: bool,
         note: str | None = None,
         extractor: Any | None = None,
     ) -> dict[str, Any]:
@@ -236,16 +347,20 @@ def register_person_tools(
         Send a LinkedIn connection request or accept an incoming one.
 
         The tool is annotated with destructiveHint so MCP clients will
-        prompt for user confirmation before execution.
+        prompt for user confirmation before execution. With confirm=False it
+        only returns a preview of the target profile: no browser is started
+        and nothing is sent or accepted.
 
         Args:
             linkedin_username: LinkedIn username (e.g., "stickerdaniel", "williamhgates"). A full profile URL is accepted too and is reduced to the username.
             ctx: FastMCP context for progress reporting
+            confirm: Must be True to send the request or accept an incoming
+                one; False returns a browser-free preview
             note: Optional note to include with the invitation
 
         Returns:
             Dict with url, status, message, and note_sent.
-            Statuses: pending, already_connected, follow_only,
+            Statuses: preview (confirm=False), pending, already_connected, follow_only,
             connect_unavailable, unavailable, send_failed,
             note_not_supported, custom_note_limit_reached,
             connected, or accepted.
@@ -256,6 +371,22 @@ def register_person_tools(
             text read from LinkedIn.
         """
         try:
+            if not confirm:
+                # Resolved before any browser work, so a preview can neither
+                # start Chromium nor touch LinkedIn.
+                username = normalize_person_identifier(linkedin_username)
+                return {
+                    "url": person_profile_url(username, "/"),
+                    "status": "preview",
+                    "message": (
+                        f"Would send a connection request to {username}, or "
+                        "accept theirs if one is pending"
+                        + (" with the given note" if note else "")
+                        + ". Pass confirm=True to proceed."
+                    ),
+                    "note_sent": False,
+                }
+
             extractor = extractor or await get_ready_extractor(
                 ctx, tool_name="connect_with_person"
             )

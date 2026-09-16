@@ -44,23 +44,65 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 |------|-------------|
 | `get_person_profile` | Get profile info with explicit section selection (experience, education, interests, honors, languages, certifications, skills, projects, contact_info, posts) |
 | `get_my_profile` | Get the authenticated user's own LinkedIn profile (same sections as get_person_profile) |
-| `connect_with_person` | Send a connection request or accept an incoming one, with optional note |
+| `connect_with_person` | Send a connection request or accept an incoming one, with optional note (requires `confirm`; `confirm=false` previews without a browser) |
 | `get_sidebar_profiles` | Extract profile URLs from sidebar recommendation sections ("More profiles for you", "Explore premium profiles", "People you may know") on a profile page |
 | `get_inbox` | List recent conversations from the LinkedIn messaging inbox |
 | `get_conversation` | Read a specific messaging conversation by username or thread ID |
 | `search_conversations` | Search messages by keyword |
 | `send_message` | Compose/send a new message to a LinkedIn user (requires confirmation; profile-based targeting may open a separate DM instead of replying in an existing thread — see #483) |
+| `reply_to_conversation` | Reply within an existing messaging thread (recruiter/InMail/DM) by thread ID, without opening a new DM (requires confirmation) |
+| `mark_conversation_read` | Mark a conversation thread as read or unread via its options menu (requires confirmation; idempotent) |
+| `archive_conversation` | Archive or unarchive a conversation thread via its options menu (requires confirmation; idempotent) |
 | `get_company_profile` | Extract company information with explicit section selection (posts, jobs); about-section references may include a `company_urn` entry carrying the numeric id used by LinkedIn's people-search `currentCompany` URL facet |
 | `get_company_posts` | Get recent posts from a company's LinkedIn feed |
-| `search_companies` | Search for companies on LinkedIn by keywords |
+| `search_companies` | Search for companies on LinkedIn by keywords, paginating up to `max_pages` and reporting `pages_fetched`/`stopped_reason`/`truncated` |
 | `get_company_employees` | List employees at a company from the /people/ page, with optional keyword filter |
-| `search_jobs` | Search for jobs with keywords and location filters |
+| `search_jobs` | Search for jobs with keywords and location filters; reports LinkedIn's own advertised result total when available |
 | `get_saved_jobs` | List job postings saved by the authenticated user |
-| `search_people` | Search for people by keywords, location, connection degree (1st/2nd/3rd), and current company |
+| `save_job` | Save or unsave a job posting for the authenticated account (requires confirmation; idempotent) |
+| `get_job_alerts` | List the authenticated user's job alerts, each alert's own search returned as a reference |
+| `search_people` | Search for people by keywords, location (free text, resolved at call time against LinkedIn's own typeahead, or a numeric geo URN id), connection degree (1st/2nd/3rd), current/past company, school, industry, title, and profile language, paginating up to `max_pages` and reporting `pages_fetched`/`stopped_reason`/`truncated` |
+| `resolve_geo_location` | Resolve a free-text place name to LinkedIn geo URN id candidates without running a search; used internally by `search_people`'s free-text `location`, and directly to disambiguate when it reports more than one candidate |
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
-| `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) |
+| `get_notifications` | List recent notifications (replies, reactions, mentions, connection requests) from the notifications page, with an optional "my_posts"/"mentions" filter |
+| `get_hashtag_feed` | Get recent posts from a LinkedIn hashtag feed (/feed/hashtag/\<tag\>/) |
+| `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) and sort order (relevance/latest), reporting `stopped_reason`/`truncated` |
+| `get_saved_posts` | List posts saved by the authenticated user from /my-items/saved-posts/ |
+| `save_post` | Save or unsave a post via its overflow menu's toggle (requires confirmation; the toggle is identified structurally, not by label text) |
+| `get_post_reactions` | List who reacted to a post by opening its reactions dialog (structural probe; reaction type is not extracted) |
+| `get_post_comments` | Read a post's comments and replies, with each comment's URN, parent, author, permalink and excerpt (bounded, locale-independent expansion; `sort` relevant/recent) |
+| `reply_to_comment` | Reply to one comment located by URN (requires `confirm`; verifies the reply box belongs to that comment, confirms the reply appeared; @mentions not supported) |
+| `comment_on_post` | Post a top-level comment on a post (requires `confirm`; confirms the comment appeared; @mentions not supported) |
+| `react_to_comment` | Like one comment located by URN (requires `confirm`; never removes an existing reaction) |
+| `create_post` | Publish or schedule a post with real @mentions (`@[Name](profile or company URL)`, verified by identity, fails closed), up to 20 images or one PDF/PPTX document carousel, visibility, posting as a company page you admin (`post_as`), and LinkedIn-native scheduling (requires `confirm`; `confirm=false` previews without a browser) |
+| `create_poll` | Publish or schedule a poll (question ≤140 chars, 2–4 options ≤30 chars, 1/3/7/14 days) with optional text, `post_as` and `schedule_at` (requires `confirm`; `confirm=false` previews without a browser) |
+| `get_scheduled_posts` | List scheduled posts with identifiers |
+| `edit_scheduled_post` | Change a scheduled post's text and/or time by identifier (requires `confirm`) |
+| `delete_scheduled_post` | Delete a scheduled post by identifier (requires `confirm`) |
+| `edit_post` | Replace the text of your own published post after verifying authorship (requires `confirm`; LinkedIn re-evaluates distribution on edits) |
+| `delete_post` | Delete your own published post after verifying authorship (requires `confirm`) |
+| `get_mutual_connections` | List LinkedIn connections shared between you and another profile, reached via the profile's own shared-connections search link |
+| `list_connections` | List the authenticated user's 1st-degree connections, sorted by recently-added/first-name/last-name |
+| `get_invitations` | List outgoing or incoming connection-request invitations |
+| `withdraw_invitation` | Withdraw a previously-sent, still-pending connection request, identified by profile URL (requires confirmation) |
+| `respond_to_invitation` | Accept or ignore an incoming connection request, identified by profile URL (requires confirmation) |
+| `follow` | Follow or unfollow a person or company page (requires confirmation; clicks only when the control's `aria-pressed` state shows the change is needed, so a follow never undoes an existing one) |
+| `search_groups` | Search for LinkedIn groups by keyword |
+| `get_group_posts` | List recent posts from a LinkedIn group's home feed |
+| `get_group_members` | List members of a LinkedIn group from its /members/ page, with optional keyword filter (full list requires the account to be a group member) |
+| `search_events` | Search for LinkedIn events by keyword |
+| `get_event_details` | Get the details page for a single LinkedIn event |
+| `get_event_attendees` | List attendees of a LinkedIn event, with a bounded scroll budget |
+| `get_post_analytics` | Analytics of one of your own posts (impressions, members reached, reactions, comments, reposts, saves, profile viewers, followers gained, demographics when shown); other people's posts return a `not_authorized` section error |
+| `get_profile_analytics` | Your own profile and creator dashboards as separate sections (profile_viewers, search_appearances, followers, post_impressions) |
+| `get_company_page_analytics` | Admin analytics of a company page you administer (visitors, followers with count and growth, content), one navigation per section; non-admin sections return a `not_authorized` section error |
+| `sales_nav_search_leads` | Search Sales Navigator leads (people) by keyword and optional filters. Requires a Sales Navigator seat — see [Sales Navigator tools](#sales-navigator-tools) |
+| `sales_nav_search_accounts` | Search Sales Navigator accounts (companies) by keyword and optional filters. Requires a Sales Navigator seat |
+| `sales_nav_get_lists` | List the authenticated user's Sales Navigator lead or account lists. Requires a Sales Navigator seat |
+| `sales_nav_get_list` | Read one Sales Navigator list's members, bounded by `max_items`. Requires a Sales Navigator seat |
 | `close_session` | Close browser session and clean up resources |
+| `get_pacing_status` | Show LinkedIn pacing: call counters, when the next read and write are allowed, any cooldown, and the effective limits. Never contacts LinkedIn |
 
 <br/>
 <br/>
@@ -624,6 +666,116 @@ belongs behind something that provides it.
 <br/>
 <br/>
 
+
+<a id="pacing"></a>
+
+## ⏱️ Pacing and account safety
+
+LinkedIn restricts accounts, not clients, so the server paces every tool call that reaches LinkedIn, across every MCP client connected to it. Pacing is **on by default** with limits meant for a personal account. LinkedIn publishes no safe rates, so this lowers the risk of a restriction; it cannot rule one out.
+
+- **Spacing.** Each LinkedIn call waits a minimum gap after the previous one ends, plus random jitter so the cadence is never constant. Writes (`send_message`, `connect_with_person`, and any tool annotated `destructiveHint` or tagged `write`) have a longer gap of their own. Waits of up to 30 seconds happen inside the call and are reported as progress; a longer one fails at once with the time to retry.
+- **Rolling caps.** Reads per hour, and writes per hour and per day. A call over a cap fails at once with an error naming the limit and when it frees up. Nothing is queued or slept on for minutes.
+- **Cooldown.** When LinkedIn answers with HTTP 429 or redirects to a checkpoint, challenge or authwall page, every LinkedIn call is refused for a cooldown that starts at 30 minutes and doubles each time it happens again within a day (at most 24 hours). Detection uses status codes and URL routes, not page text. An ordinary expired-session redirect to `/login` does not start one.
+- **Persistence.** Counters and cooldown live in `pacing-state.json` beside the browser profile (`~/.linkedin-mcp/` by default), so restarting the server or the container does not reset them. A missing or corrupt file starts fresh with a warning.
+
+`get_pacing_status` reports the counters, the next allowed read and write, and any cooldown without touching LinkedIn or waiting for the browser. `close_session` is not paced.
+
+| Variable | CLI flag | Default | Meaning |
+|----------|----------|---------|---------|
+| `PACING_ENABLED` | `--pacing` / `--no-pacing` | `true` | Turn all pacing, caps and the cooldown on or off |
+| `PACING_MIN_INTERVAL_SECONDS` | `--pacing-min-interval` | `8` | Gap after any LinkedIn call, in seconds |
+| `PACING_JITTER_SECONDS` | `--pacing-jitter` | `7` | Random extra (0 to this) added to every gap |
+| `PACING_WRITE_MIN_INTERVAL_SECONDS` | `--pacing-write-min-interval` | `90` | Gap after a write before the next write |
+| `PACING_MAX_READS_PER_HOUR` | `--pacing-max-reads-per-hour` | `40` | Read calls allowed in any 60 minutes |
+| `PACING_MAX_WRITES_PER_HOUR` | `--pacing-max-writes-per-hour` | `6` | Write calls allowed in any 60 minutes |
+| `PACING_MAX_WRITES_PER_DAY` | `--pacing-max-writes-per-day` | `20` | Write calls allowed in any 24 hours |
+| `PACING_COOLDOWN_BASE_SECONDS` | `--pacing-cooldown-base` | `1800` | First cooldown after a 429 or checkpoint |
+
+For every number, `0` switches that limit off. An unreadable value stops the server at startup rather than silently falling back.
+
+To clear a cooldown early, for example after resolving a checkpoint in a normal browser, stop the server, delete `pacing-state.json`, and start it again. Deleting the file while the server runs has no effect, because the running server keeps its own copy.
+
+<a id="sales-navigator-tools"></a>
+
+## 🧭 Sales Navigator tools
+
+`sales_nav_search_leads`, `sales_nav_search_accounts`, `sales_nav_get_lists`
+and `sales_nav_get_list` are read-only: no InMail, connect, save, or
+list-membership writes. All four require the authenticated account to hold a
+paid Sales Navigator seat.
+
+**Seat detection is automatic and locale-independent.** An account without a
+seat is redirected by LinkedIn away from `/sales/` the moment any Sales
+Navigator page loads. Every tool here checks the *landed URL* for that,
+never page text, and stops immediately — no scrolling, no further
+navigation — returning a `section_errors` entry with `error_type:
+"sales_navigator_unavailable"` instead of an empty or misleading result.
+
+**The URL shapes these tools navigate to are this project's own
+construction** (`/sales/search/people`, `/sales/search/companies`,
+`/sales/lists/people`, `/sales/lists/company`, plus flat `keywords=`/filter
+query parameters), not confirmed against a live Sales Navigator seat.
+LinkedIn's real Sales Navigator search is widely reported to encode filters
+inside one structured `query` parameter rather than flat parameters; that
+exact grammar has not been reproduced here for lack of a live capture to
+verify it against. Treat `filters` as best-effort until verified: pass
+LinkedIn's own parameter names if you know them, and expect that an unknown
+filter may simply be ignored by LinkedIn rather than rejected.
+
+<br/>
+<br/>
+
+<a id="non-english-linkedin-ui"></a>
+
+## 🌐 Non-English LinkedIn UI
+
+LinkedIn's display language is an **account** setting (Settings -> Account
+preferences -> Language), not a browser one — this server forces its browser
+context to `en-US`, but that only biases `Accept-Language`/`navigator.language`
+and does not override what a signed-in account has chosen. An account whose
+LinkedIn is set to a language other than English will see that language
+through this server exactly as it would through any other browser.
+
+**What works regardless of UI language:** the tools this project could verify
+depend only on URL patterns, DOM structure, and attribute presence, not on
+button or label text — connection-state detection (`connect_with_person`),
+message composition and sending (`send_message`), job-id and profile-url
+extraction, and every tool's raw-text section content
+(`{url, sections: {name: raw_text}}`, per `AGENTS.md`'s Tool Return Format —
+the text itself is returned as-is in whatever language LinkedIn rendered it,
+for the calling client to interpret). Job-search and saved-jobs pagination
+counts now also parse Arabic-Indic digits.
+
+**What's best-effort or degrades on a non-English UI**, with a documented
+fallback rather than a crash:
+
+- Popup/modal auto-dismiss (`handle_modal_close`) falls back to a
+  design-system CSS class when neither its English nor its Arabic
+  `aria-label` table matches; a locale outside those two may leave a modal
+  open.
+- A profile's optional sidebar recommendations
+  ("People you may know" / "More profiles for you") and the chrome LinkedIn
+  wraps around a conversation thread are matched on English section headings
+  and control text; on a non-English session, sidebar recommendations may
+  come back empty and a conversation's inbox/composer chrome may not be
+  stripped from its text.
+- A few short, well-known reference labels (e.g. anchors whose only text is
+  "Follow" or a section heading like "Experience") are recognized in English
+  and a best-effort Arabic transcription; any other language, or a
+  mistranscribed Arabic string, falls back to the label passing through
+  unfiltered rather than being cleaned up.
+
+None of the above breaks a tool call — every fallback is "return the text as
+LinkedIn rendered it" or "collect nothing for this optional extra", never an
+error. See [`docs/i18n-audit.md`](docs/i18n-audit.md) for the full file-by-file
+inventory, including what still needs a live non-English session to verify.
+
+**Workaround** if you want every fallback above to also match: switch the
+account's LinkedIn display language to English (Settings -> Account
+preferences -> Language) before using this server.
+
+<br/>
+<br/>
 
 <a id="using-a-proxy"></a>
 

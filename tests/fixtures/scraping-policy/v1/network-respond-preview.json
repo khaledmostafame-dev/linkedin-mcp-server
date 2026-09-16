@@ -1,0 +1,18 @@
+{
+  "call": {
+    "arguments": {
+      "action": "ignore",
+      "confirm": false,
+      "linkedin_username": "ada-lovelace"
+    },
+    "method": "respond_to_invitation"
+  },
+  "events": [],
+  "result": {
+    "message": "Would ignore the incoming connection request from ada-lovelace. Pass confirm=True to proceed.",
+    "status": "preview",
+    "url": "https://www.linkedin.com/in/ada-lovelace/"
+  },
+  "scenario": "respond_to_invitation__preview",
+  "schema_version": 1
+}

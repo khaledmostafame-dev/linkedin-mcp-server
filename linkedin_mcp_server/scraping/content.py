@@ -12,6 +12,45 @@ from linkedin_mcp_server.scraping.text import strip_linkedin_noise
 
 logger = logging.getLogger(__name__)
 
+# Shared JS function returning the largest image variant an <img> offers.
+#
+# `currentSrc` alone is not enough: it is whatever the layout engine resolved
+# for the current viewport and device pixel ratio, so the same profile yields
+# a 200px photo in one window and 800px in another, while the element's
+# srcset lists every size LinkedIn will serve. The CDN URLs are signed, so a
+# larger variant cannot be constructed after the fact — it has to be read
+# here.
+#
+# Kept as its own module constant so a DOM test can evaluate this exact
+# source against a real browser instead of a copy of it.
+LARGEST_IMAGE_VARIANT_FN_JS = r"""
+function largestImageVariant(img) {
+  const candidates = [];
+  for (const attr of ['src', 'data-delayed-url', 'data-ghost-url', 'data-src']) {
+    const value = (img.getAttribute(attr) || '').trim();
+    if (value) candidates.push(value);
+  }
+  if (img.currentSrc) candidates.push(img.currentSrc.trim());
+  // srcset is "<url> <descriptor>, <url> <descriptor>, ..."
+  for (const part of (img.getAttribute('srcset') || '').split(',')) {
+    const url = part.trim().split(/\s+/)[0];
+    if (url) candidates.push(url);
+  }
+
+  let best = '';
+  let bestSize = -1;
+  for (const url of candidates) {
+    const match = url.match(/_(\d+)_(\d+)\//);
+    const size = match ? Math.max(+match[1], +match[2]) : 0;
+    if (size > bestSize) {
+      bestSize = size;
+      best = url;
+    }
+  }
+  return best;
+}
+"""
+
 
 class PageContentReader:
     """Read innerText and raw anchor metadata off the bound page."""
@@ -57,7 +96,9 @@ class PageContentReader:
     ) -> dict[str, Any]:
         """Extract innerText and raw anchor metadata from the first matching root."""
         result = await self._session.page.evaluate(
-            """({ selectors }) => {
+            "({ selectors }) => {\n"
+            + LARGEST_IMAGE_VARIANT_FN_JS
+            + """
                 const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
                 const containerSelector = 'section, article, li, div';
                 const headingSelector = 'h1, h2, h3';
@@ -154,7 +195,19 @@ class PageContentReader:
                     })
                     .filter(Boolean);
 
-                return { source, text, references };
+                // Every <img>, not img[src]: LinkedIn defers loading, so an
+                // image below the fold has no src attribute yet at
+                // extraction time and the narrower selector silently
+                // matches nothing.
+                const images = Array.from(container.querySelectorAll('img'))
+                    .slice(0, MAX_REFERENCE_ANCHORS)
+                    .map(img => ({
+                        src: largestImageVariant(img),
+                        alt: normalize(img.getAttribute('alt')),
+                    }))
+                    .filter(image => image.src);
+
+                return { source, text, references, images };
             }""",
             {"selectors": selectors},
         )

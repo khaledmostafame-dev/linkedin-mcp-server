@@ -168,7 +168,64 @@ class TestSearchPosts:
         assert result == {
             "url": mock_extract.call_args.args[0],
             "sections": {},
+            "stopped_reason": "end_of_results",
+            "truncated": False,
         }
+
+    async def test_the_sort_by_filter_reaches_the_url(self, mock_page):
+        search = _search(mock_page)
+        with patch.object(
+            search._capture,
+            "capture",
+            new_callable=AsyncMock,
+            return_value=extracted("post"),
+        ) as mock_extract:
+            result = await search.search_posts("python", sort_by="latest")
+
+        assert "sortBy=%5B%22date_posted%22%5D" in result["url"]
+        assert mock_extract.call_args.args[0] == result["url"]
+
+    async def test_an_invalid_sort_by_is_refused_before_the_page_is_read(
+        self, mock_page
+    ):
+        search = _search(mock_page)
+        with patch.object(
+            search._capture, "capture", new_callable=AsyncMock
+        ) as mock_extract:
+            with pytest.raises(ValueError, match="Invalid sort_by"):
+                await search.search_posts("python", sort_by="oldest")
+
+        mock_extract.assert_not_awaited()
+        mock_page.goto.assert_not_awaited()
+
+    async def test_a_scroll_capped_page_is_reported_as_truncated(self, mock_page):
+        """Exhausting the scroll budget without settling means more may exist."""
+        search = _search(mock_page)
+        capped = extracted("post text")
+        capped.scroll_capped = True
+        with patch.object(
+            search._capture,
+            "capture",
+            new_callable=AsyncMock,
+            return_value=capped,
+        ):
+            result = await search.search_posts("python")
+
+        assert result["stopped_reason"] == "scroll_cap"
+        assert result["truncated"] is True
+
+    async def test_a_settled_page_is_reported_as_not_truncated(self, mock_page):
+        search = _search(mock_page)
+        with patch.object(
+            search._capture,
+            "capture",
+            new_callable=AsyncMock,
+            return_value=extracted("post text"),
+        ):
+            result = await search.search_posts("python")
+
+        assert result["stopped_reason"] == "end_of_results"
+        assert result["truncated"] is False
 
     async def test_references_are_reported_under_the_section_name(self, mock_page):
         reference: Reference = {"kind": "person", "url": "/in/someone/"}

@@ -41,24 +41,65 @@ from .support.policy_trace import ScriptedPage, TraceRecorder
 
 
 TOOL_DELEGATES = {
+    "archive_conversation": "archive_conversation",
+    "comment_on_post": "comment_on_post",
     "connect_with_person": "connect_with_person",
+    "create_poll": "create_poll",
+    "create_post": "create_post",
+    "delete_post": "delete_post",
+    "delete_scheduled_post": "delete_scheduled_post",
+    "edit_post": "edit_post",
+    "edit_scheduled_post": "edit_scheduled_post",
+    "follow": "follow",
     "get_company_employees": "get_company_employees",
+    "get_company_page_analytics": "get_company_page_analytics",
     "get_company_posts": "extract_page",
     "get_company_profile": "scrape_company",
     "get_conversation": "get_conversation",
     "get_feed": "extract_feed",
+    "get_event_attendees": "get_event_attendees",
+    "get_event_details": "get_event_details",
+    "get_group_members": "get_group_members",
+    "get_group_posts": "get_group_posts",
+    "get_hashtag_feed": "extract_page",
     "get_inbox": "get_inbox",
+    "get_invitations": "get_invitations",
+    "get_job_alerts": "get_job_alerts",
     "get_job_details": "scrape_job",
+    "get_mutual_connections": "get_mutual_connections",
     "get_my_profile": "get_my_profile",
+    "get_notifications": "extract_page",
     "get_person_profile": "scrape_person",
+    "get_post_analytics": "get_post_analytics",
+    "get_post_comments": "get_post_comments",
+    "get_post_reactions": "get_post_reactions",
+    "get_profile_analytics": "get_profile_analytics",
     "get_saved_jobs": "get_saved_jobs",
+    "get_saved_posts": "extract_page",
+    "get_scheduled_posts": "get_scheduled_posts",
     "get_sidebar_profiles": "get_sidebar_profiles",
+    "list_connections": "list_connections",
+    "mark_conversation_read": "mark_conversation_read",
+    "react_to_comment": "react_to_comment",
+    "reply_to_comment": "reply_to_comment",
+    "reply_to_conversation": "reply_to_conversation",
+    "resolve_geo_location": "resolve_geo_location",
+    "respond_to_invitation": "respond_to_invitation",
+    "sales_nav_get_list": "sales_nav_get_list",
+    "sales_nav_get_lists": "sales_nav_get_lists",
+    "sales_nav_search_accounts": "sales_nav_search_accounts",
+    "sales_nav_search_leads": "sales_nav_search_leads",
+    "save_job": "save_job",
+    "save_post": "save_post",
     "search_companies": "search_companies",
     "search_conversations": "search_conversations",
+    "search_events": "search_events",
+    "search_groups": "search_groups",
     "search_jobs": "search_jobs",
     "search_people": "search_people",
     "search_posts": "search_posts",
     "send_message": "send_message",
+    "withdraw_invitation": "withdraw_invitation",
 }
 
 
@@ -87,16 +128,25 @@ async def test_constructor_export_and_dependency_use_the_same_facade(monkeypatch
     constructed = await dependencies.get_ready_extractor(None, tool_name="policy-test")
 
     expected_state = {
+        "_analytics",
         "_capture",
+        "_comments",
         "_company",
         "_connection",
         "_content",
         "_conversations",
+        "_event",
         "_feed",
+        "_group",
         "_jobs",
         "_message_sender",
+        "_network",
         "_person",
+        "_post_actions",
+        "_post_composer",
         "_posts",
+        "_reactions",
+        "_sales_navigator",
     }
     assert set(vars(extractor)) == expected_state
     assert type(constructed) is LinkedInExtractor
@@ -119,11 +169,12 @@ async def test_registered_tools_and_extractor_delegates_are_counted_separately()
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 19
-    assert tool_names == {*TOOL_DELEGATES, "close_session"}
-    assert len(TOOL_DELEGATES) == 18
+    assert len(tool_names) == 61
+    assert tool_names == {*TOOL_DELEGATES, "close_session", "get_pacing_status"}
+    assert len(TOOL_DELEGATES) == 59
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
+    assert "get_pacing_status" not in TOOL_DELEGATES
 
 
 async def test_company_posts_delegate_matches_registered_tool_consumer():
@@ -497,7 +548,7 @@ def test_facade_methods_are_exactly_the_frozen_coroutine_surface():
     }
 
     assert actual == expected
-    assert len(TOOL_FACADE_METHODS) == 18
+    assert len(TOOL_FACADE_METHODS) == 56
     assert len(COMPATIBILITY_METHODS) == 2
 
 

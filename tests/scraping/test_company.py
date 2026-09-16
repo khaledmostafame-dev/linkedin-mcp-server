@@ -708,11 +708,14 @@ class TestSearchCompanies:
 
         url = mock_extract.call_args.args[0]
         assert "/search/results/companies/" in url
-        assert mock_extract.call_args.args[1] == "search_results"
-        assert mock_extract.call_args.args[2].mode is CaptureMode.SEARCH_RESULTS
+        assert mock_extract.call_args.kwargs["section_name"] == "search_results"
+        assert mock_extract.call_args.kwargs["plan"].mode is CaptureMode.SEARCH_RESULTS
         assert result == {
             "url": url,
             "sections": {"search_results": "Fintech Inc"},
+            "pages_fetched": 1,
+            "stopped_reason": "no_more_results",
+            "truncated": False,
         }
 
     async def test_an_empty_result_omits_the_optional_keys(self, mock_page):
@@ -745,6 +748,38 @@ class TestSearchCompanies:
 
         assert result["sections"] == {}
         assert result["section_errors"] == {"search_results": error}
+        assert result["stopped_reason"] == "error"
+
+    async def test_paginates_until_no_new_companies(self, mock_page):
+        scraper = _scraper(mock_page)
+        pages = [
+            extracted(
+                "Page one",
+                [
+                    {"kind": "company", "url": f"/company/co{i}/", "text": f"Co {i}"}
+                    for i in range(3)
+                ],
+            ),
+            extracted(
+                "Page two (no new companies)",
+                [{"kind": "company", "url": "/company/co0/", "text": "Co 0"}],
+            ),
+        ]
+        with patch.object(
+            scraper._capture,
+            "capture",
+            new_callable=AsyncMock,
+            side_effect=pages,
+        ) as mock_extract:
+            result = await scraper.search_companies("fintech", max_pages=5)
+
+        assert mock_extract.await_count == 2
+        urls = [call.args[0] for call in mock_extract.await_args_list]
+        assert "&page=" not in urls[0]
+        assert urls[1].endswith("&page=2")
+        assert result["pages_fetched"] == 2
+        assert result["stopped_reason"] == "no_more_results"
+        assert result["truncated"] is False
 
 
 def test_the_real_section_table_is_the_one_the_walk_orders_by():

@@ -97,7 +97,7 @@
       "call": "search_posts",
       "kind": "evaluate",
       "operation": "root_content",
-      "program_digest": "e8a0e21ac6f5"
+      "program_digest": "8f7f95c2d74d"
     }
   ],
   "result": {
@@ -107,6 +107,8 @@
     "sections": {
       "search_results": "Result content"
     },
+    "stopped_reason": "scroll_cap",
+    "truncated": true,
     "url": "https://www.linkedin.com/search/results/content/?keywords=mathematics&origin=FACETED_SEARCH"
   },
   "scenario": "search_posts__baseline",

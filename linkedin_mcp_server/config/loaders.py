@@ -60,6 +60,14 @@ def non_negative_float(value: str) -> float:
     return fvalue
 
 
+def non_negative_int(value: str) -> int:
+    """Argparse type for non-negative integers (0 allowed as a sentinel)."""
+    ivalue = int(value)
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(f"must be non-negative, got {value}")
+    return ivalue
+
+
 def credential_free_url(value: str) -> str:
     """Argparse type for a proxy URL that carries no credentials.
 
@@ -147,6 +155,14 @@ class EnvironmentKeys:
     EAGER_FULL_CHROMIUM = "EAGER_FULL_CHROMIUM"
     DAEMON_ENABLED = "DAEMON_ENABLED"
     INSTALLER_TEMP_DIR = "INSTALLER_TEMP_DIR"
+    PACING_ENABLED = "PACING_ENABLED"
+    PACING_MIN_INTERVAL_SECONDS = "PACING_MIN_INTERVAL_SECONDS"
+    PACING_JITTER_SECONDS = "PACING_JITTER_SECONDS"
+    PACING_WRITE_MIN_INTERVAL_SECONDS = "PACING_WRITE_MIN_INTERVAL_SECONDS"
+    PACING_MAX_READS_PER_HOUR = "PACING_MAX_READS_PER_HOUR"
+    PACING_MAX_WRITES_PER_HOUR = "PACING_MAX_WRITES_PER_HOUR"
+    PACING_MAX_WRITES_PER_DAY = "PACING_MAX_WRITES_PER_DAY"
+    PACING_COOLDOWN_BASE_SECONDS = "PACING_COOLDOWN_BASE_SECONDS"
 
 
 # What ``manifest.json`` fills from ``user_config``, and the exact string each
@@ -439,7 +455,60 @@ def load_from_env(config: AppConfig) -> AppConfig:
         elif daemon_value in TRUTHY_VALUES:
             config.server.daemon_enabled = True
 
+    _load_pacing_from_env(config)
+
     return config
+
+
+# Environment name, config attribute, and whether the value is a count.
+_PACING_NUMBERS: tuple[tuple[str, str, bool], ...] = (
+    (EnvironmentKeys.PACING_MIN_INTERVAL_SECONDS, "min_interval_seconds", False),
+    (EnvironmentKeys.PACING_JITTER_SECONDS, "jitter_seconds", False),
+    (
+        EnvironmentKeys.PACING_WRITE_MIN_INTERVAL_SECONDS,
+        "write_min_interval_seconds",
+        False,
+    ),
+    (EnvironmentKeys.PACING_MAX_READS_PER_HOUR, "max_reads_per_hour", True),
+    (EnvironmentKeys.PACING_MAX_WRITES_PER_HOUR, "max_writes_per_hour", True),
+    (EnvironmentKeys.PACING_MAX_WRITES_PER_DAY, "max_writes_per_day", True),
+    (EnvironmentKeys.PACING_COOLDOWN_BASE_SECONDS, "cooldown_base_seconds", False),
+)
+
+
+def _load_pacing_from_env(config: AppConfig) -> None:
+    """Read the ``PACING_*`` variables (validated in ``PacingConfig.validate``).
+
+    An unreadable value is refused rather than ignored, and an unrecognised
+    ``PACING_ENABLED`` too: these settings exist to protect an account, and a
+    typo that silently fell back would leave the operator believing a limit is
+    in force that is not, or off that is on.
+    """
+    if (enabled_env := os.environ.get(EnvironmentKeys.PACING_ENABLED)) is not None:
+        enabled_value = _normalize_env(enabled_env)
+        if enabled_value in FALSY_VALUES:
+            config.pacing.enabled = False
+        elif enabled_value in TRUTHY_VALUES:
+            config.pacing.enabled = True
+        elif enabled_value:
+            raise ConfigurationError(
+                f"Invalid PACING_ENABLED: '{enabled_env}'. Must be true or false."
+            )
+
+    for env_key, attribute, is_count in _PACING_NUMBERS:
+        raw = os.environ.get(env_key)
+        if raw is None or not raw.strip():
+            continue
+        try:
+            value: float | int = int(raw) if is_count else float(raw)
+        except ValueError:
+            kind = "a whole number" if is_count else "a number"
+            raise ConfigurationError(f"Invalid {env_key}: '{raw}'. Must be {kind}.")
+        if not (math.isfinite(value) and value >= 0):
+            raise ConfigurationError(
+                f"Invalid {env_key}: '{raw}'. Must be non-negative (0 = no limit)."
+            )
+        setattr(config.pacing, attribute, value)
 
 
 def load_from_args(config: AppConfig, argv: Sequence[str]) -> AppConfig:
@@ -756,7 +825,96 @@ def load_from_args(config: AppConfig, argv: Sequence[str]) -> AppConfig:
         help="Give every stdio client its own browser (default; overrides DAEMON_ENABLED=true).",
     )
 
+    pacing_group = parser.add_mutually_exclusive_group()
+    pacing_group.add_argument(
+        "--pacing",
+        dest="pacing_enabled",
+        action="store_true",
+        default=None,
+        help="Space and budget tool calls that reach LinkedIn (default).",
+    )
+    pacing_group.add_argument(
+        "--no-pacing",
+        dest="pacing_enabled",
+        action="store_false",
+        default=None,
+        help=(
+            "Turn off pacing, rolling caps and the checkpoint cooldown "
+            "(overrides PACING_ENABLED=true). Raises the risk of an account "
+            "restriction."
+        ),
+    )
+    for flag, attribute, metavar, kind, help_text in (
+        (
+            "--pacing-min-interval",
+            "min_interval_seconds",
+            "SECONDS",
+            non_negative_float,
+            "Gap between LinkedIn tool calls (default: 8; 0 = none)",
+        ),
+        (
+            "--pacing-jitter",
+            "jitter_seconds",
+            "SECONDS",
+            non_negative_float,
+            "Random extra added to every gap (default: 7)",
+        ),
+        (
+            "--pacing-write-min-interval",
+            "write_min_interval_seconds",
+            "SECONDS",
+            non_negative_float,
+            "Gap between write tool calls (default: 90; 0 = none)",
+        ),
+        (
+            "--pacing-max-reads-per-hour",
+            "max_reads_per_hour",
+            "N",
+            non_negative_int,
+            "Read tool calls allowed in any hour (default: 40; 0 = no cap)",
+        ),
+        (
+            "--pacing-max-writes-per-hour",
+            "max_writes_per_hour",
+            "N",
+            non_negative_int,
+            "Write tool calls allowed in any hour (default: 6; 0 = no cap)",
+        ),
+        (
+            "--pacing-max-writes-per-day",
+            "max_writes_per_day",
+            "N",
+            non_negative_int,
+            "Write tool calls allowed in any 24 hours (default: 20; 0 = no cap)",
+        ),
+        (
+            "--pacing-cooldown-base",
+            "cooldown_base_seconds",
+            "SECONDS",
+            non_negative_float,
+            (
+                "First cooldown after a LinkedIn checkpoint or HTTP 429, doubling "
+                "per repeat within a day (default: 1800; 0 = no cooldown)"
+            ),
+        ),
+    ):
+        parser.add_argument(
+            flag,
+            dest=f"pacing_{attribute}",
+            type=kind,
+            default=None,
+            metavar=metavar,
+            help=help_text,
+        )
+
     args = parser.parse_args(argv)
+
+    if args.pacing_enabled is not None:
+        config.pacing.enabled = args.pacing_enabled
+    for _, attribute, _ in _PACING_NUMBERS:
+        value = getattr(args, f"pacing_{attribute}")
+        if value is not None:
+            setattr(config.pacing, attribute, value)
 
     # Update configuration with parsed arguments
     if args.no_headless:

@@ -1,0 +1,95 @@
+{
+  "call": {
+    "arguments": {
+      "list_url": "https://www.linkedin.com/sales/lists/people/12345"
+    },
+    "method": "sales_nav_get_list"
+  },
+  "events": [
+    {
+      "call": "sales_nav_get_list",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "sales_nav_get_list",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/lists/people/12345",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "sales_nav_get_list",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/sales/lists/people/12345",
+      "requested_url": "https://www.linkedin.com/sales/lists/people/12345",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "sales_nav_get_list",
+      "description": "goto https://www.linkedin.com/sales/lists/people/12345",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "sales_nav_get_list",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/lists/people/12345",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "sales_nav_get_list",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "sales_nav_get_list",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "sales_nav_get_list",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "sales_nav_get_list",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "sales_nav_get_list",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 10,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "sales_nav_get_list",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "8f7f95c2d74d"
+    }
+  ],
+  "result": {
+    "pages_fetched": 0,
+    "section_names": [],
+    "sections": {},
+    "stopped_reason": "empty_page",
+    "url": "https://www.linkedin.com/sales/lists/people/12345"
+  },
+  "scenario": "sales_nav_get_list__baseline",
+  "schema_version": 1
+}

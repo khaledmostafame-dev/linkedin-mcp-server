@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from linkedin_mcp_server.core.exceptions import RateLimitError
-from linkedin_mcp_server.core.utils import detect_rate_limit, scroll_job_sidebar
+from linkedin_mcp_server.core.utils import (
+    _modal_dismiss_selector,
+    detect_rate_limit,
+    handle_modal_close,
+    scroll_job_sidebar,
+)
 
 
 @pytest.fixture
@@ -141,3 +146,62 @@ class TestScrollDeadline:
         await scroll_job_sidebar(page, deadline=0.0004)
 
         assert page.wait_for_selector.await_args.kwargs["timeout"] == 1
+
+
+class TestModalDismissSelector:
+    """The modal-dismiss locator: a locale-independent class plus a
+    per-locale ``aria-label`` fallback table (CLAUDE.md -> Scraping Rules).
+    """
+
+    def test_class_selector_is_present(self):
+        """The design-system class stays in the selector regardless of locale."""
+        assert "button.artdeco-modal__dismiss" in _modal_dismiss_selector()
+
+    def test_english_aria_labels_are_present(self):
+        selector = _modal_dismiss_selector()
+        assert 'button[aria-label="Dismiss"]' in selector
+        assert 'button[aria-label="Close"]' in selector
+
+    def test_arabic_aria_labels_are_present(self):
+        """A non-English UI's Dismiss/Close labels are also tried.
+
+        Best-effort transcription, not verified against a live LinkedIn
+        Arabic session — see docs/i18n-audit.md. This test pins the table's
+        content, not its correctness against LinkedIn.
+        """
+        selector = _modal_dismiss_selector()
+        assert 'button[aria-label="تجاهل"]' in selector
+        assert 'button[aria-label="إغلاق"]' in selector
+
+
+class TestHandleModalClose:
+    def _page(self, *, visible: bool):
+        page = MagicMock()
+        close_button = MagicMock()
+        close_button.is_visible = AsyncMock(return_value=visible)
+        close_button.click = AsyncMock()
+        locator = MagicMock()
+        locator.first = close_button
+        page.locator = MagicMock(return_value=locator)
+        return page, close_button
+
+    async def test_queries_the_combined_locale_selector(self):
+        """Reverting to the English-only selector must fail this."""
+        page, _ = self._page(visible=False)
+
+        await handle_modal_close(page)
+
+        page.locator.assert_called_once_with(_modal_dismiss_selector())
+        assert "تجاهل" in page.locator.call_args.args[0]
+
+    async def test_clicks_and_reports_a_visible_modal(self):
+        page, close_button = self._page(visible=True)
+
+        assert await handle_modal_close(page) is True
+        close_button.click.assert_awaited_once()
+
+    async def test_no_visible_modal_reports_false(self):
+        page, close_button = self._page(visible=False)
+
+        assert await handle_modal_close(page) is False
+        close_button.click.assert_not_called()

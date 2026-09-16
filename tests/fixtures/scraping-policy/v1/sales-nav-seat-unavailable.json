@@ -1,0 +1,74 @@
+{
+  "call": {
+    "arguments": {
+      "keywords": "VP Engineering"
+    },
+    "method": "sales_nav_search_leads"
+  },
+  "events": [
+    {
+      "call": "sales_nav_search_leads",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/search/people?keywords=VP+Engineering",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/premium/products/",
+      "requested_url": "https://www.linkedin.com/sales/search/people?keywords=VP+Engineering",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "description": "goto https://www.linkedin.com/sales/search/people?keywords=VP+Engineering",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/search/people?keywords=VP+Engineering",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    }
+  ],
+  "result": {
+    "pages_fetched": 0,
+    "section_errors": {
+      "search_results": {
+        "error_message": "LinkedIn redirected away from Sales Navigator. This account has no Sales Navigator seat, or the session lost access to one.",
+        "error_type": "sales_navigator_unavailable"
+      }
+    },
+    "section_names": [],
+    "sections": {},
+    "stopped_reason": "no_seat",
+    "url": "https://www.linkedin.com/premium/products/"
+  },
+  "scenario": "sales_nav_search_leads__seat_unavailable",
+  "schema_version": 1
+}

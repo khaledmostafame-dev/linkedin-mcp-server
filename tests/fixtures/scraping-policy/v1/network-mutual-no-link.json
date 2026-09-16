@@ -1,0 +1,101 @@
+{
+  "call": {
+    "arguments": {
+      "linkedin_username": "ada-lovelace",
+      "max_results": 20
+    },
+    "method": "get_mutual_connections"
+  },
+  "events": [
+    {
+      "call": "get_mutual_connections",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add",
+      "section": "mutual_connections"
+    },
+    {
+      "call": "get_mutual_connections",
+      "extra": {
+        "target_url": "https://www.linkedin.com/in/ada-lovelace/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto",
+      "section": "mutual_connections"
+    },
+    {
+      "call": "get_mutual_connections",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/in/ada-lovelace/",
+      "requested_url": "https://www.linkedin.com/in/ada-lovelace/",
+      "section": "mutual_connections",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "get_mutual_connections",
+      "description": "goto https://www.linkedin.com/in/ada-lovelace/",
+      "kind": "boundary.stabilize",
+      "result": null,
+      "section": "mutual_connections"
+    },
+    {
+      "call": "get_mutual_connections",
+      "extra": {
+        "target_url": "https://www.linkedin.com/in/ada-lovelace/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto",
+      "section": "mutual_connections"
+    },
+    {
+      "call": "get_mutual_connections",
+      "kind": "boundary.auth_quick",
+      "result": null,
+      "section": "mutual_connections"
+    },
+    {
+      "call": "get_mutual_connections",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove",
+      "section": "mutual_connections"
+    },
+    {
+      "call": "get_mutual_connections",
+      "kind": "boundary.rate_limit",
+      "section": "mutual_connections"
+    },
+    {
+      "call": "get_mutual_connections",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "section": "mutual_connections",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": 10000
+    },
+    {
+      "call": "get_mutual_connections",
+      "dismissed": false,
+      "kind": "boundary.modal",
+      "section": "mutual_connections"
+    },
+    {
+      "call": "get_mutual_connections",
+      "kind": "evaluate",
+      "operation": "mutual_connections_link",
+      "program_digest": "d8f3516599ba",
+      "section": "mutual_connections"
+    }
+  ],
+  "result": {
+    "sections": {},
+    "stopped_reason": "no_mutual_connections_link_found",
+    "url": "https://www.linkedin.com/in/ada-lovelace/"
+  },
+  "scenario": "get_mutual_connections__no_link",
+  "schema_version": 1
+}

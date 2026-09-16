@@ -1,0 +1,73 @@
+{
+  "call": {
+    "arguments": {
+      "confirm": true,
+      "conversation_url_or_thread_id": "2-abc"
+    },
+    "method": "archive_conversation"
+  },
+  "events": [
+    {
+      "call": "archive_conversation",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "archive_conversation",
+      "extra": {
+        "target_url": "https://www.linkedin.com/messaging/thread/2-abc/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "archive_conversation",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/messaging/",
+      "requested_url": "https://www.linkedin.com/messaging/thread/2-abc/",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "archive_conversation",
+      "description": "goto https://www.linkedin.com/messaging/thread/2-abc/",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "archive_conversation",
+      "extra": {
+        "target_url": "https://www.linkedin.com/messaging/thread/2-abc/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "archive_conversation",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "archive_conversation",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "archive_conversation",
+      "kind": "boundary.rate_limit"
+    }
+  ],
+  "result": {
+    "changed": false,
+    "message": "LinkedIn did not open the requested conversation thread. It may not exist, or this account may not have access to it.",
+    "status": "conversation_unavailable",
+    "thread_id": "2-abc",
+    "url": "https://www.linkedin.com/messaging/"
+  },
+  "scenario": "archive_conversation__thread_unavailable",
+  "schema_version": 1
+}

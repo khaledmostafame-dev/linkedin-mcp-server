@@ -5,7 +5,9 @@ from urllib.parse import quote
 from linkedin_mcp_server.scraping.fields import COMPANY_SECTIONS, PERSON_SECTIONS
 from linkedin_mcp_server.scraping.link_metadata import (
     _REFERENCE_CAPS,
+    RawImage,
     RawReference,
+    build_image_references,
     build_references,
     classify_link,
     dedupe_references,
@@ -828,6 +830,83 @@ class TestBuildReferences:
         assert references == []
 
 
+class TestLocaleGuardedLabels:
+    """Arabic entries in link_metadata.py's per-locale label tables.
+
+    These pin the fixed Arabic transcriptions used where visible text is
+    genuinely the only signal (CLAUDE.md -> Scraping Rules: "guard it behind
+    an explicit per-locale table and document the limitation in code"). The
+    exact strings are a best-effort transcription, not verified against a
+    live LinkedIn Arabic session -- see docs/i18n-audit.md. Mirrors the
+    existing English-label tests above (e.g.
+    ``test_prefers_shorter_clean_label_over_merged_visible_text``) so a
+    revert of the Arabic table fails the same way an English regression
+    would.
+    """
+
+    def test_drops_an_arabic_generic_action_label(self):
+        """A generic Arabic control word ("Follow") is dropped like its
+        English counterpart, falling back to the aria-label carrying the
+        real name."""
+        references = build_references(
+            [
+                {
+                    "href": "https://www.linkedin.com/in/williamhgates/",
+                    "text": "متابعة",
+                    "aria_label": "Bill Gates",
+                }
+            ],
+            "main_profile",
+        )
+
+        assert references == [
+            {
+                "kind": "person",
+                "url": "/in/williamhgates/",
+                "text": "Bill Gates",
+                "context": "top card",
+            }
+        ]
+
+    def test_arabic_heading_maps_to_the_canonical_english_context(self):
+        references = build_references(
+            [
+                {
+                    "href": "https://www.linkedin.com/in/williamhgates/",
+                    "text": "Bill Gates",
+                    "heading": "الخبرة",
+                }
+            ],
+            "main_profile",
+        )
+
+        assert references == [
+            {
+                "kind": "person",
+                "url": "/in/williamhgates/",
+                "text": "Bill Gates",
+                "context": "experience",
+            }
+        ]
+
+    def test_an_uncovered_locale_heading_degrades_to_top_card(self):
+        """A heading this table doesn't cover (German, here) degrades to
+        "top card" for main_profile/about — the same accepted fallback an
+        unrecognized English heading gets, not a crash or a guess."""
+        references = build_references(
+            [
+                {
+                    "href": "https://www.linkedin.com/in/williamhgates/",
+                    "text": "Bill Gates",
+                    "heading": "Über mich",
+                }
+            ],
+            "main_profile",
+        )
+
+        assert references[0]["context"] == "top card"
+
+
 class TestClassifyLink:
     def test_a_slugged_job_url_keeps_its_id(self):
         """LinkedIn serves a job under a bare id and under a slugged path.
@@ -888,6 +967,23 @@ class TestClassifyLink:
         )
         assert result == ("conversation", "/messaging/thread/2-abc123/")
 
+    def test_group_url(self):
+        assert classify_link("https://www.linkedin.com/groups/12345/") == (
+            "group",
+            "/groups/12345/",
+        )
+
+    def test_group_url_with_subpath_keeps_the_numeric_id(self):
+        assert classify_link("https://www.linkedin.com/groups/12345/members/") == (
+            "group",
+            "/groups/12345/",
+        )
+
+    def test_a_non_numeric_groups_path_is_not_a_group_link(self):
+        """/groups/ is also LinkedIn's own nav chrome path in some contexts;
+        only a numeric id after it is a real group reference."""
+        assert classify_link("https://www.linkedin.com/groups/discover/") is None
+
     def test_inbox_references_include_threads(self):
         references = build_references(
             [
@@ -925,3 +1021,217 @@ class TestClassifyLink:
         assert len(references) == 1
         assert references[0]["kind"] == "conversation"
         assert references[0]["url"] == "/messaging/thread/2-xyz/"
+
+
+# The subject, from a large variant.
+_SUBJECT = (
+    "https://media.licdn.com/dms/image/v2/C4E03AQHaoqb8h-ev4w"
+    "/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0"
+)
+# Everyone else on the page - post authors, mutual connections, suggestions.
+_OTHER_MEMBER = (
+    "https://media.licdn.com/dms/image/v2/D5603AQExSlVQUDCavQ"
+    "/profile-displayphoto-scale_100_100/B56Zy_XQAyHQAc-/0/1772737086600"
+)
+_COMPANY_LOGO = (
+    "https://media.licdn.com/dms/image/v2/D4D0BAQEE_my7WpYL7g"
+    "/company-logo_100_100/B4DZpFeaQeGgAQ-/0/1762102192036/geofoundationai_logo"
+)
+_COVER = (
+    "https://media.licdn.com/dms/image/v2/D4D16AQE71FRdhqtCAA"
+    "/profile-displaybackgroundimage-shrink_200_800/B4DZpPiJ_JIMAU-/0/176227094"
+)
+_POST_IMAGE = (
+    "https://media.licdn.com/dms/image/v2/D5622AQH1rhjR5nc6nw"
+    "/feedshare-shrink_480/B56Z7XNJhOJoAg-/0/1781727009179"
+)
+# A company page renders its own logo large and every other company small,
+# exactly as a profile does with member photos.
+_COMPANY_SUBJECT_LOGO = (
+    "https://media.licdn.com/dms/image/v2/D4D0BAQGZ3dq_qonY0w"
+    "/company-logo_200_200/B4DZpFeaQeGgAQ-/0/1762102192036/nimbus_logo"
+)
+_ARTICLE_IMAGE = (
+    "https://media.licdn.com/dms/image/v2/D4E10AQFvKaHallTUrw"
+    "/articleshare-shrink_800/B4EZy0cQDzJcAQ-/0/1772553831073"
+)
+_STATIC_ICON = "https://static.licdn.com/aero-v1/sc/h/icon.svg"
+
+_PHOTO = "profile-displayphoto-shrink"
+_LOGO = "company-logo"
+
+
+def _cdn(kind: str, size: int, n: int = 0) -> str:
+    """A CDN URL for one kind at one size variant."""
+    return f"https://media.licdn.com/dms/image/v2/X{n}/{kind}_{size}_{size}/y/0"
+
+
+class TestBuildImageReferences:
+    """Tests for build_image_references — the page subject's own photo/logo.
+
+    ``innerText`` extraction can't see an ``<img>``, so the subject's photo
+    is the one thing on a top card that never reaches the caller otherwise
+    (issue #663). Fixture URLs mirror LinkedIn's CDN path grammar, the only
+    stable discriminator between a subject and everyone else on the page.
+    """
+
+    def test_returns_the_subject_photo(self):
+        [ref] = build_image_references([RawImage(src=_SUBJECT, alt="")], "main_profile")
+        assert ref == {"kind": "image", "url": _SUBJECT, "context": "profile photo"}
+
+    def test_picks_the_subject_out_of_a_whole_page(self):
+        page: list[RawImage] = [
+            {"src": _COVER, "alt": "Cover photo"},
+            {"src": _OTHER_MEMBER, "alt": "View Austin Cruz's profile"},
+            {"src": _COMPANY_LOGO, "alt": ""},
+            {"src": _SUBJECT, "alt": ""},
+            {"src": _POST_IMAGE, "alt": "View image"},
+            {"src": _STATIC_ICON, "alt": ""},
+        ]
+        assert [r["url"] for r in build_image_references(page, "main_profile")] == [
+            _SUBJECT
+        ]
+
+    def test_rejects_everything_that_is_not_the_subject(self):
+        for src in (_OTHER_MEMBER, _COMPANY_LOGO, _COVER, _POST_IMAGE, _STATIC_ICON):
+            assert (
+                build_image_references([RawImage(src=src, alt="x")], "main_profile")
+                == []
+            )
+
+    def test_returns_the_company_logo_on_a_company_page(self):
+        [ref] = build_image_references(
+            [RawImage(src=_COMPANY_SUBJECT_LOGO, alt="Nimbus Structure GmbH logo")],
+            "about",
+        )
+        assert ref["url"] == _COMPANY_SUBJECT_LOGO
+        assert ref["context"] == "company logo"
+        assert ref["text"] == "Nimbus Structure GmbH logo"
+
+    def test_rejects_anything_off_the_media_cdn(self):
+        for src in (
+            "",
+            "   ",
+            "/relative.png",
+            "data:image/gif;base64,R0lGOD",
+            "https://example.com/a.jpg",
+        ):
+            assert build_image_references([RawImage(src=src)], "main_profile") == []
+
+    def test_the_subject_is_whoever_is_largest_not_whoever_clears_a_number(self):
+        small: list[RawImage] = [
+            {"src": _cdn(_PHOTO, 100, 1)},
+            {"src": _cdn(_PHOTO, 128, 2)},
+        ]
+        assert [r["url"] for r in build_image_references(small, "main_profile")] == [
+            _cdn(_PHOTO, 128, 2)
+        ]
+
+        big: list[RawImage] = [
+            {"src": _cdn(_PHOTO, 200, 1)},
+            {"src": _cdn(_PHOTO, 800, 2)},
+        ]
+        assert [r["url"] for r in build_image_references(big, "main_profile")] == [
+            _cdn(_PHOTO, 800, 2)
+        ]
+
+    def test_returns_nothing_when_no_candidate_stands_out(self):
+        page: list[RawImage] = [{"src": _cdn(_PHOTO, 100, i)} for i in range(8)]
+        assert build_image_references(page, "search_results") == []
+
+    def test_a_tie_for_largest_yields_no_subject(self):
+        tied: list[RawImage] = [
+            {"src": _cdn(_PHOTO, 800, 1)},
+            {"src": _cdn(_PHOTO, 800, 2)},
+            {"src": _cdn(_PHOTO, 100, 3)},
+        ]
+        assert build_image_references(tied, "main_profile") == []
+
+    def test_the_same_photo_signed_twice_is_one_candidate(self):
+        page: list[RawImage] = [
+            {"src": f"{_SUBJECT}?e=1&v=beta&t=first-signature"},
+            {"src": f"{_SUBJECT}?e=2&v=beta&t=second-signature"},
+            {"src": _OTHER_MEMBER},
+        ]
+        [ref] = build_image_references(page, "main_profile")
+        assert ref["url"].startswith(_SUBJECT)
+
+    def test_a_photo_and_its_own_thumbnail_are_one_candidate(self):
+        page: list[RawImage] = [
+            {"src": _cdn(_PHOTO, 100, 1)},
+            {"src": _cdn(_PHOTO, 800, 1)},
+        ]
+        assert [r["url"] for r in build_image_references(page, "main_profile")] == [
+            _cdn(_PHOTO, 800, 1)
+        ]
+
+    def test_one_subject_per_kind_at_most(self):
+        page: list[RawImage] = [
+            {"src": _SUBJECT},
+            {"src": _OTHER_MEMBER},
+            {"src": _COMPANY_SUBJECT_LOGO},
+            {"src": _COMPANY_LOGO},
+        ]
+        refs = build_image_references(page, "main_profile")
+        assert [r["context"] for r in refs] == ["profile photo", "company logo"]
+
+    def test_a_lone_thumbnail_is_not_a_subject(self):
+        assert build_image_references([{"src": _cdn(_LOGO, 100)}], "main_profile") == []
+        assert build_image_references([{"src": _cdn(_PHOTO, 100)}], "about") == []
+        assert build_image_references([{"src": _cdn(_LOGO, 200)}], "about")
+
+    def test_each_kind_is_judged_separately(self):
+        member_page: list[RawImage] = [
+            {"src": _cdn(_PHOTO, 800, 1)},
+            {"src": _cdn(_PHOTO, 100, 2)},
+            {"src": _cdn(_LOGO, 100, 3)},
+        ]
+        assert [
+            r["context"] for r in build_image_references(member_page, "main_profile")
+        ] == ["profile photo"]
+
+        company_page: list[RawImage] = [
+            {"src": _cdn(_PHOTO, 100, 1)},
+            {"src": _cdn(_LOGO, 200, 2)},
+            {"src": _cdn(_LOGO, 100, 3)},
+        ]
+        assert [
+            r["context"] for r in build_image_references(company_page, "about")
+        ] == ["company logo"]
+
+    def test_does_not_depend_on_rendered_size(self):
+        assert build_image_references(
+            [{"src": _SUBJECT, "width": 0, "height": 0}], "main_profile"
+        )
+
+    def test_keeps_alt_when_present_and_omits_it_when_blank(self):
+        [with_alt] = build_image_references(
+            [{"src": _SUBJECT, "alt": "Konstantin Gerner"}], "main_profile"
+        )
+        assert with_alt["text"] == "Konstantin Gerner"
+        [blank] = build_image_references(
+            [RawImage(src=_SUBJECT, alt="   ")], "main_profile"
+        )
+        assert "text" not in blank
+
+    def test_the_same_image_rendered_twice_is_one_reference(self):
+        page: list[RawImage] = [
+            {"src": _cdn(_PHOTO, 800)},
+            {"src": _cdn(_PHOTO, 800)},
+            {"src": _cdn(_PHOTO, 100, 2)},
+        ]
+        assert [r["url"] for r in build_image_references(page, "main_profile")] == [
+            _cdn(_PHOTO, 800)
+        ]
+
+    def test_a_crowd_at_one_size_is_not_a_pile_of_subjects(self):
+        page: list[RawImage] = [{"src": _cdn(_PHOTO, 800, i)} for i in range(10)]
+        page.append({"src": _cdn(_PHOTO, 100, 99)})
+        assert build_image_references(page, "main_profile") == []
+
+    def test_context_names_the_kind_not_the_section(self):
+        [photo] = build_image_references([RawImage(src=_SUBJECT)], "experience")
+        assert photo["context"] == "profile photo"
+
+        [logo] = build_image_references([RawImage(src=_COMPANY_SUBJECT_LOGO)], "posts")
+        assert logo["context"] == "company logo"

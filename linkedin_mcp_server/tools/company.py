@@ -6,9 +6,11 @@ with configurable section selection.
 """
 
 import logging
-from typing import Any
+import time
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
+from pydantic import Field
 
 from linkedin_mcp_server.callbacks import MCPContextProgressCallback
 from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
@@ -179,6 +181,7 @@ def register_company_tools(
     async def search_companies(
         keywords: str,
         ctx: Context,
+        max_pages: Annotated[int, Field(ge=1, le=10)] = 1,
         extractor: Any | None = None,
     ) -> dict[str, Any]:
         """
@@ -187,22 +190,39 @@ def register_company_tools(
         Args:
             keywords: Search keywords (e.g., "fintech", "anthropic", "electric vehicles")
             ctx: FastMCP context for progress reporting
+            max_pages: How many result pages to walk, roughly ten companies
+                each (1-10, default 1 -- one page, unchanged from before
+                pagination existed). Stops early once a page adds no company
+                LinkedIn had not already shown.
 
         Returns:
-            Dict with url, sections (search_results -> raw text), and optional references.
-            The LLM should parse the raw text to extract individual companies and their pages.
+            Dict with url, sections (search_results -> raw text),
+            pages_fetched (int), stopped_reason
+            ("max_pages"|"no_more_results"|"limit"|"error"), truncated (bool,
+            true when more results may exist past what was fetched), and
+            optional references. The LLM should parse the raw text to extract
+            individual companies and their pages.
         """
         try:
+            started = time.monotonic()
             extractor = extractor or await get_ready_extractor(
                 ctx, tool_name="search_companies"
             )
-            logger.info("Searching companies: keywords='%s'", keywords)
+            logger.info(
+                "Searching companies: keywords='%s', max_pages=%d",
+                keywords,
+                max_pages,
+            )
 
             await ctx.report_progress(
                 progress=0, total=100, message="Starting company search"
             )
 
-            result = await extractor.search_companies(keywords)
+            result = await extractor.search_companies(
+                keywords,
+                max_pages=max_pages,
+                tool_timeout=max(0.0, tool_timeout - (time.monotonic() - started)),
+            )
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 

@@ -1,6 +1,14 @@
 """Tests for feed permalink recognition across DOM anchors and SDUI payloads."""
 
-from linkedin_mcp_server.scraping.feed_payload import build_feed_references
+from types import SimpleNamespace
+
+from linkedin_mcp_server.scraping.feed_payload import (
+    append_captured_post_permalinks,
+    build_feed_references,
+    is_post_listing_page,
+    is_post_listing_response,
+)
+from linkedin_mcp_server.scraping.link_metadata import Reference
 
 
 class TestBuildFeedReferences:
@@ -105,3 +113,114 @@ class TestBuildFeedReferences:
             "/posts/alice_x-ugcPost-1-xx",
         ]
         assert kinds == {"feed_post"}
+
+
+class TestIsPostListingPage:
+    """Tests for is_post_listing_page URL matching (issue #788)."""
+
+    def test_recent_activity_path_matches(self):
+        assert is_post_listing_page(
+            "https://www.linkedin.com/in/billgates/recent-activity/all/"
+        )
+
+    def test_company_posts_path_matches(self):
+        assert is_post_listing_page("https://www.linkedin.com/company/microsoft/posts/")
+
+    def test_company_posts_path_with_query_string_matches(self):
+        assert is_post_listing_page(
+            "https://www.linkedin.com/company/microsoft/posts/?viewAsMember=true"
+        )
+
+    def test_plain_profile_path_does_not_match(self):
+        assert not is_post_listing_page("https://www.linkedin.com/in/billgates/")
+
+    def test_company_about_path_does_not_match(self):
+        assert not is_post_listing_page(
+            "https://www.linkedin.com/company/microsoft/about/"
+        )
+
+    def test_hashtag_feed_path_matches(self):
+        assert is_post_listing_page(
+            "https://www.linkedin.com/feed/hashtag/womenintech/"
+        )
+
+    def test_plain_feed_path_does_not_match(self):
+        assert not is_post_listing_page("https://www.linkedin.com/feed/")
+
+
+class TestIsPostListingResponse:
+    """Tests for is_post_listing_response content-type filtering."""
+
+    @staticmethod
+    def _response(content_type: str) -> SimpleNamespace:
+        return SimpleNamespace(headers={"content-type": content_type})
+
+    def test_json_response_is_capturable(self):
+        assert is_post_listing_response(self._response("application/json"))
+
+    def test_html_response_is_capturable(self):
+        assert is_post_listing_response(self._response("text/html; charset=utf-8"))
+
+    def test_missing_content_type_is_capturable(self):
+        assert is_post_listing_response(SimpleNamespace(headers={}))
+
+    def test_image_response_is_skipped(self):
+        assert not is_post_listing_response(self._response("image/png"))
+
+    def test_video_response_is_skipped(self):
+        assert not is_post_listing_response(self._response("video/mp4"))
+
+    def test_css_response_is_skipped(self):
+        assert not is_post_listing_response(self._response("text/css"))
+
+    def test_header_lookup_failure_defaults_to_capturable(self):
+        class ExplodingHeaders:
+            def get(self, *args, **kwargs):
+                raise RuntimeError("boom")
+
+        assert is_post_listing_response(SimpleNamespace(headers=ExplodingHeaders()))
+
+
+class TestAppendCapturedPostPermalinks:
+    """Tests for append_captured_post_permalinks (shared feed/posts merge)."""
+
+    def test_appends_new_permalink_with_given_context(self):
+        refs = append_captured_post_permalinks(
+            [],
+            ["https://www.linkedin.com/posts/idsa_slug-activity-1-xx"],
+            context="posts",
+        )
+        assert refs == [
+            {
+                "kind": "feed_post",
+                "url": "/posts/idsa_slug-activity-1-xx",
+                "context": "posts",
+            }
+        ]
+
+    def test_skips_url_already_present(self):
+        existing: list[Reference] = [
+            {"kind": "company", "url": "/posts/idsa_slug-activity-1-xx"},
+        ]
+        refs = append_captured_post_permalinks(
+            existing,
+            ["https://www.linkedin.com/posts/idsa_slug-activity-1-xx"],
+            context="posts",
+        )
+        assert refs == existing
+
+    def test_skips_non_posts_paths(self):
+        refs = append_captured_post_permalinks(
+            [], ["https://www.linkedin.com/company/idsa/"], context="posts"
+        )
+        assert refs == []
+
+    def test_does_not_apply_a_cap_itself(self):
+        # Capping is the caller's job (see build_feed_references and
+        # SectionCapture._extract_loaded_section), so a burst of captures
+        # larger than any known section cap must all survive the merge.
+        captured = [
+            f"https://www.linkedin.com/posts/p{i}-ugcPost-{i}-xx" for i in range(60)
+        ]
+        refs = append_captured_post_permalinks([], captured, context="posts")
+        assert len(refs) == 60

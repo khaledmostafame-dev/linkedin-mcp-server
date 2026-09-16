@@ -1,0 +1,114 @@
+{
+  "call": {
+    "arguments": {
+      "group_id": "1234567",
+      "max_members": 20
+    },
+    "method": "get_group_members"
+  },
+  "events": [
+    {
+      "call": "get_group_members",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "get_group_members",
+      "extra": {
+        "target_url": "https://www.linkedin.com/groups/1234567/members/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "get_group_members",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/groups/1234567/members/",
+      "requested_url": "https://www.linkedin.com/groups/1234567/members/",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "get_group_members",
+      "description": "goto https://www.linkedin.com/groups/1234567/members/",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "get_group_members",
+      "extra": {
+        "target_url": "https://www.linkedin.com/groups/1234567/members/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "get_group_members",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "get_group_members",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "get_group_members",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "get_group_members",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "get_group_members",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "arg": null,
+      "call": "get_group_members",
+      "kind": "wait_for_function",
+      "operation": "company_people_ready",
+      "program_digest": "6615c14bd135",
+      "timeout_ms": 5000
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "get_group_members",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 2,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "get_group_members",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "8f7f95c2d74d"
+    }
+  ],
+  "result": {
+    "section_names": [
+      "members"
+    ],
+    "sections": {
+      "members": "Listing content"
+    },
+    "url": "https://www.linkedin.com/groups/1234567/members/"
+  },
+  "scenario": "get_group_members__baseline",
+  "schema_version": 1
+}

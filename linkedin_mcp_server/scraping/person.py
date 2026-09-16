@@ -10,18 +10,18 @@ import re
 
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
 from linkedin_mcp_server.core.exceptions import LinkedInScraperException
 from linkedin_mcp_server.error_diagnostics import build_issue_diagnostics
-from linkedin_mcp_server.scraping.capture import (
-    CaptureMode,
-    CapturePlan,
-    SectionCapture,
-)
+from linkedin_mcp_server.scraping.capture import CaptureMode, SectionCapture
 from linkedin_mcp_server.scraping.contracts import (
     RATE_LIMITED_SECTION_TEXT,
+    FilterValidationError,
     rate_limited_section_error,
 )
+from linkedin_mcp_server.scraping.entity_search import paginated_entity_search
 from linkedin_mcp_server.scraping.fields import PERSON_SECTIONS, _person_section_specs
+from linkedin_mcp_server.scraping.geo_resolver import GeoLocationResolver
 from linkedin_mcp_server.scraping.identifiers import (
     normalize_person_identifier,
     person_profile_url,
@@ -187,11 +187,13 @@ class PersonScraper:
         navigator: PageNavigator,
         capture: SectionCapture,
         profile_page: ProfilePageReader,
+        geo_resolver: GeoLocationResolver | None = None,
     ):
         self._session = session
         self._navigator = navigator
         self._capture = capture
         self._profile_page = profile_page
+        self._geo_resolver = geo_resolver or GeoLocationResolver(session, navigator)
 
     async def scrape_person(
         self,
@@ -466,35 +468,129 @@ class PersonScraper:
             "sidebar_profiles": sidebar_profiles,
         }
 
+    async def resolve_geo_location(self, query: str) -> dict[str, Any]:
+        """Resolve a free-text place name to LinkedIn geo URN id candidates.
+
+        Read-only: drives LinkedIn's location typeahead but never selects a
+        location for a search itself. Useful to inspect what a name resolves
+        to before calling ``search_people``, or to pick among several
+        candidates when a query is ambiguous.
+
+        Returns:
+            {query, candidates: [{name, geo_urn_id}, ...], ambiguous: bool}.
+            ``candidates`` has zero entries for no match, exactly one for an
+            unambiguous name, and more than one when LinkedIn's own
+            typeahead offered several places for the query -- each entry's
+            id independently confirmed by selecting that specific
+            suggestion, never guessed from its position or label text.
+        """
+        resolution = await self._geo_resolver.resolve(query)
+        candidates = resolution.candidates or (
+            (resolution.resolved,) if resolution.resolved else ()
+        )
+        return {
+            "query": query,
+            "candidates": [
+                {"name": c.name, "geo_urn_id": c.geo_urn_id} for c in candidates
+            ],
+            "ambiguous": resolution.is_ambiguous,
+        }
+
+    async def _resolve_location(self, location: str | None) -> str | None:
+        """Pass a numeric geo URN id through untouched; resolve free text.
+
+        Zero navigation for the numeric fast path -- the whole point of
+        keeping it a distinct branch rather than always resolving. A
+        resolution that comes back ambiguous or with no match raises
+        ``FilterValidationError`` rather than guessing, naming the
+        candidates (if any) so a caller can retry with one of their ids.
+        """
+        if not location or re.fullmatch(r"[0-9]+", location):
+            return location
+
+        resolution = await self._geo_resolver.resolve(location)
+        if resolution.resolved is not None:
+            return resolution.resolved.geo_urn_id
+        if resolution.is_ambiguous:
+            names = [c.name for c in resolution.candidates]
+            raise FilterValidationError(
+                f"location {location!r} is ambiguous on LinkedIn's own "
+                f"typeahead; candidates: {names!r}. Call resolve_geo_location"
+                f"({location!r}) to see each candidate's geo_urn_id, then "
+                f"pass one back in as location."
+            )
+        raise FilterValidationError(
+            f"location {location!r} did not match any LinkedIn location "
+            f"suggestion. Try a different spelling, or pass a numeric geo "
+            f"URN id directly if you already have one."
+        )
+
     async def search_people(
         self,
         keywords: str,
         location: str | None = None,
         network: list[str] | None = None,
-        current_company: str | None = None,
+        current_company: list[str] | None = None,
+        past_company: list[str] | None = None,
+        school: list[str] | None = None,
+        industry: list[str] | None = None,
+        title: str | None = None,
+        profile_language: list[str] | None = None,
+        max_pages: int = 1,
+        tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS,
     ) -> dict[str, Any]:
-        """Search for people and extract the results page.
+        """Search for people, walking ``&page=N`` up to ``max_pages`` deep.
 
         Args:
             keywords: Free-text query ("software engineer", "recruiter at Google").
-            location: Optional location filter ("New York", "Remote").
+            location: Optional location filter. Either a numeric LinkedIn geo
+                URN id (e.g. ``"103644278"`` for the United States, zero extra
+                navigation) or a free-text place name (e.g. ``"Dubai"``,
+                ``"Saudi Arabia"``), resolved at call time against LinkedIn's
+                own location typeahead (see ``geo_resolver.py``). A free-text
+                name LinkedIn's typeahead considers ambiguous (more than one
+                match) raises ``FilterValidationError`` listing the
+                candidates rather than guessing among them -- call
+                ``resolve_geo_location`` first to see them and pass one
+                candidate's ``geo_urn_id`` back in as ``location``.
             network: Optional connection-degree filter. Each element is one of
                 ``"F"`` (1st-degree), ``"S"`` (2nd-degree), ``"O"`` (3rd-degree
                 and beyond). Example: ``["F"]`` to only return 1st-degree
                 connections. Invalid tokens raise ``ValueError``. The container
                 shape is repaired at the MCP tool boundary, so the list arrives
                 here already normalized.
-            current_company: Optional current-employer filter. LinkedIn's
-                ``currentCompany`` facet only filters on the numeric company
-                URN id (e.g. ``"1115"`` for SAP); plain company names are
-                accepted by the URL but ignored by LinkedIn and return the
-                unfiltered result set. Look up a company's URN via
-                ``get_company_profile`` -- it is exposed under
+            current_company: Optional current-employer filter -- numeric
+                LinkedIn company URN ids (e.g. ``["1115"]`` for SAP). Plain
+                company names are accepted by the URL but ignored by LinkedIn
+                and return the unfiltered result set. Look up a company's URN
+                via ``get_company_profile`` -- it is exposed under
                 ``references["about"]``.
+            past_company: Optional former-employer filter, same numeric URN
+                shape as ``current_company``.
+            school: Optional school filter, numeric LinkedIn school URN ids.
+            industry: Optional industry filter, numeric LinkedIn industry
+                taxonomy ids. There is no in-app lookup for these; read them
+                off LinkedIn's own People search "Industry" filter panel.
+            title: Optional free-text filter matched against the member's
+                current/past title (LinkedIn's ``title`` facet). Unlike the
+                id-based facets above, this is sent as typed, like ``keywords``.
+            profile_language: Optional profile-language filter, lowercase
+                ISO 639-1 two-letter codes (e.g. ``["en"]``).
+            max_pages: How many ``&page=N`` result pages to walk, roughly ten
+                people each (1-10, default 1 -- unchanged from before
+                pagination existed). Costs one navigation per page; stops
+                early once a page adds no person LinkedIn had not already
+                shown.
+            tool_timeout: The registered MCP tool timeout, used to derive the
+                wall-clock budget a multi-page walk stops itself within.
 
         Returns:
-            {url, sections: {name: text}}
+            {url, sections: {search_results: text}, pages_fetched: int,
+            stopped_reason: "max_pages"|"no_more_results"|"limit"|"error",
+            truncated: bool, references?, section_errors?}
         """
+        location = await self._resolve_location(location)
+
         # Builds before it navigates, and the builder refuses a filter
         # LinkedIn would swallow, so an invalid token costs no page load.
         url = build_people_search_url(
@@ -502,31 +598,17 @@ class PersonScraper:
             location=location,
             network=network,
             current_company=current_company,
+            past_company=past_company,
+            school=school,
+            industry=industry,
+            title=title,
+            profile_language=profile_language,
         )
-        extracted = await self._capture.capture(
+        return await paginated_entity_search(
+            self._capture,
             url,
-            section_name="search_results",
-            plan=CapturePlan(CaptureMode.SEARCH_RESULTS),
+            entity_kind="person",
+            max_pages=max_pages,
+            context="search_people",
+            tool_timeout=tool_timeout,
         )
-
-        sections: dict[str, str] = {}
-        references: dict[str, list[Reference]] = {}
-        section_errors: dict[str, dict[str, Any]] = {}
-        if extracted.text and extracted.text != RATE_LIMITED_SECTION_TEXT:
-            sections["search_results"] = extracted.text
-            if extracted.references:
-                references["search_results"] = extracted.references
-        elif extracted.text == RATE_LIMITED_SECTION_TEXT:
-            section_errors["search_results"] = rate_limited_section_error()
-        elif extracted.error:
-            section_errors["search_results"] = extracted.error
-
-        result: dict[str, Any] = {
-            "url": url,
-            "sections": sections,
-        }
-        if references:
-            result["references"] = references
-        if section_errors:
-            result["section_errors"] = section_errors
-        return result

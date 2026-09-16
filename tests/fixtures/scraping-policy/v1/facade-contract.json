@@ -12,13 +12,45 @@
       "get_page_text"
     ],
     "methods": {
+      "archive_conversation": {
+        "coroutine": true,
+        "signature": "(self, conversation_url_or_thread_id: 'str', *, confirm: 'bool', unarchive: 'bool' = False) -> 'dict[str, Any]'"
+      },
       "click_button_by_text": {
         "coroutine": true,
         "signature": "(self, text: 'str', *, scope: 'str' = 'main', timeout: 'int' = 5000) -> 'bool'"
       },
+      "comment_on_post": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', text: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
       "connect_with_person": {
         "coroutine": true,
         "signature": "(self, username: 'str', *, note: 'str | None' = None) -> 'dict[str, Any]'"
+      },
+      "create_poll": {
+        "coroutine": true,
+        "signature": "(self, request: 'PostRequest') -> 'dict[str, Any]'"
+      },
+      "create_post": {
+        "coroutine": true,
+        "signature": "(self, request: 'PostRequest') -> 'dict[str, Any]'"
+      },
+      "delete_post": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "delete_scheduled_post": {
+        "coroutine": true,
+        "signature": "(self, identifier: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "edit_post": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', edit: 'PostEdit', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "edit_scheduled_post": {
+        "coroutine": true,
+        "signature": "(self, identifier: 'str', edit: 'PostEdit', *, confirm: 'bool') -> 'dict[str, Any]'"
       },
       "extract_feed": {
         "coroutine": true,
@@ -28,17 +60,53 @@
         "coroutine": true,
         "signature": "(self, url: 'str', section_name: 'str', max_scrolls: 'int | None' = None) -> 'ExtractedSection'"
       },
+      "follow": {
+        "coroutine": true,
+        "signature": "(self, target_url: 'str', *, confirm: 'bool', unfollow: 'bool' = False) -> 'dict[str, Any]'"
+      },
       "get_company_employees": {
         "coroutine": true,
         "signature": "(self, company_name: 'str', keywords: 'str | None' = None) -> 'dict[str, Any]'"
+      },
+      "get_company_page_analytics": {
+        "coroutine": true,
+        "signature": "(self, company: 'str', sections: 'str | None' = None) -> 'dict[str, Any]'"
       },
       "get_conversation": {
         "coroutine": true,
         "signature": "(self, linkedin_username: 'str | None' = None, thread_id: 'str | None' = None, index: 'int' = 0) -> 'dict[str, Any]'"
       },
+      "get_event_attendees": {
+        "coroutine": true,
+        "signature": "(self, event_url: 'str', max_attendees: 'int' = 50) -> 'dict[str, Any]'"
+      },
+      "get_event_details": {
+        "coroutine": true,
+        "signature": "(self, event_url: 'str') -> 'dict[str, Any]'"
+      },
+      "get_group_members": {
+        "coroutine": true,
+        "signature": "(self, group_id: 'str', max_members: 'int' = 50, keywords: 'str | None' = None) -> 'dict[str, Any]'"
+      },
+      "get_group_posts": {
+        "coroutine": true,
+        "signature": "(self, group_id: 'str', max_posts: 'int' = 20) -> 'dict[str, Any]'"
+      },
       "get_inbox": {
         "coroutine": true,
         "signature": "(self, limit: 'int' = 20) -> 'dict[str, Any]'"
+      },
+      "get_invitations": {
+        "coroutine": true,
+        "signature": "(self, direction: \"Literal['received', 'sent']\" = 'received', max_results: 'int' = 50) -> 'dict[str, Any]'"
+      },
+      "get_job_alerts": {
+        "coroutine": true,
+        "signature": "(self) -> 'dict[str, Any]'"
+      },
+      "get_mutual_connections": {
+        "coroutine": true,
+        "signature": "(self, linkedin_username: 'str', max_results: 'int' = 50) -> 'dict[str, Any]'"
       },
       "get_my_profile": {
         "coroutine": true,
@@ -48,13 +116,85 @@
         "coroutine": true,
         "signature": "(self) -> 'str'"
       },
+      "get_post_analytics": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str') -> 'dict[str, Any]'"
+      },
+      "get_post_comments": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', max_comments: 'int' = 50, include_replies: 'bool' = True, sort: 'str' = 'relevant') -> 'dict[str, Any]'"
+      },
+      "get_post_reactions": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', max_reactors: 'int' = 50) -> 'dict[str, Any]'"
+      },
+      "get_profile_analytics": {
+        "coroutine": true,
+        "signature": "(self, sections: 'str | None' = None) -> 'dict[str, Any]'"
+      },
       "get_saved_jobs": {
         "coroutine": true,
         "signature": "(self, max_pages: 'int' = 3) -> 'dict[str, Any]'"
       },
+      "get_scheduled_posts": {
+        "coroutine": true,
+        "signature": "(self) -> 'dict[str, Any]'"
+      },
       "get_sidebar_profiles": {
         "coroutine": true,
         "signature": "(self, username: 'str') -> 'dict[str, Any]'"
+      },
+      "list_connections": {
+        "coroutine": true,
+        "signature": "(self, max_results: 'int' = 100, sort: \"Literal['recently_added', 'first_name', 'last_name']\" = 'recently_added') -> 'dict[str, Any]'"
+      },
+      "mark_conversation_read": {
+        "coroutine": true,
+        "signature": "(self, conversation_url_or_thread_id: 'str', *, read: 'bool' = True, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "react_to_comment": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', comment_urn: 'str', reaction: 'str' = 'like', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "reply_to_comment": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', comment_urn: 'str', text: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "reply_to_conversation": {
+        "coroutine": true,
+        "signature": "(self, conversation_url_or_thread_id: 'str', message: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "resolve_geo_location": {
+        "coroutine": true,
+        "signature": "(self, query: 'str') -> 'dict[str, Any]'"
+      },
+      "respond_to_invitation": {
+        "coroutine": true,
+        "signature": "(self, linkedin_username: 'str', *, action: \"Literal['accept', 'ignore']\", confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "sales_nav_get_list": {
+        "coroutine": true,
+        "signature": "(self, list_url: 'str', max_items: 'int' = 100) -> 'dict[str, Any]'"
+      },
+      "sales_nav_get_lists": {
+        "coroutine": true,
+        "signature": "(self, kind: 'str' = 'leads') -> 'dict[str, Any]'"
+      },
+      "sales_nav_search_accounts": {
+        "coroutine": true,
+        "signature": "(self, keywords: 'str', filters: 'dict[str, Any] | None' = None, max_pages: 'int' = 1) -> 'dict[str, Any]'"
+      },
+      "sales_nav_search_leads": {
+        "coroutine": true,
+        "signature": "(self, keywords: 'str', filters: 'dict[str, Any] | None' = None, max_pages: 'int' = 1) -> 'dict[str, Any]'"
+      },
+      "save_job": {
+        "coroutine": true,
+        "signature": "(self, job_id: 'str', *, confirm: 'bool', unsave: 'bool' = False) -> 'dict[str, Any]'"
+      },
+      "save_post": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', *, confirm: 'bool', unsave: 'bool' = False) -> 'dict[str, Any]'"
       },
       "scrape_company": {
         "coroutine": true,
@@ -70,11 +210,19 @@
       },
       "search_companies": {
         "coroutine": true,
-        "signature": "(self, keywords: 'str') -> 'dict[str, Any]'"
+        "signature": "(self, keywords: 'str', max_pages: 'int' = 1, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'"
       },
       "search_conversations": {
         "coroutine": true,
         "signature": "(self, keywords: 'str', limit: 'int' = 20) -> 'dict[str, Any]'"
+      },
+      "search_events": {
+        "coroutine": true,
+        "signature": "(self, keywords: 'str', max_pages: 'int' = 3) -> 'dict[str, Any]'"
+      },
+      "search_groups": {
+        "coroutine": true,
+        "signature": "(self, keywords: 'str') -> 'dict[str, Any]'"
       },
       "search_jobs": {
         "coroutine": true,
@@ -82,38 +230,109 @@
       },
       "search_people": {
         "coroutine": true,
-        "signature": "(self, keywords: 'str', location: 'str | None' = None, network: 'list[str] | None' = None, current_company: 'str | None' = None) -> 'dict[str, Any]'"
+        "signature": "(self, keywords: 'str', location: 'str | None' = None, network: 'list[str] | None' = None, current_company: 'list[str] | None' = None, past_company: 'list[str] | None' = None, school: 'list[str] | None' = None, industry: 'list[str] | None' = None, title: 'str | None' = None, profile_language: 'list[str] | None' = None, max_pages: 'int' = 1, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'"
       },
       "search_posts": {
         "coroutine": true,
-        "signature": "(self, keywords: 'str', date_posted: 'str | None' = None, max_pages: 'int' = 3) -> 'dict[str, Any]'"
+        "signature": "(self, keywords: 'str', date_posted: 'str | None' = None, max_pages: 'int' = 3, sort_by: 'str | None' = None) -> 'dict[str, Any]'"
       },
       "send_message": {
         "coroutine": true,
         "signature": "(self, linkedin_username: 'str', message: 'str', *, confirm_send: 'bool', profile_urn: 'str | None' = None) -> 'dict[str, Any]'"
+      },
+      "withdraw_invitation": {
+        "coroutine": true,
+        "signature": "(self, linkedin_username: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
       }
     },
     "tool_methods": [
+      "archive_conversation",
+      "comment_on_post",
       "connect_with_person",
+      "create_poll",
+      "create_post",
+      "delete_post",
+      "delete_scheduled_post",
+      "edit_post",
+      "edit_scheduled_post",
       "extract_feed",
       "extract_page",
+      "follow",
       "get_company_employees",
+      "get_company_page_analytics",
       "get_conversation",
+      "get_event_attendees",
+      "get_event_details",
+      "get_group_members",
+      "get_group_posts",
       "get_inbox",
+      "get_invitations",
+      "get_job_alerts",
+      "get_mutual_connections",
       "get_my_profile",
+      "get_post_analytics",
+      "get_post_comments",
+      "get_post_reactions",
+      "get_profile_analytics",
       "get_saved_jobs",
+      "get_scheduled_posts",
       "get_sidebar_profiles",
+      "list_connections",
+      "mark_conversation_read",
+      "react_to_comment",
+      "reply_to_comment",
+      "reply_to_conversation",
+      "resolve_geo_location",
+      "respond_to_invitation",
+      "sales_nav_get_list",
+      "sales_nav_get_lists",
+      "sales_nav_search_accounts",
+      "sales_nav_search_leads",
+      "save_job",
+      "save_post",
       "scrape_company",
       "scrape_job",
       "scrape_person",
       "search_companies",
       "search_conversations",
+      "search_events",
+      "search_groups",
       "search_jobs",
       "search_people",
       "search_posts",
-      "send_message"
+      "send_message",
+      "withdraw_invitation"
     ],
     "tool_schemas": {
+      "archive_conversation": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to change the archived state. False does a\ndry run and returns {\"status\": \"preview\", ...}.",
+              "type": "boolean"
+            },
+            "conversation": {
+              "description": "LinkedIn messaging thread ID, or a\n/messaging/thread/ URL naming one.",
+              "type": "string"
+            },
+            "unarchive": {
+              "default": false,
+              "description": "Restore the thread to the inbox instead of archiving\nit (default False: archive).",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "conversation",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "close_session": {
         "input": {
           "additionalProperties": false,
@@ -125,10 +344,43 @@
           "type": "object"
         }
       },
+      "comment_on_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "false returns status \"preview\" without touching LinkedIn;\ntrue posts the comment.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post (same forms as get_post_comments).",
+              "type": "string"
+            },
+            "text": {
+              "description": "Comment text, at most 1,250 characters. Line breaks are\nsupported; other control characters and '@' are rejected.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "text",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "connect_with_person": {
         "input": {
           "additionalProperties": false,
           "properties": {
+            "confirm": {
+              "description": "Must be True to send the request or accept an incoming\none; False returns a browser-free preview",
+              "type": "boolean"
+            },
             "linkedin_username": {
               "description": "LinkedIn username (e.g., \"stickerdaniel\", \"williamhgates\"). A full profile URL is accepted too and is reduced to the username.",
               "type": "string"
@@ -147,7 +399,432 @@
             }
           },
           "required": [
-            "linkedin_username"
+            "linkedin_username",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "create_poll": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False returns a preview; True publishes or schedules.",
+              "type": "boolean"
+            },
+            "duration_days": {
+              "description": "How long the poll runs: 1, 3, 7 or 14.",
+              "enum": [
+                1,
+                3,
+                7,
+                14
+              ],
+              "type": "integer"
+            },
+            "options": {
+              "description": "2 to 4 answer options.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 4,
+              "minItems": 2,
+              "type": "array"
+            },
+            "post_as": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional company page to post as (URL, numeric id or URN)."
+            },
+            "question": {
+              "description": "The poll question.",
+              "type": "string"
+            },
+            "schedule_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional ISO 8601 date-time with an explicit offset."
+            },
+            "text": {
+              "default": "",
+              "description": "Optional post text shown above the poll.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "question",
+            "options",
+            "duration_days",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "create_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False returns a preview; True publishes or schedules.",
+              "type": "boolean"
+            },
+            "document": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "A PDF, PowerPoint or Word document shown as a swipeable carousel.",
+                  "properties": {
+                    "base64": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "File content as base64 (needs filename; capped at 20 MB)."
+                    },
+                    "filename": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "File name, required with base64 (e.g. deck.pdf)."
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "File name inside the server's uploads directory (~/.linkedin-mcp/uploads). Paths outside it are refused."
+                    },
+                    "title": {
+                      "description": "Document title LinkedIn shows on the post.",
+                      "type": "string"
+                    },
+                    "url": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "https URL the server downloads (public hosts only, size-capped)."
+                    }
+                  },
+                  "required": [
+                    "title"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional document with a required title."
+            },
+            "media": {
+              "anyOf": [
+                {
+                  "items": {
+                    "additionalProperties": false,
+                    "description": "One attachment, given as exactly one of url, base64 or path.",
+                    "properties": {
+                      "base64": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "File content as base64 (needs filename; capped at 20 MB)."
+                      },
+                      "filename": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "File name, required with base64 (e.g. deck.pdf)."
+                      },
+                      "path": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "File name inside the server's uploads directory (~/.linkedin-mcp/uploads). Paths outside it are refused."
+                      },
+                      "url": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "https URL the server downloads (public hosts only, size-capped)."
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional list of images."
+            },
+            "post_as": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional company page to post as, which this account\nmust administer: https://www.linkedin.com/company/<slug>/,\nits numeric id, or urn:li:organization:<id>. Only the author\noption carrying that page's identity is selected, and it must\nread back as selected; otherwise nothing is posted. Page posts\nare public, so visibility must stay \"anyone\"."
+            },
+            "schedule_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional ISO 8601 date-time with an explicit offset,\ne.g. 2026-09-20T09:00:00+04:00. Must be at least 10 minutes\nahead and within 90 days. Uses LinkedIn's native scheduler;\nthe result reports the instant in UTC and in the browser's\ntimezone."
+            },
+            "text": {
+              "description": "Post body with optional inline mentions. Line breaks allowed.",
+              "type": "string"
+            },
+            "visibility": {
+              "default": "anyone",
+              "description": "\"anyone\" (public) or \"connections\".",
+              "enum": [
+                "anyone",
+                "connections"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "delete_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False verifies and previews; True deletes.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post's permalink (/feed/update/urn:li:activity:<id>/\nor a /posts/...-activity-<id>-... link).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "delete_scheduled_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False previews the entry; True deletes it.",
+              "type": "boolean"
+            },
+            "identifier": {
+              "description": "An identifier returned by get_scheduled_posts.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifier",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "edit_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False verifies and previews; True saves the edit.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post's permalink.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Replacement text.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "text",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "edit_scheduled_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False previews; True saves the edit.",
+              "type": "boolean"
+            },
+            "identifier": {
+              "description": "An identifier returned by get_scheduled_posts.",
+              "type": "string"
+            },
+            "schedule_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional new ISO 8601 date-time with an explicit offset."
+            },
+            "text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional replacement text."
+            }
+          },
+          "required": [
+            "identifier",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "follow": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to act. False returns a preview with no\nbrowser interaction and no state change.",
+              "type": "boolean"
+            },
+            "target_url": {
+              "description": "A LinkedIn person profile or company page URL/slug\n(e.g. \"https://www.linkedin.com/company/anthropic/\" or\n\"stickerdaniel\"). A bare slug is treated as a person.",
+              "type": "string"
+            },
+            "unfollow": {
+              "default": false,
+              "description": "True to stop following. The requested direction is\nchecked against the control's aria-pressed state before any\nclick.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "target_url",
+            "confirm"
           ],
           "type": "object"
         },
@@ -179,6 +856,37 @@
           },
           "required": [
             "company_name"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_company_page_analytics": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "The page's /company/ slug, its numeric id, or a /company/\nURL (admin URLs work too).",
+              "type": "string"
+            },
+            "sections": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "visitors,followers,content",
+              "description": "Comma-separated sections (default all three):\n- visitors: page views and unique visitors, visitor demographics\n  (/company/<page>/admin/analytics/visitors/)\n- followers: total followers, new followers over time, follower\n  demographics (/admin/analytics/followers/)\n- content: impressions, reactions, comments, reposts, clicks and\n  engagement of the page's posts (/admin/analytics/updates/)"
+            }
+          },
+          "required": [
+            "company"
           ],
           "type": "object"
         },
@@ -279,6 +987,51 @@
           "type": "object"
         }
       },
+      "get_event_attendees": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "event_url": {
+              "description": "LinkedIn event URL or numeric event id",
+              "type": "string"
+            },
+            "max_attendees": {
+              "default": 50,
+              "description": "Approximate cap on how many attendees to load via\nbounded scrolling (1-500, default 50)",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_event_details": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "event_url": {
+              "description": "LinkedIn event URL or numeric event id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_feed": {
         "input": {
           "additionalProperties": false,
@@ -291,6 +1044,96 @@
               "type": "integer"
             }
           },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_group_members": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "group_id": {
+              "description": "Numeric LinkedIn group id, or a group URL",
+              "type": "string"
+            },
+            "keywords": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional server-side member filter (name, headline\nterm) applied via the page's member search box"
+            },
+            "max_members": {
+              "default": 50,
+              "description": "Approximate cap on how many members to load via\nbounded scrolling (1-500, default 50)",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "group_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_group_posts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "group_id": {
+              "description": "Numeric LinkedIn group id, or a group URL",
+              "type": "string"
+            },
+            "max_posts": {
+              "default": 20,
+              "description": "Approximate cap on how many posts to load via bounded\nscrolling (1-100, default 20)",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "group_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_hashtag_feed": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "hashtag": {
+              "description": "The hashtag, with or without a leading '#' (e.g.\n\"womenintech\" or \"#womenintech\"). A full /feed/hashtag/ URL\nis accepted too and is reduced to the tag.",
+              "type": "string"
+            },
+            "max_posts": {
+              "default": 20,
+              "description": "Maximum number of posts to load (1-50, default 20).\nPosts load in batches as the page scrolls, so the actual\ncount may slightly exceed the target.",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "hashtag"
+          ],
           "type": "object"
         },
         "output": {
@@ -317,6 +1160,45 @@
           "type": "object"
         }
       },
+      "get_invitations": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "default": "received",
+              "description": "\"received\" (default) or \"sent\"",
+              "enum": [
+                "received",
+                "sent"
+              ],
+              "type": "string"
+            },
+            "max_results": {
+              "default": 50,
+              "description": "Approximate cap on how many invitations to load via\nbounded scrolling (1-200, default 50).",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_job_alerts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_job_details": {
         "input": {
           "additionalProperties": false,
@@ -328,6 +1210,32 @@
           },
           "required": [
             "job_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_mutual_connections": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "linkedin_username": {
+              "description": "LinkedIn username of the other profile (e.g. \"stickerdaniel\"). A full profile URL is accepted too.",
+              "type": "string"
+            },
+            "max_results": {
+              "default": 50,
+              "description": "Approximate cap on how many shared connections to\nload via bounded scrolling (1-200, default 50). LinkedIn's\nown page size varies, so this bounds effort more than it\nguarantees an exact count.",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "linkedin_username"
           ],
           "type": "object"
         },
@@ -367,6 +1275,42 @@
               "description": "Comma-separated list of extra sections to scrape.\nThe main profile page is always included.\nAvailable sections: experience, education, interests, honors, languages, certifications, skills, projects, contact_info, posts\nExamples: \"experience,education\", \"contact_info\", \"skills,projects\"\nDefault (None) scrapes only the main profile page."
             }
           },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_notifications": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "filter": {
+              "default": "all",
+              "description": "One of \"all\" (default), \"my_posts\" (activity on your own\nposts), or \"mentions\". The non-default values are sent as\nLinkedIn's `filterType` query parameter (`MY_POSTS` /\n`MENTIONS`); this has not been confirmed against a live\naccount (this fork never signs in to LinkedIn) and may need\nadjusting if LinkedIn's actual parameter differs — treat\nanything other than \"all\" as best-effort until verified.",
+              "pattern": "^(all|my_posts|mentions)$",
+              "type": "string"
+            },
+            "max_items": {
+              "default": 30,
+              "description": "Maximum number of notifications to load (1-50,\ndefault 30). Items load in batches as the page scrolls, so\nthe actual count may slightly exceed the target.",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_pacing_status": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
           "type": "object"
         },
         "output": {
@@ -419,6 +1363,115 @@
           "type": "object"
         }
       },
+      "get_post_analytics": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "post_url": {
+              "description": "The post, as /feed/update/urn:li:activity:<id>/, a\n/posts/<slug> permalink, or urn:li:activity|ugcPost|share:<id>.\nA ugcPost or share URN costs one extra navigation to read the\npost's own analytics link.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_post_comments": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "include_replies": {
+              "default": true,
+              "description": "Also expand and return replies (default true).",
+              "type": "boolean"
+            },
+            "max_comments": {
+              "default": 50,
+              "description": "Maximum number of comments (replies included) to\nreturn, 1-100, default 50.",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "post_url": {
+              "description": "The post, as /feed/update/urn:li:activity:<id>/,\nurn:li:ugcPost:<id> or urn:li:share:<id> (bare or in that path),\nor a /posts/<slug> permalink. references[\"feed\"] from get_feed\nwork as-is.",
+              "type": "string"
+            },
+            "sort": {
+              "default": "relevant",
+              "description": "\"relevant\" keeps LinkedIn's on-page order; \"recent\" orders\nnewest first by comment id (LinkedIn issues ids in time order),\neach top-level comment followed by its replies. The on-page\nsort menu is not driven.",
+              "enum": [
+                "relevant",
+                "recent"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_post_reactions": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "max_reactors": {
+              "default": 50,
+              "description": "Maximum number of reactors to load (1-50,\ndefault 50). Reactors load in batches as the dialog\nscrolls, so the actual count may slightly exceed the\ntarget.",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "post_url": {
+              "description": "A /feed/update/<urn>/ or /posts/<slug> permalink,\ne.g. from references[\"feed\"] or references[\"posts\"].",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_profile_analytics": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "sections": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Comma-separated sections; default is all four.\n- profile_viewers: who viewed your profile (/analytics/profile-views/)\n- search_appearances: search appearance counts and sources\n- followers: total followers, growth and follower demographics\n  (/analytics/creator/audience/)\n- post_impressions: impressions and engagement summary across\n  your posts (/analytics/creator/content/)"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_saved_jobs": {
         "input": {
           "additionalProperties": false,
@@ -431,6 +1484,36 @@
               "type": "integer"
             }
           },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_saved_posts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "max_posts": {
+              "default": 20,
+              "description": "Maximum number of saved posts to load (1-50,\ndefault 20). The list lazy-loads on scroll (no ``?start=``\npagination like saved jobs), so this sizes the scroll budget\nrather than a page count; the actual count may slightly\nexceed the target.",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_scheduled_posts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
           "type": "object"
         },
         "output": {
@@ -457,6 +1540,393 @@
           "type": "object"
         }
       },
+      "list_connections": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "max_results": {
+              "default": 100,
+              "description": "Approximate cap on how many connections to load via\nbounded scrolling (1-500, default 100).",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "sort": {
+              "default": "recently_added",
+              "description": "\"recently_added\" (default), \"first_name\", or \"last_name\".",
+              "enum": [
+                "recently_added",
+                "first_name",
+                "last_name"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "mark_conversation_read": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to change the read state. False does a dry\nrun and returns {\"status\": \"preview\", ...}.",
+              "type": "boolean"
+            },
+            "conversation": {
+              "description": "LinkedIn messaging thread ID, or a\n/messaging/thread/ URL naming one.",
+              "type": "string"
+            },
+            "read": {
+              "default": true,
+              "description": "True to mark as read (default), False to mark as unread.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "conversation",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "react_to_comment": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "comment_urn": {
+              "description": "The comment's URN from get_post_comments.",
+              "type": "string"
+            },
+            "confirm": {
+              "description": "false returns status \"preview\" without touching LinkedIn;\ntrue reacts.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post the comment is on (same forms as get_post_comments).",
+              "type": "string"
+            },
+            "reaction": {
+              "const": "like",
+              "default": "like",
+              "description": "Only \"like\".",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "comment_urn",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "reply_to_comment": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "comment_urn": {
+              "description": "The comment's URN, e.g. the `value` of an entry in\nget_post_comments' references[\"comments\"].",
+              "type": "string"
+            },
+            "confirm": {
+              "description": "false returns status \"preview\" without touching LinkedIn;\ntrue posts the reply.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post the comment is on (same forms as get_post_comments).",
+              "type": "string"
+            },
+            "text": {
+              "description": "Reply text, at most 1,250 characters. Line breaks are\nsupported; other control characters are rejected. '@' is\nrejected because @mentions are not supported.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "comment_urn",
+            "text",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "reply_to_conversation": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to send the reply. False does a dry run and\ndoes not change LinkedIn state.",
+              "type": "boolean"
+            },
+            "conversation_url_or_thread_id": {
+              "description": "LinkedIn messaging thread ID (from\nget_inbox, get_conversation, or search_conversations\nreferences), or a /messaging/thread/ URL naming one.",
+              "type": "string"
+            },
+            "message": {
+              "description": "Single-line reply text to send. C0 control characters and\nDEL are rejected, including CR, LF, and tab.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "conversation_url_or_thread_id",
+            "message",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "resolve_geo_location": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "query": {
+              "description": "Free-text place name (e.g. \"Dubai\", \"Saudi Arabia\",\n\"United Arab Emirates\", \"India\"). Blank raises ToolError.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "respond_to_invitation": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "description": "\"accept\" or \"ignore\"",
+              "enum": [
+                "accept",
+                "ignore"
+              ],
+              "type": "string"
+            },
+            "confirm": {
+              "description": "Must be True to act. False returns a preview with no\nbrowser interaction and no state change.",
+              "type": "boolean"
+            },
+            "linkedin_username": {
+              "description": "LinkedIn username of the invitation sender. A full profile URL is accepted too.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "linkedin_username",
+            "action",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_get_list": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "list_url": {
+              "description": "A Sales Navigator list URL, e.g. one returned by\nsales_nav_get_lists in references[\"lists\"]. A relative path\nis joined against linkedin.com.",
+              "type": "string"
+            },
+            "max_items": {
+              "default": 100,
+              "description": "Stop once this many members have been collected\n(1-500, default 100)",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "list_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_get_lists": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "default": "leads",
+              "description": "\"leads\" or \"accounts\" (default \"leads\")",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_search_accounts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "filters": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional filter key/value pairs appended to the search\nURL. The exact filter names Sales Navigator accepts have not\nbeen verified live; pass LinkedIn's own URL parameter names."
+            },
+            "keywords": {
+              "description": "Search keywords (e.g., \"fintech Series B\")",
+              "type": "string"
+            },
+            "max_pages": {
+              "default": 1,
+              "description": "Maximum number of result pages to load (1-10, default 1)",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keywords"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_search_leads": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "filters": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional filter key/value pairs appended to the search\nURL. The exact filter names Sales Navigator accepts have not\nbeen verified live; pass LinkedIn's own URL parameter names."
+            },
+            "keywords": {
+              "description": "Search keywords (e.g., \"VP Engineering fintech\")",
+              "type": "string"
+            },
+            "max_pages": {
+              "default": 1,
+              "description": "Maximum number of result pages to load (1-10, default 1)",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keywords"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "save_job": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to change the saved state. False does a dry\nrun and returns {\"status\": \"preview\", ...} without navigating\nLinkedIn's state.",
+              "type": "boolean"
+            },
+            "job_id": {
+              "description": "LinkedIn job ID (e.g., \"4252026496\", \"3856789012\")",
+              "type": "string"
+            },
+            "unsave": {
+              "default": false,
+              "description": "Remove the job from the saved list instead of adding it\n(default False: save).",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "job_id",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "save_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to actually save/unsave.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "A /feed/update/<urn>/ or /posts/<slug> permalink,\ne.g. from references[\"feed\"], references[\"posts\"], or\nreferences[\"saved_posts\"].",
+              "type": "string"
+            },
+            "unsave": {
+              "default": false,
+              "description": "False (default) saves the post; True unsaves it. If\nthe post is already in the requested state, nothing is\nclicked either way.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "post_url",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "search_companies": {
         "input": {
           "additionalProperties": false,
@@ -464,6 +1934,13 @@
             "keywords": {
               "description": "Search keywords (e.g., \"fintech\", \"anthropic\", \"electric vehicles\")",
               "type": "string"
+            },
+            "max_pages": {
+              "default": 1,
+              "description": "How many result pages to walk, roughly ten companies\neach (1-10, default 1 -- one page, unchanged from before\npagination existed). Stops early once a page adds no company\nLinkedIn had not already shown.",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
             }
           },
           "required": [
@@ -490,6 +1967,51 @@
               "maximum": 50,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          "required": [
+            "keywords"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "search_events": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "keywords": {
+              "description": "Search keywords (e.g., \"automation anywhere conference\")",
+              "type": "string"
+            },
+            "max_pages": {
+              "default": 3,
+              "description": "Scroll-depth budget in nominal \"pages\" (1-10, default 3)",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keywords"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "search_groups": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "keywords": {
+              "description": "Search keywords (e.g., \"automation anywhere\", \"RPA UAE\")",
+              "type": "string"
             }
           },
           "required": [
@@ -612,14 +2134,32 @@
             "current_company": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
               "default": null,
-              "description": "Optional current-employer filter. LinkedIn's\ncurrentCompany facet only filters on the numeric company URN id\n(e.g. \"1115\" for SAP); plain company names are accepted by the\nURL but ignored by LinkedIn and return the unfiltered result\nset. Look up a company's URN via get_company_profile -- it is\nexposed under references[\"about\"]. For company-wide employee\ndemographics (location/education/function breakdown) plus a\nslug-based lookup, use get_company_employees instead."
+              "description": "Optional current-employer filter -- numeric\nLinkedIn company URN ids (e.g. \"1115\" for SAP, or \"1115,2573558\"\nfor several). Plain company names are accepted by the URL but\nignored by LinkedIn and return the unfiltered result set. Look\nup a company's URN via get_company_profile -- it is exposed\nunder references[\"about\"]. For company-wide employee\ndemographics (location/education/function breakdown) plus a\nslug-based lookup, use get_company_employees instead."
+            },
+            "industry": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional industry filter, numeric LinkedIn industry\ntaxonomy ids. There is no in-app lookup for these; read them\noff LinkedIn's own People search \"Industry\" filter panel."
             },
             "keywords": {
               "description": "Search keywords (e.g., \"software engineer\", \"recruiter at Google\")",
@@ -635,7 +2175,14 @@
                 }
               ],
               "default": null,
-              "description": "Optional location filter (e.g., \"New York\", \"Remote\")"
+              "description": "Optional location filter. LinkedIn's geoUrn facet only\nfilters on the numeric geo URN id (e.g. \"103644278\" for the\nUnited States); plain-text place names are accepted by the URL\nbut ignored by LinkedIn and return the unfiltered result set.\nIf you do not have the URN, omit this and put the place name in\n`keywords` instead."
+            },
+            "max_pages": {
+              "default": 1,
+              "description": "How many result pages to walk, roughly ten people each\n(1-10, default 1 -- one page, unchanged from before pagination\nexisted). Costs one navigation per page; stops early once a\npage adds no person LinkedIn had not already shown.",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
             },
             "network": {
               "anyOf": [
@@ -651,6 +2198,63 @@
               ],
               "default": null,
               "description": "Optional connection-degree filter. Each element is one of\n\"F\" (1st-degree), \"S\" (2nd-degree), \"O\" (3rd-degree and beyond).\nExample: [\"F\"] to only return 1st-degree connections. A single\ntoken (\"F\") or a comma-separated string (\"F,S\") is also\naccepted, for clients that cannot transmit an array."
+            },
+            "past_company": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional former-employer filter, same numeric URN\nshape as current_company."
+            },
+            "profile_language": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional profile-language filter, lowercase\nISO 639-1 two-letter codes (e.g. \"en\", or \"en,ar\" for several)."
+            },
+            "school": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional school filter, numeric LinkedIn school URN ids."
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional free-text filter matched against the member's\ncurrent/past title (e.g. \"Product Manager\"). Unlike the\nid-based facets above, this is sent as typed, like keywords."
             }
           },
           "required": [
@@ -689,6 +2293,18 @@
               "maximum": 10,
               "minimum": 1,
               "type": "integer"
+            },
+            "sort_by": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional sort order. \"relevance\" (default, LinkedIn's\n\"Top match\") or \"latest\" (also accepts \"date\"/\"date_posted\",\nmatching search_jobs's spelling) for LinkedIn's \"Latest\"."
             }
           },
           "required": [
@@ -734,6 +2350,30 @@
             "linkedin_username",
             "message",
             "confirm_send"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "withdraw_invitation": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to withdraw. False returns a preview with\nno browser interaction and no state change.",
+              "type": "boolean"
+            },
+            "linkedin_username": {
+              "description": "LinkedIn username of the invitation recipient. A full profile URL is accepted too.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "linkedin_username",
+            "confirm"
           ],
           "type": "object"
         },
