@@ -174,6 +174,19 @@ def build_company_search_url(keywords: str) -> str:
     )
 
 
+def build_group_search_url(keywords: str) -> str:
+    """Build a LinkedIn group search URL.
+
+    Modeled on ``build_company_search_url``: one parameter, single
+    navigation, no pagination -- matching the existing ``search_people`` /
+    ``search_companies`` pattern for a keyword-only surface.
+    """
+    return (
+        "https://www.linkedin.com/search/results/groups/"
+        f"?keywords={quote_plus(keywords)}"
+    )
+
+
 def build_content_search_url(
     keywords: str,
     date_posted: str | None = None,

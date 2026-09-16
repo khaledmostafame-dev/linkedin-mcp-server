@@ -16,6 +16,7 @@ ReferenceKind = Literal[
     "newsletter",
     "school",
     "conversation",
+    "group",
     "external",
 ]
 
@@ -87,6 +88,11 @@ _SECTION_CONTEXTS = {
     "job_posting": "job posting",
     "inbox": "inbox",
     "conversation": "conversation",
+    "members": "group member",
+    "connections": "connection",
+    "received_invitations": "received invitation",
+    "sent_invitations": "sent invitation",
+    "mutual_connections": "mutual connection",
     "jobs": "jobs",
     "saved_jobs": "saved jobs",
     "feed": "feed",
@@ -113,6 +119,18 @@ _REFERENCE_CAPS = {
     "contact_info": 8,
     "inbox": 30,
     "conversation": 12,
+    # Member listings are the payload of get_group_members: profile URLs per
+    # member are the point of the tool, so the cap matches LinkedIn's
+    # ~500-row serving limit per listing rather than the compact default.
+    "members": 500,
+    # Network listings (list_connections, get_invitations, get_mutual_connections)
+    # are likewise the payload themselves, not incidental links found while
+    # reading something else -- cap generously so a caller's own max_results
+    # is what limits the listing, not this table.
+    "connections": 200,
+    "received_invitations": 100,
+    "sent_invitations": 100,
+    "mutual_connections": 200,
     # Headroom for get_feed's num_posts ceiling (Field(ge=1, le=50)).
     # Kept in sync with the literal cap=50 in feed_payload.build_feed_references
     # where SDUI-derived /posts/<slug> permalinks are appended.
@@ -150,6 +168,7 @@ _NEWSLETTER_PATH_RE = re.compile(r"^/newsletters/([^/?#]+)")
 _PULSE_PATH_RE = re.compile(r"^/pulse/([^/?#]+)")
 _FEED_PATH_RE = re.compile(r"^/feed/update/([^/?#]+)")
 _MESSAGING_THREAD_PATH_RE = re.compile(r"^/messaging/thread/([^/?#]+)")
+_GROUP_PATH_RE = re.compile(r"^/groups/([0-9]+)")
 _MAX_REDIRECT_UNWRAP_DEPTH = 5
 
 # Accept both quoted-string and bare-integer JSON list elements, e.g.
@@ -328,6 +347,9 @@ def classify_link(href: str) -> tuple[ReferenceKind, str] | None:
 
     if match := _MESSAGING_THREAD_PATH_RE.match(path):
         return "conversation", f"/messaging/thread/{match.group(1)}/"
+
+    if match := _GROUP_PATH_RE.match(path):
+        return "group", f"/groups/{match.group(1)}/"
 
     return None
 
