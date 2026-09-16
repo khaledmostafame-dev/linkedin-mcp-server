@@ -64,6 +64,8 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `reply_to_comment` | Reply to one comment located by URN (requires `confirm`; verifies the reply box belongs to that comment, confirms the reply appeared; @mentions not supported) |
 | `comment_on_post` | Post a top-level comment on a post (requires `confirm`; confirms the comment appeared; @mentions not supported) |
 | `react_to_comment` | Like one comment located by URN (requires `confirm`; never removes an existing reaction) |
+| `get_post_analytics` | Analytics of one of your own posts (impressions, members reached, reactions, comments, reposts, saves, profile viewers, followers gained, demographics when shown); other people's posts return a `not_authorized` section error |
+| `get_profile_analytics` | Your own profile and creator dashboards as separate sections (profile_viewers, search_appearances, followers, post_impressions) |
 | `close_session` | Close browser session and clean up resources |
 
 <br/>

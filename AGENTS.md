@@ -146,6 +146,7 @@ Optional additional keys:
 - `section_errors: {section_name: {error_type, error_message, issue_template_path, runtime, ...}}`
 - `unknown_sections: [name, ...]`
 - `job_ids: [id, ...]` (search_jobs and get_saved_jobs)
+- `metrics: {section_name: [{label, value}]}` and `named_metrics: {section_name: {name: value}}` (analytics tools only) — `value` is an integer count read from an element whose whole text is a number, `label` the text printed beside it, verbatim. `named_metrics` exists only where the label is in the per-locale table `scraping/analytics.METRIC_LABELS`; never derive names from label text anywhere else
 - `references["feed"]` (get_feed only) — every entry is `kind: "feed_post"`; non-post anchors (sidebar profiles, employer logos) are filtered. URLs may carry either `/feed/update/<urn>/` (DOM-anchor-derived) or `/posts/<slug>` (SDUI-derived) form; both are valid LinkedIn permalinks. Cap is 50 entries, matching `get_feed`'s `num_posts` ceiling.
 
 ## Tests

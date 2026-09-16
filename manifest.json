@@ -136,6 +136,14 @@
       "description": "Like one comment on a LinkedIn post, located by its URN, with explicit confirmation"
     },
     {
+      "name": "get_post_analytics",
+      "description": "Read the analytics of one of the signed-in member's own LinkedIn posts: impressions, reach, engagement, profile viewers, followers gained and audience demographics"
+    },
+    {
+      "name": "get_profile_analytics",
+      "description": "Read the signed-in member's own profile and creator analytics dashboards: profile viewers, search appearances, followers and post impressions"
+    },
+    {
       "name": "close_session",
       "description": "Properly close browser session and clean up resources"
     }
