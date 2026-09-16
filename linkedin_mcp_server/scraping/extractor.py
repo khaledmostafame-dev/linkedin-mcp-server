@@ -23,6 +23,8 @@ from linkedin_mcp_server.scraping.jobs import JobScraper
 from linkedin_mcp_server.scraping.message_sender import MessageSender
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.person import PersonScraper
+from linkedin_mcp_server.scraping.post_composer import PostComposer
+from linkedin_mcp_server.scraping.post_content import PostRequest
 from linkedin_mcp_server.scraping.posts import PostSearch
 from linkedin_mcp_server.scraping.profile_page import ProfilePageReader
 from linkedin_mcp_server.scraping.session import ScrapingSession
@@ -65,6 +67,7 @@ class LinkedInExtractor:
         job_pages = JobPageReader(session, navigator, content)
         self._jobs = JobScraper(navigator, capture, job_pages)
         self._posts = PostSearch(capture)
+        self._post_composer = PostComposer(session, navigator)
         self._conversations = ConversationReader(
             session, navigator, content, profile_page
         )
@@ -255,4 +258,20 @@ class LinkedInExtractor:
             message,
             confirm_send=confirm_send,
             profile_urn=profile_urn,
+        )
+
+    async def create_post(self, request: PostRequest) -> dict[str, Any]:
+        """Publish or schedule a validated post through the share composer."""
+        return await self._post_composer.create_post(request)
+
+    async def get_scheduled_posts(self) -> dict[str, Any]:
+        """List the authenticated user's scheduled posts."""
+        return await self._post_composer.get_scheduled_posts()
+
+    async def delete_scheduled_post(
+        self, identifier: str, *, confirm: bool
+    ) -> dict[str, Any]:
+        """Delete one scheduled post named by its get_scheduled_posts identifier."""
+        return await self._post_composer.delete_scheduled_post(
+            identifier, confirm=confirm
         )

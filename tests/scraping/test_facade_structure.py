@@ -32,6 +32,8 @@ FACADE_PACKAGE_IMPORTERS = {
 PUBLIC_SIGNATURES = {
     "click_button_by_text": "(self, text: 'str', *, scope: 'str' = 'main', timeout: 'int' = 5000) -> 'bool'",
     "connect_with_person": "(self, username: 'str', *, note: 'str | None' = None) -> 'dict[str, Any]'",
+    "create_post": "(self, request: 'PostRequest') -> 'dict[str, Any]'",
+    "delete_scheduled_post": "(self, identifier: 'str', *, confirm: 'bool') -> 'dict[str, Any]'",
     "extract_feed": "(self, num_posts: 'int' = 10) -> 'ExtractedSection'",
     "extract_page": "(self, url: 'str', section_name: 'str', max_scrolls: 'int | None' = None) -> 'ExtractedSection'",
     "get_company_employees": "(self, company_name: 'str', keywords: 'str | None' = None) -> 'dict[str, Any]'",
@@ -40,6 +42,7 @@ PUBLIC_SIGNATURES = {
     "get_my_profile": "(self, sections: 'set[str] | None' = None, callbacks: 'ProgressCallback | None' = None, max_scrolls: 'int | None' = None) -> 'dict[str, Any]'",
     "get_page_text": "(self) -> 'str'",
     "get_saved_jobs": "(self, max_pages: 'int' = 3) -> 'dict[str, Any]'",
+    "get_scheduled_posts": "(self) -> 'dict[str, Any]'",
     "get_sidebar_profiles": "(self, username: 'str') -> 'dict[str, Any]'",
     "scrape_company": "(self, company_name: 'str', requested: 'set[str]', callbacks: 'ProgressCallback | None' = None) -> 'dict[str, Any]'",
     "scrape_job": "(self, job_id: 'str') -> 'dict[str, Any]'",
@@ -55,6 +58,8 @@ PUBLIC_SIGNATURES = {
 DELEGATES = {
     "click_button_by_text": ("_content", "click_button_by_text"),
     "connect_with_person": ("_connection", "connect_with_person"),
+    "create_post": ("_post_composer", "create_post"),
+    "delete_scheduled_post": ("_post_composer", "delete_scheduled_post"),
     "extract_feed": ("_feed", "extract_feed"),
     "extract_page": ("_capture", "extract_page"),
     "get_company_employees": ("_company", "get_company_employees"),
@@ -63,6 +68,7 @@ DELEGATES = {
     "get_my_profile": ("_person", "get_my_profile"),
     "get_page_text": ("_content", "get_page_text"),
     "get_saved_jobs": ("_jobs", "get_saved_jobs"),
+    "get_scheduled_posts": ("_post_composer", "get_scheduled_posts"),
     "get_sidebar_profiles": ("_person", "get_sidebar_profiles"),
     "scrape_company": ("_company", "scrape_company"),
     "scrape_job": ("_jobs", "scrape_job"),
@@ -78,6 +84,8 @@ DELEGATES = {
 DELEGATE_CALLS = {
     "click_button_by_text": "self._content.click_button_by_text(text, scope=scope, timeout=timeout)",
     "connect_with_person": "self._connection.connect_with_person(username, note=note)",
+    "create_post": "self._post_composer.create_post(request)",
+    "delete_scheduled_post": "self._post_composer.delete_scheduled_post(identifier, confirm=confirm)",
     "extract_feed": "self._feed.extract_feed(num_posts)",
     "extract_page": "self._capture.extract_page(url, section_name, max_scrolls)",
     "get_company_employees": "self._company.get_company_employees(company_name, keywords)",
@@ -86,6 +94,7 @@ DELEGATE_CALLS = {
     "get_my_profile": "self._person.get_my_profile(sections, callbacks, max_scrolls)",
     "get_page_text": "self._content.get_page_text()",
     "get_saved_jobs": "self._jobs.get_saved_jobs(max_pages)",
+    "get_scheduled_posts": "self._post_composer.get_scheduled_posts()",
     "get_sidebar_profiles": "self._person.get_sidebar_profiles(username)",
     "scrape_company": "self._company.scrape_company(company_name, requested, callbacks)",
     "scrape_job": "self._jobs.scrape_job(job_id)",
@@ -108,6 +117,7 @@ FACADE_STATE = {
     "_jobs",
     "_message_sender",
     "_person",
+    "_post_composer",
     "_posts",
 }
 

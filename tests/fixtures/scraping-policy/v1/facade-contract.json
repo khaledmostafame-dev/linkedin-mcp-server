@@ -20,6 +20,14 @@
         "coroutine": true,
         "signature": "(self, username: 'str', *, note: 'str | None' = None) -> 'dict[str, Any]'"
       },
+      "create_post": {
+        "coroutine": true,
+        "signature": "(self, request: 'PostRequest') -> 'dict[str, Any]'"
+      },
+      "delete_scheduled_post": {
+        "coroutine": true,
+        "signature": "(self, identifier: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
       "extract_feed": {
         "coroutine": true,
         "signature": "(self, num_posts: 'int' = 10) -> 'ExtractedSection'"
@@ -51,6 +59,10 @@
       "get_saved_jobs": {
         "coroutine": true,
         "signature": "(self, max_pages: 'int' = 3) -> 'dict[str, Any]'"
+      },
+      "get_scheduled_posts": {
+        "coroutine": true,
+        "signature": "(self) -> 'dict[str, Any]'"
       },
       "get_sidebar_profiles": {
         "coroutine": true,
@@ -95,6 +107,8 @@
     },
     "tool_methods": [
       "connect_with_person",
+      "create_post",
+      "delete_scheduled_post",
       "extract_feed",
       "extract_page",
       "get_company_employees",
@@ -102,6 +116,7 @@
       "get_inbox",
       "get_my_profile",
       "get_saved_jobs",
+      "get_scheduled_posts",
       "get_sidebar_profiles",
       "scrape_company",
       "scrape_job",
@@ -148,6 +163,214 @@
           },
           "required": [
             "linkedin_username"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "create_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False returns a preview; True publishes or schedules.",
+              "type": "boolean"
+            },
+            "document": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "A PDF, PowerPoint or Word document shown as a swipeable carousel.",
+                  "properties": {
+                    "base64": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "File content as base64 (needs filename; capped at 20 MB)."
+                    },
+                    "filename": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "File name, required with base64 (e.g. deck.pdf)."
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "File name inside the server's uploads directory (~/.linkedin-mcp/uploads). Paths outside it are refused."
+                    },
+                    "title": {
+                      "description": "Document title LinkedIn shows on the post.",
+                      "type": "string"
+                    },
+                    "url": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "https URL the server downloads (public hosts only, size-capped)."
+                    }
+                  },
+                  "required": [
+                    "title"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional document with a required title."
+            },
+            "media": {
+              "anyOf": [
+                {
+                  "items": {
+                    "additionalProperties": false,
+                    "description": "One attachment, given as exactly one of url, base64 or path.",
+                    "properties": {
+                      "base64": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "File content as base64 (needs filename; capped at 20 MB)."
+                      },
+                      "filename": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "File name, required with base64 (e.g. deck.pdf)."
+                      },
+                      "path": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "File name inside the server's uploads directory (~/.linkedin-mcp/uploads). Paths outside it are refused."
+                      },
+                      "url": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "https URL the server downloads (public hosts only, size-capped)."
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional list of images."
+            },
+            "schedule_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional ISO 8601 date-time with an explicit offset,\ne.g. 2026-09-20T09:00:00+04:00. Must be at least 10 minutes\nahead and within 90 days. Uses LinkedIn's native scheduler;\nthe result reports the instant in UTC and in the browser's\ntimezone."
+            },
+            "text": {
+              "description": "Post body with optional inline mentions. Line breaks allowed.",
+              "type": "string"
+            },
+            "visibility": {
+              "default": "anyone",
+              "description": "\"anyone\" (public) or \"connections\".",
+              "enum": [
+                "anyone",
+                "connections"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "delete_scheduled_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False previews the entry; True deletes it.",
+              "type": "boolean"
+            },
+            "identifier": {
+              "description": "An identifier returned by get_scheduled_posts.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifier",
+            "confirm"
           ],
           "type": "object"
         },
@@ -431,6 +654,17 @@
               "type": "integer"
             }
           },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_scheduled_posts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
           "type": "object"
         },
         "output": {

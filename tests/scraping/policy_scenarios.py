@@ -27,6 +27,7 @@ from linkedin_mcp_server.scraping import person as person_module
 from linkedin_mcp_server.scraping import session as session_module
 from linkedin_mcp_server.scraping import LinkedInExtractor
 from linkedin_mcp_server.scraping.fields import COMPANY_SECTIONS, PERSON_SECTIONS
+from linkedin_mcp_server.scraping.post_content import build_post_request
 from linkedin_mcp_server.server import create_mcp_server
 
 from .support.policy_trace import (
@@ -984,6 +985,43 @@ async def _conversation_scenario(method: str) -> dict[str, Any]:
     )
 
 
+async def _posting_composer_unavailable_scenario(method: str) -> dict[str, Any]:
+    """Every posting method opens the share composer by URL first.
+
+    The composer never appears here, so the trace pins the part all three
+    share: one navigation to the share URL, the rate-limit boundary, and a
+    bounded wait for the editor that ends in a refusal with nothing typed.
+    """
+    recorder = TraceRecorder(f"{method}__composer_unavailable", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.declare_locator('div[role="textbox"][contenteditable="true"]', "post_editor")
+    page.declare_derived("post_editor", "first", "post_editor_first")
+    page.script(
+        "post_editor_first.wait_for", PlaywrightTimeoutError("no share composer")
+    )
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "posting"):
+            if method == "create_post":
+                request = build_post_request("Synthetic post body")
+                arguments = {"text": request.rendered_text}
+                result = await extractor.create_post(request)
+            elif method == "get_scheduled_posts":
+                arguments = {}
+                result = await extractor.get_scheduled_posts()
+            elif method == "delete_scheduled_post":
+                arguments = {"identifier": "sched-0123456789abcdef", "confirm": True}
+                result = await extractor.delete_scheduled_post(
+                    "sched-0123456789abcdef", confirm=True
+                )
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
 async def _facade_contract_trace() -> dict[str, Any]:
     global _TOOL_SCHEMAS
 
@@ -1019,6 +1057,8 @@ async def _facade_contract_trace() -> dict[str, Any]:
 
 TOOL_FACADE_METHODS = {
     "connect_with_person",
+    "create_post",
+    "delete_scheduled_post",
     "extract_feed",
     "extract_page",
     "get_company_employees",
@@ -1026,6 +1066,7 @@ TOOL_FACADE_METHODS = {
     "get_inbox",
     "get_my_profile",
     "get_saved_jobs",
+    "get_scheduled_posts",
     "get_sidebar_profiles",
     "scrape_company",
     "scrape_job",
@@ -1112,6 +1153,15 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         "conversation.json": await _conversation_scenario("get_conversation"),
         "search-conversations.json": await _conversation_scenario(
             "search_conversations"
+        ),
+        "post-create-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("create_post")
+        ),
+        "post-scheduled-list-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("get_scheduled_posts")
+        ),
+        "post-scheduled-delete-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("delete_scheduled_post")
         ),
     }
     return traces

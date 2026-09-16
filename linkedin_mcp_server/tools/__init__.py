@@ -13,6 +13,7 @@ Available Tools:
 - Messaging tools: Inbox, conversations, search, and sending messages
 - Feed tools: Home feed scraping
 - Post tools: Global post/content search
+- Posting tools: Publish/schedule posts with mentions and attachments, list and delete scheduled posts
 
 Architecture:
 - FastMCP integration for MCP-compliant tool registration

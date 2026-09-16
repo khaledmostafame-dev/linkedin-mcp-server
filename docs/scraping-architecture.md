@@ -35,6 +35,8 @@ a page-owning collaborator.
 | `message_sender` | `MessageSender` | `page-owning` |
 | `navigation` | `PageNavigator`, `WaitUntil` | `page-owning` |
 | `person` | `PersonScraper` | `page-owning` |
+| `post_composer` | `FEED_URL`, `PostComposer`, `SHARE_URL`, `collapse_whitespace()`, `evidence_keys()`, `evidence_matches()`, `post_result()`, `scheduled_identifier()` | `page-owning` |
+| `post_content` | `LINKEDIN_POST_CHARACTER_LIMIT`, `MentionKind`, `MentionSegment`, `MentionTarget`, `PostAttachment`, `PostRequest`, `PostValidationError`, `SCHEDULE_MAX_AHEAD`, `SCHEDULE_MIN_LEAD`, `TextSegment`, `VISIBILITIES`, `Visibility`, `attachment_summary()`, `build_post_request()`, `date_matches()`, `format_schedule_date()`, `format_schedule_time()`, `identity_key_from_url()`, `identity_key_from_urn()`, `normalize_text()`, `parse_mention_target()`, `parse_post_text()`, `parse_schedule_at()`, `post_preview()`, `render_segments()`, `resolve_date_order()`, `schedule_summary()`, `time_matches()`, `utf16_length()` | `browser-free` |
 | `posts` | `PostSearch` | `browser-free` |
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `page-owning` |
 | `search_urls` | `CONTENT_DATE_POSTED_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
@@ -51,7 +53,7 @@ a page-owning collaborator.
 - `content` -> `session`, `text`
 - `contracts` -> `identifiers`, `link_metadata`
 - `conversations` -> `content`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `session`, `text`
-- `extractor` -> `capture`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `feed`, `job_pages`, `jobs`, `message_sender`, `navigation`, `person`, `posts`, `profile_page`, `session`, `text`
+- `extractor` -> `capture`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `feed`, `job_pages`, `jobs`, `message_sender`, `navigation`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `session`, `text`
 - `feed` -> `content`, `contracts`, `feed_payload`, `navigation`, `session`, `text`
 - `feed_payload` -> `link_metadata`
 - `fields` -> `capture`
@@ -63,6 +65,8 @@ a page-owning collaborator.
 - `message_sender` -> `contracts`, `identifiers`, `navigation`, `session`
 - `navigation` -> `session`
 - `person` -> `capture`, `contracts`, `fields`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `search_urls`, `session`, `text`
+- `post_composer` -> `navigation`, `post_content`, `session`
+- `post_content` -> _(none)_
 - `posts` -> `capture`, `contracts`, `link_metadata`, `search_urls`
 - `profile_page` -> `session`
 - `search_urls` -> `contracts`
@@ -73,6 +77,8 @@ a page-owning collaborator.
 
 - `click_button_by_text`
 - `connect_with_person`
+- `create_post`
+- `delete_scheduled_post`
 - `extract_feed`
 - `extract_page`
 - `get_company_employees`
@@ -81,6 +87,7 @@ a page-owning collaborator.
 - `get_my_profile`
 - `get_page_text`
 - `get_saved_jobs`
+- `get_scheduled_posts`
 - `get_sidebar_profiles`
 - `scrape_company`
 - `scrape_job`
@@ -103,6 +110,7 @@ a page-owning collaborator.
 - `_jobs`
 - `_message_sender`
 - `_person`
+- `_post_composer`
 - `_posts`
 
 ## Dependency-direction violations
