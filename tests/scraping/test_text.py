@@ -4,6 +4,7 @@ import re
 
 from linkedin_mcp_server.scraping.text import (
     DETAIL_CAPTURE_EN_US,
+    normalize_localized_digits,
     strip_conversation_chrome,
     strip_linkedin_noise,
     truncate_linkedin_noise,
@@ -236,3 +237,33 @@ class TestStripConversationChrome:
 
     def test_empty_string(self):
         assert strip_conversation_chrome("") == ""
+
+
+class TestNormalizeLocalizedDigits:
+    def test_arabic_indic_digits_become_ascii(self):
+        # "٥٬٤٣٢ متابع" ("5,432 followers", Arabic-Indic digits + Arabic
+        # thousands separator) -> "5,432 متابع".
+        assert normalize_localized_digits("٥٬٤٣٢ متابع") == "5,432 متابع"
+
+    def test_extended_arabic_indic_digits_become_ascii(self):
+        # Persian/Urdu digit shapes (U+06F0-06F9), distinct from U+0660-0669.
+        assert normalize_localized_digits("۱۲۳") == "123"
+
+    def test_arabic_decimal_separator_becomes_ascii(self):
+        assert normalize_localized_digits("١٫٥") == "1.5"
+
+    def test_strips_bidi_marks_around_a_number(self):
+        assert normalize_localized_digits("‏123‎") == "123"
+
+    def test_ascii_input_is_unchanged(self):
+        assert normalize_localized_digits("1,234.5") == "1,234.5"
+
+    def test_empty_string(self):
+        assert normalize_localized_digits("") == ""
+
+    def test_devanagari_digits_are_left_untouched(self):
+        # Documented gap: only Arabic-Indic and Extended Arabic-Indic are
+        # covered. A caller that needs Devanagari would see non-digit output
+        # here and can fail safe on it, same as an unrecognized digit script
+        # reaching `str.isdigit()`.
+        assert normalize_localized_digits("१२३") == "१२३"
