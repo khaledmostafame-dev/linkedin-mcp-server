@@ -165,13 +165,21 @@ async def detect_rate_limit(page: Page) -> None:
 
 async def scroll_to_bottom(
     page: Page, pause_time: float = 1.0, max_scrolls: int = 10
-) -> None:
+) -> bool:
     """Scroll to the bottom of the page to trigger lazy loading.
 
     Args:
         page: Patchright page object
         pause_time: Time to pause between scrolls (seconds)
         max_scrolls: Maximum number of scroll attempts
+
+    Returns:
+        True when the page's height stopped growing before the scroll budget
+        ran out -- the confirmed end of what lazy-loads. False when
+        ``max_scrolls`` was spent without that confirmation, which callers
+        pacing an infinite-scroll surface (content search) use to tell "we
+        stopped" from "LinkedIn stopped" -- more content may still be behind
+        a scroll this call never took.
     """
     for i in range(max_scrolls):
         previous_height = await page.evaluate("document.body.scrollHeight")
@@ -181,7 +189,8 @@ async def scroll_to_bottom(
         new_height = await page.evaluate("document.body.scrollHeight")
         if new_height == previous_height:
             logger.debug("Reached bottom after %d scrolls", i + 1)
-            break
+            return True
+    return False
 
 
 async def scroll_job_sidebar(

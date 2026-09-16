@@ -120,6 +120,12 @@ class ExtractedSection:
     text: str
     references: list[Reference]
     error: dict[str, Any] | None = None
+    # True when the section's final scroll spent its whole ``max_scrolls``
+    # budget without the page's height settling -- i.e. more lazy-loaded
+    # content may exist below what was captured. Only content search
+    # (infinite scroll, no ``&page=``/``&start=`` pagination) surfaces this
+    # today; every other capture defaults it unread.
+    scroll_capped: bool = False
 
 
 class FilterValidationError(ValueError):

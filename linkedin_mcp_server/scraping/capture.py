@@ -250,26 +250,36 @@ class SectionCapture:
 
         if CaptureMode.ACTIVITY in plan.mode:
             scrolls = plan.max_scrolls if plan.max_scrolls is not None else 10
-            await self._session.scroll_body(pause_time=1.0, max_scrolls=scrolls)
+            reached_bottom = await self._session.scroll_body(
+                pause_time=1.0, max_scrolls=scrolls
+            )
         else:
             scrolls = plan.max_scrolls if plan.max_scrolls is not None else 5
-            await self._session.scroll_body(pause_time=0.5, max_scrolls=scrolls)
+            reached_bottom = await self._session.scroll_body(
+                pause_time=0.5, max_scrolls=scrolls
+            )
+        scroll_capped = not reached_bottom
 
         raw_result = await self._content._extract_root_content(["main"])
         raw = raw_result["text"]
 
         if not raw:
-            return ExtractedSection(text="", references=[])
+            return ExtractedSection(text="", references=[], scroll_capped=scroll_capped)
         truncated = truncate_linkedin_noise(raw)
         if not truncated and raw.strip():
             logger.warning(
                 "Page %s returned only LinkedIn chrome (likely rate-limited)", url
             )
-            return ExtractedSection(text=RATE_LIMITED_SECTION_TEXT, references=[])
+            return ExtractedSection(
+                text=RATE_LIMITED_SECTION_TEXT,
+                references=[],
+                scroll_capped=scroll_capped,
+            )
         cleaned = filter_linkedin_noise_lines(truncated)
         return ExtractedSection(
             text=cleaned,
             references=build_references(raw_result["references"], section_name),
+            scroll_capped=scroll_capped,
         )
 
     async def _extract_overlay(
