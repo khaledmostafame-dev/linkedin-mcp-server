@@ -437,6 +437,34 @@ async def scroll_job_sidebar(
     return False
 
 
+# Screen-reader labels LinkedIn's popup/modal dismiss control carries, keyed
+# by locale. ``button.artdeco-modal__dismiss`` below is locale-independent (a
+# design-system class, not user-facing text) and always stays in the built
+# selector; these ``aria-label`` values are the fallback for a modal that
+# doesn't carry that class. Guarded per CLAUDE.md -> Scraping Rules ("where
+# text is genuinely the only signal, guard it behind an explicit per-locale
+# table and document the limitation in code"). The "ar" entry is a
+# best-effort transcription (Dismiss -> "تجاهل", Close -> "إغلاق"), not
+# verified against a live LinkedIn Arabic session; a locale missing here, or
+# a mistranscribed entry, still falls through to the class-based selector or
+# to this function's own no-modal-found return of ``False`` -- see
+# docs/i18n-audit.md.
+_MODAL_DISMISS_ARIA_LABELS: dict[str, tuple[str, ...]] = {
+    "en": ("Dismiss", "Close"),
+    "ar": ("تجاهل", "إغلاق"),
+}
+
+
+def _modal_dismiss_selector() -> str:
+    """Build the modal-dismiss locator from the locale table plus the class."""
+    aria_selectors = ", ".join(
+        f'button[aria-label="{label}"]'
+        for labels in _MODAL_DISMISS_ARIA_LABELS.values()
+        for label in labels
+    )
+    return f"{aria_selectors}, button.artdeco-modal__dismiss"
+
+
 async def handle_modal_close(page: Page) -> bool:
     """Close any popup modals that might be blocking content.
 
@@ -444,11 +472,7 @@ async def handle_modal_close(page: Page) -> bool:
         True if a modal was closed, False otherwise
     """
     try:
-        close_button = page.locator(
-            'button[aria-label="Dismiss"], '
-            'button[aria-label="Close"], '
-            "button.artdeco-modal__dismiss"
-        ).first
+        close_button = page.locator(_modal_dismiss_selector()).first
 
         if await close_button.is_visible(timeout=1000):
             await close_button.click()
