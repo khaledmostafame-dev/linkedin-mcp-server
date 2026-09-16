@@ -123,8 +123,10 @@ _POST = "urn:li:activity:7300000000000000000"
 _COMMENT = "urn:li:comment:(activity:7300000000000000000,7300000000000000101)"
 
 # Writes whose confirm=False answer is documented as browser-free. Previews of
-# own-post and scheduled-post edits and send_message's dry run read LinkedIn
-# to verify their target, so they are not listed here.
+# own-post and scheduled-post edits, and the dry runs of send_message,
+# reply_to_conversation, mark_conversation_read, archive_conversation, save_job
+# and save_post, read LinkedIn to report the current state without changing it,
+# so they are not listed here.
 BROWSER_FREE_PREVIEWS: dict[str, dict[str, Any]] = {
     "connect_with_person": {"linkedin_username": "ada-lovelace"},
     "follow": {"target_url": "https://www.linkedin.com/company/analytical-engine/"},
@@ -138,6 +140,11 @@ BROWSER_FREE_PREVIEWS: dict[str, dict[str, Any]] = {
     },
     "react_to_comment": {"post_url": _POST, "comment_urn": _COMMENT},
     "create_post": {"text": "Synthetic post body"},
+    "create_poll": {
+        "question": "Synthetic question?",
+        "options": ["Yes", "No"],
+        "duration_days": 7,
+    },
 }
 
 

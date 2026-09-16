@@ -27,6 +27,16 @@ A Model Context Protocol (MCP) server that connects AI assistants to LinkedIn. A
 - **Post Search**: Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter
 - **Saved Posts**: List and save/unsave posts (structural toggle detection, confirmation required to write)
 - **Post Reactions**: List who reacted to a post via its reactions dialog
+- **Job Alerts**: List the authenticated user's job alerts, each alert's own search returned as a section
+- **Location Resolution**: Resolve a free-text place name to LinkedIn geo URN id candidates for people search
+- **Comments**: Read a post's comments and replies, comment on a post, reply to or like one comment (writes require explicit confirmation)
+- **Posting**: Publish or schedule posts and polls with @mentions, images or a document, list/edit/delete scheduled posts, and edit or delete your own published posts (writes require explicit confirmation)
+- **Analytics**: Read your own post, profile/creator and administered company page analytics
+- **Network**: List your connections, mutual connections with a profile and pending invitations; withdraw or respond to invitations and follow/unfollow a person or company (writes require explicit confirmation)
+- **Groups**: Search groups and list a group's posts or members
+- **Events**: Search events, read an event's details and list its attendees
+- **Sales Navigator**: Search leads and accounts and read your lead/account lists (read-only; requires a Sales Navigator seat)
+- **Pacing**: Every LinkedIn call is paced with rolling caps and a cooldown after a 429 or checkpoint; `get_pacing_status` reports the counters without contacting LinkedIn
 - **Compact References**: Return typed per-section links alongside readable text without shipping full-page markdown
 
 ## Quick Start

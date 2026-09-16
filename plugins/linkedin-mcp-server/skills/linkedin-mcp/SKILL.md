@@ -18,10 +18,12 @@ work, health checks, or background maintenance.
 - Never enable the plugin or its MCP server, edit Codex configuration, or start
   a login flow merely because LinkedIn might be useful. If either component is
   disabled, explain that state and stop.
-- `send_message`, `connect_with_person`, the comment writes, `create_post`, `create_poll`,
-  `edit_scheduled_post`, `delete_scheduled_post`, `edit_post`, `delete_post`,
-  `follow`, `withdraw_invitation` and `respond_to_invitation` are write
-  actions. Each requires `confirm` (`confirm_send` for `send_message`). Use them only when the user
+- `send_message`, `reply_to_conversation`, `mark_conversation_read`,
+  `archive_conversation`, `connect_with_person`, the comment writes,
+  `create_post`, `create_poll`, `edit_scheduled_post`, `delete_scheduled_post`,
+  `edit_post`, `delete_post`, `follow`, `withdraw_invitation`,
+  `respond_to_invitation`, `save_post` and `save_job` are write actions. Each
+  requires `confirm` (`confirm_send` for `send_message`). Use them only when the user
   explicitly authorizes the exact recipient and action (for a post, the exact
   post). Call `create_post` with `confirm=false` first and show the preview. Confirm the
   final message or connection note unless the user has already supplied it.
@@ -41,21 +43,31 @@ instances, clear profiles, or replace the user's browser session.
 
 ## Tool selection
 
-- Profiles: `get_my_profile`, `get_person_profile`, `search_people`, and
-  `get_sidebar_profiles`.
+- Profiles: `get_my_profile`, `get_person_profile`, `search_people`,
+  `resolve_geo_location`, and `get_sidebar_profiles`.
+- Sales Navigator (read-only, needs a seat): `sales_nav_search_leads`,
+  `sales_nav_search_accounts`, `sales_nav_get_lists`, and `sales_nav_get_list`.
+- Pacing: `get_pacing_status` reports counters and cooldowns without contacting
+  LinkedIn.
 - Companies: `get_company_profile`, `get_company_posts`, `search_companies`,
   and `get_company_employees`.
-- Jobs: `search_jobs`, `get_saved_jobs`, and `get_job_details`.
-- Content: `get_feed`, `search_posts`, and `get_post_comments`.
+- Jobs: `search_jobs`, `get_saved_jobs`, `get_job_details`, and
+  `get_job_alerts`; `save_job` (write).
+- Content: `get_feed`, `get_hashtag_feed`, `get_notifications`, `search_posts`,
+  `get_saved_posts`, `get_post_reactions`, and `get_post_comments`; `save_post`
+  (write).
 - Analytics (the signed-in member's own only): `get_post_analytics`,
   `get_profile_analytics`, and `get_company_page_analytics` (pages they
   administer).
-- Messages: `get_inbox`, `get_conversation`, and `search_conversations`.
+- Messages: `get_inbox`, `get_conversation`, and `search_conversations`;
+  `reply_to_conversation`, `mark_conversation_read`, and `archive_conversation`
+  (writes).
 - Posting: `get_scheduled_posts` (read); `create_post`, `create_poll`,
   `edit_scheduled_post`, `delete_scheduled_post`, `edit_post` and
   `delete_post` (writes).
 - Network: `list_connections`, `get_mutual_connections`, `get_invitations`,
-  `search_groups`, `get_group_posts`, and `get_group_members` (reads);
+  `search_groups`, `get_group_posts`, `get_group_members`, `search_events`,
+  `get_event_details`, and `get_event_attendees` (reads);
   `follow`, `withdraw_invitation`, and `respond_to_invitation` (writes).
 - Writes: `send_message`, `connect_with_person`, `comment_on_post`,
   `reply_to_comment`, and `react_to_comment`, subject to the explicit
