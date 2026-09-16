@@ -124,6 +124,10 @@
       "description": "List recent notifications (replies, reactions, mentions, connection requests) from the LinkedIn notifications page, with an optional 'my_posts'/'mentions' filter"
     },
     {
+      "name": "get_hashtag_feed",
+      "description": "Get recent posts from a LinkedIn hashtag feed (/feed/hashtag/<tag>/)"
+    },
+    {
       "name": "search_posts",
       "description": "Search LinkedIn posts/content globally by keyword (the 'Posts' tab) with an optional recency filter (past-24h/past-week/past-month) and sort order (relevance/latest), reporting stopped_reason/truncated"
     },
@@ -250,6 +254,14 @@
     {
       "name": "sales_nav_get_list",
       "description": "Read one Sales Navigator list's members, bounded by max_items. Requires a Sales Navigator seat."
+    },
+    {
+      "name": "save_post",
+      "description": "Save or unsave a LinkedIn post via its overflow menu's toggle, identified structurally; requires confirmation"
+    },
+    {
+      "name": "get_post_reactions",
+      "description": "List who reacted to a LinkedIn post by opening its reactions dialog (structural probe); reaction type is not extracted"
     },
     {
       "name": "close_session",

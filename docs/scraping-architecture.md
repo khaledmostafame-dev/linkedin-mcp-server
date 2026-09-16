@@ -33,7 +33,7 @@ a page-owning collaborator.
 | `fields` | `COMPANY_SECTIONS`, `PERSON_SECTIONS`, `parse_company_sections()`, `parse_person_sections()` | `browser-free` |
 | `geo_resolver` | `GeoCandidate`, `GeoLocationResolver`, `GeoResolution`, `MAX_CANDIDATES` | `page-owning` |
 | `group` | `GroupScraper` | `page-owning` |
-| `identifiers` | `company_page_url()`, `event_page_url()`, `group_page_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_event_id()`, `normalize_group_id()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_post_urn()`, `normalize_thread_id()`, `person_profile_url()`, `post_update_url()` | `browser-free` |
+| `identifiers` | `company_page_url()`, `event_page_url()`, `group_page_url()`, `hashtag_feed_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_event_id()`, `normalize_group_id()`, `normalize_hashtag()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_post_url()`, `normalize_post_urn()`, `normalize_thread_id()`, `person_profile_url()`, `post_update_url()` | `browser-free` |
 | `job_pages` | `JOB_IDS_JS`, `JobPageCapture`, `JobPageReader`, `parse_total_from_page_state_text()` | `page-owning` |
 | `job_policy` | `JOB_SEARCH_PATHS`, `RESULTS_PER_LINKEDIN_PAGE`, `SAVED_JOBS_PAGE_SIZE`, `SAVED_JOBS_PATHS`, `SAVED_JOBS_URL`, `SCROLL_BUDGET_TOTAL`, `SCROLL_DEADLINE_MAX`, `SEARCH_TIMEOUT_FRACTION`, `dropped_filters_section_error()`, `dropped_offset_section_error()`, `lost_keywords_section_error()`, `reconcile_search_references()`, `route()`, `same_job_search()` | `browser-free` |
 | `jobs` | `JobScraper` | `browser-free` |
@@ -42,10 +42,12 @@ a page-owning collaborator.
 | `navigation` | `PageNavigator`, `WaitUntil` | `page-owning` |
 | `network` | `ConnectionSort`, `InvitationDirection`, `NetworkScraper`, `follow_preview()`, `resolve_follow_target()` | `page-owning` |
 | `person` | `PersonScraper` | `page-owning` |
+| `post_actions` | `PostActions` | `page-owning` |
 | `post_composer` | `FEED_URL`, `PostComposer`, `SHARE_URL`, `collapse_whitespace()`, `evidence_keys()`, `evidence_matches()`, `post_result()`, `scheduled_identifier()` | `page-owning` |
 | `post_content` | `LINKEDIN_POST_CHARACTER_LIMIT`, `MentionKind`, `MentionSegment`, `MentionTarget`, `POLL_DURATIONS_DAYS`, `POLL_MAX_OPTIONS`, `POLL_MIN_OPTIONS`, `POLL_OPTION_LIMIT`, `POLL_QUESTION_LIMIT`, `PollSpec`, `PostAttachment`, `PostEdit`, `PostRequest`, `PostValidationError`, `SCHEDULE_MAX_AHEAD`, `SCHEDULE_MIN_LEAD`, `TextSegment`, `VISIBILITIES`, `Visibility`, `attachment_summary()`, `build_poll()`, `build_post_edit()`, `build_post_request()`, `date_matches()`, `format_schedule_date()`, `format_schedule_time()`, `identity_key_from_url()`, `identity_key_from_urn()`, `normalize_text()`, `parse_mention_target()`, `parse_post_as()`, `parse_post_text()`, `parse_post_url()`, `parse_schedule_at()`, `post_preview()`, `render_segments()`, `resolve_date_order()`, `schedule_summary()`, `time_matches()`, `utf16_length()` | `browser-free` |
 | `posts` | `PostSearch` | `browser-free` |
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `page-owning` |
+| `reactions` | `ReactionsReader` | `page-owning` |
 | `response_capture` | `drain_listener_tasks()` | `browser-free` |
 | `sales_navigator` | `SALES_NAVIGATOR_UNAVAILABLE_ERROR`, `SALES_NAVIGATOR_UNAVAILABLE_MESSAGE`, `SalesNavigatorScraper` | `page-owning` |
 | `search_urls` | `CONTENT_DATE_POSTED_MAP`, `CONTENT_SORT_BY_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_event_search_url()`, `build_group_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
@@ -66,7 +68,7 @@ a page-owning collaborator.
 - `conversations` -> `content`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `session`, `text`
 - `entity_search` -> `capture`, `contracts`, `job_policy`, `link_metadata`, `session`
 - `events` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `search_urls`
-- `extractor` -> `analytics`, `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `events`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `sales_navigator`, `session`, `text`
+- `extractor` -> `analytics`, `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `events`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_actions`, `post_composer`, `post_content`, `posts`, `profile_page`, `reactions`, `sales_navigator`, `session`, `text`
 - `feed` -> `content`, `contracts`, `feed_payload`, `navigation`, `response_capture`, `session`, `text`
 - `feed_payload` -> `link_metadata`
 - `fields` -> `capture`
@@ -81,10 +83,12 @@ a page-owning collaborator.
 - `navigation` -> `session`
 - `network` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `session`
 - `person` -> `capture`, `contracts`, `entity_search`, `fields`, `geo_resolver`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `search_urls`, `session`, `text`
+- `post_actions` -> `identifiers`, `navigation`, `session`
 - `post_composer` -> `navigation`, `post_content`, `session`
 - `post_content` -> _(none)_
 - `posts` -> `capture`, `contracts`, `link_metadata`, `search_urls`
 - `profile_page` -> `session`
+- `reactions` -> `content`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `session`, `text`
 - `response_capture` -> _(none)_
 - `sales_navigator` -> `content`, `contracts`, `link_metadata`, `navigation`, `session`, `text`
 - `search_urls` -> `contracts`
@@ -119,6 +123,7 @@ a page-owning collaborator.
 - `get_page_text`
 - `get_post_analytics`
 - `get_post_comments`
+- `get_post_reactions`
 - `get_profile_analytics`
 - `get_saved_jobs`
 - `get_scheduled_posts`
@@ -132,6 +137,7 @@ a page-owning collaborator.
 - `sales_nav_get_lists`
 - `sales_nav_search_accounts`
 - `sales_nav_search_leads`
+- `save_post`
 - `scrape_company`
 - `scrape_job`
 - `scrape_person`
@@ -161,8 +167,10 @@ a page-owning collaborator.
 - `_message_sender`
 - `_network`
 - `_person`
+- `_post_actions`
 - `_post_composer`
 - `_posts`
+- `_reactions`
 - `_sales_navigator`
 
 ## Dependency-direction violations

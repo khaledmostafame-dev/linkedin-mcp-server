@@ -52,18 +52,24 @@ def is_feed_payload_response(url: str) -> bool:
 def is_post_listing_page(url: str) -> bool:
     """True for pages whose posts render without a DOM permalink anchor.
 
-    Company posts pages (``/company/<slug>/posts/``) and a person's activity
-    feed (``/recent-activity/...``) both lazy-load posts the same way the
-    main feed does, and LinkedIn does not render a real ``<a href>`` for the
-    individual post on either — only the main feed has a dedicated
+    Company posts pages (``/company/<slug>/posts/``), a person's activity
+    feed (``/recent-activity/...``), and a hashtag feed
+    (``/feed/hashtag/<tag>/``) all lazy-load posts the same way the main
+    feed does, and LinkedIn does not render a real ``<a href>`` for the
+    individual post on any of them — only the main feed has a dedicated
     DOM-anchor path (``feed_post`` via ``/feed/update/<urn>/``). Matched on
     the parsed path since the url can carry a query string
     (``?viewAsMember=true``) that a raw suffix check would miss.
+
+    The hashtag feed is included on the strength of sharing the same
+    feed-rendering surface as the other three, not on a confirmed live
+    network capture (this fork never signs in to LinkedIn) — flag for
+    live verification if it turns out to carry no such payload.
     """
     path = urlparse(url).path
-    return "/recent-activity/" in path or (
-        "/company/" in path and path.rstrip("/").endswith("/posts")
-    )
+    if "/recent-activity/" in path or "/feed/hashtag/" in path:
+        return True
+    return "/company/" in path and path.rstrip("/").endswith("/posts")
 
 
 def is_post_listing_response(resp: Any) -> bool:

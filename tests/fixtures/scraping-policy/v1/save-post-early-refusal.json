@@ -1,0 +1,16 @@
+{
+  "call": {
+    "arguments": {
+      "confirm": true,
+      "post_url": "https://example.com/not-a-post"
+    },
+    "method": "save_post"
+  },
+  "events": [],
+  "result": {
+    "message": "That is not a LinkedIn post permalink. Pass a /feed/update/<urn>/ or /posts/<slug> url exactly as a previous result returned it.",
+    "raised": "InvalidReferenceError"
+  },
+  "scenario": "save_post__early_refusal",
+  "schema_version": 1
+}

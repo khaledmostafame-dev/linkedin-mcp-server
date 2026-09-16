@@ -16,10 +16,12 @@ from linkedin_mcp_server.core.exceptions import (
 from linkedin_mcp_server.scraping.identifiers import (
     company_page_url,
     group_page_url,
+    hashtag_feed_url,
     job_view_url,
     messaging_thread_url,
     normalize_company_identifier,
     normalize_group_id,
+    normalize_hashtag,
     normalize_job_id,
     normalize_opaque_id,
     normalize_person_identifier,
@@ -249,6 +251,42 @@ class TestNormalizeCompanyIdentifier:
     def test_refuses_a_value_that_cannot_name_a_company(self, value: str):
         with pytest.raises(LinkedInScraperException):
             normalize_company_identifier(value)
+
+
+class TestNormalizeHashtag:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "womenintech",
+            "#womenintech",
+            "# womenintech",
+            "https://www.linkedin.com/feed/hashtag/womenintech",
+            "https://www.linkedin.com/feed/hashtag/womenintech/",
+            "https://de.linkedin.com/feed/hashtag/womenintech/",
+        ],
+    )
+    def test_reduces_a_hashtag_link_to_the_tag(self, value: str):
+        assert normalize_hashtag(value) == "womenintech"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "https://www.linkedin.com/in/williamhgates",
+            "https://www.linkedin.com/company/microsoft/",
+            "https://www.linkedin.com/feed/",
+            "womenintech/../../feed",
+            "",
+            "#",
+        ],
+    )
+    def test_refuses_a_value_that_cannot_name_a_hashtag(self, value: str):
+        with pytest.raises(LinkedInScraperException):
+            normalize_hashtag(value)
+
+    def test_hashtag_feed_url_escapes_the_tag(self):
+        assert hashtag_feed_url("womenintech", "/") == (
+            "https://www.linkedin.com/feed/hashtag/womenintech/"
+        )
 
 
 class TestNormalizeOpaqueId:

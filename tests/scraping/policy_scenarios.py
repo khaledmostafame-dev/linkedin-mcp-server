@@ -934,6 +934,43 @@ async def _analytics_refusal_scenario(method: str) -> dict[str, Any]:
     )
 
 
+async def _post_action_early_refusal_scenario(method: str) -> dict[str, Any]:
+    """An invalid ``post_url`` refuses before any navigation.
+
+    Both ``get_post_reactions`` and ``save_post`` normalize their
+    ``post_url`` argument before touching the page (``normalize_post_url``
+    in ``identifiers.py``), so a value that cannot name a post raises
+    without ever navigating, clicking, or opening a dialog -- the one
+    path the DOM-interaction heuristics in ``reactions.py`` /
+    ``post_actions.py`` do not need live verification to prove, since no
+    browser interaction happens at all.
+    """
+    name = f"{method}__early_refusal"
+    recorder = TraceRecorder(name, _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method):
+            try:
+                if method == "get_post_reactions":
+                    arguments = {"post_url": "https://example.com/not-a-post"}
+                    await extractor.get_post_reactions(**arguments)
+                else:
+                    arguments = {
+                        "post_url": "https://example.com/not-a-post",
+                        "confirm": True,
+                    }
+                    await extractor.save_post(**arguments)
+            except InvalidReferenceError as e:
+                result = {"raised": "InvalidReferenceError", "message": str(e)}
+            else:
+                raise AssertionError(f"{method} did not refuse an invalid post_url")
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
 async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     name = f"{method}__baseline"
     recorder = TraceRecorder(name, _COMMON_ALLOWED)
@@ -1421,6 +1458,7 @@ TOOL_FACADE_METHODS = {
     "get_my_profile",
     "get_post_analytics",
     "get_post_comments",
+    "get_post_reactions",
     "get_profile_analytics",
     "get_saved_jobs",
     "get_scheduled_posts",
@@ -1434,6 +1472,7 @@ TOOL_FACADE_METHODS = {
     "sales_nav_get_lists",
     "sales_nav_search_accounts",
     "sales_nav_search_leads",
+    "save_post",
     "scrape_company",
     "scrape_job",
     "scrape_person",
@@ -1605,6 +1644,12 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         ),
         "sales-nav-seat-unavailable.json": (
             await _sales_navigator_seat_unavailable_scenario()
+        ),
+        "get-post-reactions-early-refusal.json": (
+            await _post_action_early_refusal_scenario("get_post_reactions")
+        ),
+        "save-post-early-refusal.json": (
+            await _post_action_early_refusal_scenario("save_post")
         ),
     }
     return traces

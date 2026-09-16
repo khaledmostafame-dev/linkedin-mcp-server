@@ -139,6 +139,14 @@ class TestIsPostListingPage:
             "https://www.linkedin.com/company/microsoft/about/"
         )
 
+    def test_hashtag_feed_path_matches(self):
+        assert is_post_listing_page(
+            "https://www.linkedin.com/feed/hashtag/womenintech/"
+        )
+
+    def test_plain_feed_path_does_not_match(self):
+        assert not is_post_listing_page("https://www.linkedin.com/feed/")
+
 
 class TestIsPostListingResponse:
     """Tests for is_post_listing_response content-type filtering."""

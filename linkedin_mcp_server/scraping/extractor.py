@@ -28,10 +28,12 @@ from linkedin_mcp_server.scraping.message_sender import MessageSender
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.network import NetworkScraper
 from linkedin_mcp_server.scraping.person import PersonScraper
+from linkedin_mcp_server.scraping.post_actions import PostActions
 from linkedin_mcp_server.scraping.post_composer import PostComposer
 from linkedin_mcp_server.scraping.post_content import PostEdit, PostRequest
 from linkedin_mcp_server.scraping.posts import PostSearch
 from linkedin_mcp_server.scraping.profile_page import ProfilePageReader
+from linkedin_mcp_server.scraping.reactions import ReactionsReader
 from linkedin_mcp_server.scraping.sales_navigator import SalesNavigatorScraper
 from linkedin_mcp_server.scraping.session import ScrapingSession
 from linkedin_mcp_server.scraping.text import (
@@ -83,6 +85,8 @@ class LinkedInExtractor:
         self._group = GroupScraper(session, navigator, capture)
         self._event = EventScraper(capture)
         self._sales_navigator = SalesNavigatorScraper(session, navigator, content)
+        self._reactions = ReactionsReader(session, navigator, content)
+        self._post_actions = PostActions(session, navigator)
 
     async def get_page_text(self) -> str:
         """Extract innerText from the main content area of the current page."""
@@ -522,3 +526,17 @@ class LinkedInExtractor:
     ) -> dict[str, Any]:
         """Read one Sales Navigator list's members, bounded by max_items."""
         return await self._sales_navigator.get_list(list_url, max_items)
+
+    async def get_post_reactions(
+        self, post_url: str, max_reactors: int = 50
+    ) -> dict[str, Any]:
+        """Open a post's reactions dialog and read the reactor list."""
+        return await self._reactions.get_post_reactions(post_url, max_reactors)
+
+    async def save_post(
+        self, post_url: str, *, confirm: bool, unsave: bool = False
+    ) -> dict[str, Any]:
+        """Save or unsave a post via its overflow menu's toggle."""
+        return await self._post_actions.save_post(
+            post_url, confirm=confirm, unsave=unsave
+        )
