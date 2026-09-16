@@ -59,7 +59,9 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `search_people` | Search for people by keywords, location, connection degree (1st/2nd/3rd), and current company |
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
+| `get_notifications` | List recent notifications (replies, reactions, mentions, connection requests) from the notifications page, with an optional "my_posts"/"mentions" filter |
 | `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) |
+| `get_saved_posts` | List posts saved by the authenticated user from /my-items/saved-posts/ |
 | `close_session` | Close browser session and clean up resources |
 
 <br/>

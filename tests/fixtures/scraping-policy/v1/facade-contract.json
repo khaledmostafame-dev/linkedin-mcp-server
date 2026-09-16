@@ -374,6 +374,31 @@
           "type": "object"
         }
       },
+      "get_notifications": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "filter": {
+              "default": "all",
+              "description": "One of \"all\" (default), \"my_posts\" (activity on your own\nposts), or \"mentions\". The non-default values are sent as\nLinkedIn's `filterType` query parameter (`MY_POSTS` /\n`MENTIONS`); this has not been confirmed against a live\naccount (this fork never signs in to LinkedIn) and may need\nadjusting if LinkedIn's actual parameter differs — treat\nanything other than \"all\" as best-effort until verified.",
+              "pattern": "^(all|my_posts|mentions)$",
+              "type": "string"
+            },
+            "max_items": {
+              "default": 30,
+              "description": "Maximum number of notifications to load (1-50,\ndefault 30). Items load in batches as the page scrolls, so\nthe actual count may slightly exceed the target.",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_person_profile": {
         "input": {
           "additionalProperties": false,
@@ -427,6 +452,25 @@
               "default": 3,
               "description": "Maximum number of saved-jobs pages to load (1-10, default 3)",
               "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_saved_posts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "max_posts": {
+              "default": 20,
+              "description": "Maximum number of saved posts to load (1-50,\ndefault 20). The list lazy-loads on scroll (no ``?start=``\npagination like saved jobs), so this sizes the scroll budget\nrather than a page count; the actual count may slightly\nexceed the target.",
+              "maximum": 50,
               "minimum": 1,
               "type": "integer"
             }
