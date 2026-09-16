@@ -115,6 +115,14 @@ def _encoded(config: AppConfig) -> dict[str, object]:
             for field in fields(config.browser)
         },
         "server": {name: getattr(config.server, name) for name in _SERVER_FIELDS},
+        # Pacing protects the account the owner's browser is logged in to, so
+        # the owner has to enforce what the user configured rather than its own
+        # defaults. A top-level section, like the version fields: an owner that
+        # predates it ignores the name instead of refusing the record.
+        "pacing": {
+            field.name: getattr(config.pacing, field.name)
+            for field in fields(config.pacing)
+        },
     }
 
 
@@ -158,6 +166,10 @@ def _decoded(parsed: dict[str, object]) -> AppConfig:
     config = AppConfig()
     _apply(config.browser, parsed.get("browser"), "browser")
     _apply(config.server, parsed.get("server"), "server", allowed=_SERVER_FIELDS)
+    # Optional, because a frontend that predates pacing sends none; the owner
+    # then enforces the defaults, which are on.
+    if "pacing" in parsed:
+        _apply(config.pacing, parsed.get("pacing"), "pacing")
     # The same validation the frontend's own configuration went through. An
     # owner is the process that opens the browser, so a value that would be
     # refused there must be refused here rather than reaching Chromium by the

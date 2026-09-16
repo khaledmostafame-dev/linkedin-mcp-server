@@ -14,6 +14,7 @@ from fastmcp.tools import ToolResult
 
 from linkedin_mcp_server.config import get_config
 from linkedin_mcp_server.exceptions import BrowserBusyError
+from linkedin_mcp_server.pacing import ToolKind, classify_call
 from linkedin_mcp_server.profile_lease import get_profile_lease
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,12 @@ class SequentialToolExecutionMiddleware(Middleware):
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         tool_name = context.message.name
+        # A tool tagged "local" reads only this process's own state, such as
+        # get_pacing_status. Queuing it behind a scrape, or behind another
+        # process's hold on the browser, would hide the very state a client asks
+        # for while it is waiting.
+        if await classify_call(context) is ToolKind.LOCAL:
+            return await call_next(context)
         wait_started = time.perf_counter()
         logger.debug("Waiting for scraper lock for tool '%s'", tool_name)
         await self._report_progress(

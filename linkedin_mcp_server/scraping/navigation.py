@@ -14,7 +14,7 @@ from linkedin_mcp_server.core.auth import (
     detect_auth_barrier_quick,
     resolve_remember_me_prompt,
 )
-from linkedin_mcp_server.core.exceptions import AuthenticationError
+from linkedin_mcp_server.core.exceptions import AuthenticationError, RateLimitError
 from linkedin_mcp_server.core.proxy_errors import (
     raise_if_proxy_error,
     redact_proxy_credentials,
@@ -22,11 +22,55 @@ from linkedin_mcp_server.core.proxy_errors import (
 )
 from linkedin_mcp_server.debug_trace import record_page_trace
 from linkedin_mcp_server.debug_utils import stabilize_navigation
+from linkedin_mcp_server import pacing_signals
 from linkedin_mcp_server.scraping.session import ScrapingSession
 
 logger = logging.getLogger(__name__)
 
 WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
+
+# HTTP 429 arrives in two shapes, both measured upstream against LinkedIn and a
+# local server (stickerdaniel/linkedin-mcp-server#957). Chromium either commits
+# it, and `page.goto` returns a response whose status says so, or refuses to,
+# and `goto` raises this net error while the tab shows Chromium's own error
+# page. The token is a Chromium constant, so it is locale-independent, but it is
+# raised for 403, 404 and 5xx as well; the status digits on that error page are
+# what make it a 429, and digits are not translated.
+_HTTP_TOO_MANY_REQUESTS = 429
+_HTTP_STATUS_NAV_FAILURE = "ERR_HTTP_RESPONSE_CODE_FAILURE"
+_HTTP_429_ON_ERROR_PAGE = re.compile(r"\b429\b")
+# The longest Retry-After worth repeating to a client. The number is reported,
+# never slept on here: the pacing cooldown is what keeps the next call away.
+_RETRY_AFTER_CEILING_SECONDS = 3600
+_RATE_LIMIT_DEFAULT_WAIT_SECONDS = 300
+
+
+def _retry_after_seconds(value: object) -> int | None:
+    """A delta-seconds `Retry-After`, clamped; None when absent or unreadable.
+
+    The HTTP-date form is not read: guessing at a wall clock here would invent
+    a wait LinkedIn did not ask for, and the caller has a default for that.
+    `isascii` guards `isdigit`, which accepts Unicode digits `int` refuses.
+    """
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not (value.isascii() and value.isdigit()):
+        return None
+    return min(_RETRY_AFTER_CEILING_SECONDS, int(value))
+
+
+def _rate_limited(url: str, retry_after: int | None) -> RateLimitError:
+    """Report a 429 to the pacing cooldown and build the error for it."""
+    pacing_signals.report(pacing_signals.HTTP_429, url)
+    message = "LinkedIn answered with HTTP 429 (too many requests)."
+    if retry_after is None:
+        return RateLimitError(
+            message, suggested_wait_time=_RATE_LIMIT_DEFAULT_WAIT_SECONDS
+        )
+    return RateLimitError(
+        f"{message} It asked for {retry_after}s.", suggested_wait_time=retry_after
+    )
 
 
 class PageNavigator:
@@ -139,6 +183,20 @@ class PageNavigator:
             raise AuthenticationError(message) from navigation_error
         raise AuthenticationError(message)
 
+    async def _error_page_shows_429(self) -> bool:
+        """Whether the error page a refused navigation left carries status 429.
+
+        Fails closed: a body that cannot be read is not evidence of a rate
+        limit, and the caller then re-raises the navigation error it had.
+        """
+        try:
+            body = await self._session.page.evaluate(
+                "() => document.body?.innerText || ''"
+            )
+        except Exception:
+            return False
+        return isinstance(body, str) and bool(_HTTP_429_ON_ERROR_PAGE.search(body))
+
     async def _goto_with_auth_checks(
         self,
         url: str,
@@ -150,6 +208,7 @@ class PageNavigator:
         page = self._session.page
         hops: list[str] = []
         listener_registered = False
+        response: Any = None
 
         def record_navigation(frame: Any) -> None:
             if frame != page.main_frame:
@@ -174,7 +233,7 @@ class PageNavigator:
                 extra={"target_url": url, "wait_until": wait_until},
             )
             try:
-                await page.goto(url, wait_until=wait_until, timeout=30000)
+                response = await page.goto(url, wait_until=wait_until, timeout=30000)
                 await stabilize_navigation(f"goto {url}", logger)
                 await record_page_trace(
                     page,
@@ -187,6 +246,15 @@ class PageNavigator:
                 # password in trace.jsonl. Converting here also keeps a proxy
                 # outage from being reported as a LinkedIn navigation problem.
                 raise_if_proxy_error(exc)
+                if (
+                    _HTTP_STATUS_NAV_FAILURE in str(exc)
+                    and await self._error_page_shows_429()
+                ):
+                    # No response exists on this path, so there is no
+                    # Retry-After to read and none is invented. `from None`
+                    # keeps the driver's text, which can quote a proxy URL,
+                    # out of everything that logs this error.
+                    raise _rate_limited(url, None) from None
                 if allow_remember_me and await resolve_remember_me_prompt(page):
                     await stabilize_navigation(
                         f"remember-me resolution for {url}", logger
@@ -241,6 +309,20 @@ class PageNavigator:
                 # that. Only the message is rewritten; the type is preserved so
                 # callers that branch on it are unaffected.
                 raise redacted_copy(exc) from None
+
+            # Outside the handler above on purpose: raised in there, it would be
+            # caught and re-raised as an ordinary navigation failure.
+            status = getattr(response, "status", None)
+            if (
+                isinstance(status, int)
+                and not isinstance(status, bool)
+                and status == _HTTP_TOO_MANY_REQUESTS
+            ):
+                headers = getattr(response, "headers", None)
+                retry_after = (
+                    headers.get("retry-after") if isinstance(headers, dict) else None
+                )
+                raise _rate_limited(url, _retry_after_seconds(retry_after))
 
             barrier = await detect_auth_barrier_quick(page)
             if not barrier:

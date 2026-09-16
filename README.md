@@ -61,6 +61,7 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_feed` | Get recent posts from the authenticated user's home feed |
 | `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) |
 | `close_session` | Close browser session and clean up resources |
+| `get_pacing_status` | Show LinkedIn pacing: call counters, when the next read and write are allowed, any cooldown, and the effective limits. Never contacts LinkedIn |
 
 <br/>
 <br/>
@@ -624,6 +625,37 @@ belongs behind something that provides it.
 <br/>
 <br/>
 
+
+<a id="pacing"></a>
+
+## ⏱️ Pacing and account safety
+
+LinkedIn restricts accounts, not clients, so the server paces every tool call that reaches LinkedIn, across every MCP client connected to it. Pacing is **on by default** with limits meant for a personal account. LinkedIn publishes no safe rates, so this lowers the risk of a restriction; it cannot rule one out.
+
+- **Spacing.** Each LinkedIn call waits a minimum gap after the previous one ends, plus random jitter so the cadence is never constant. Writes (`send_message`, `connect_with_person`, and any tool annotated `destructiveHint` or tagged `write`) have a longer gap of their own. Waits of up to 30 seconds happen inside the call and are reported as progress; a longer one fails at once with the time to retry.
+- **Rolling caps.** Reads per hour, and writes per hour and per day. A call over a cap fails at once with an error naming the limit and when it frees up. Nothing is queued or slept on for minutes.
+- **Cooldown.** When LinkedIn answers with HTTP 429 or redirects to a checkpoint, challenge or authwall page, every LinkedIn call is refused for a cooldown that starts at 30 minutes and doubles each time it happens again within a day (at most 24 hours). Detection uses status codes and URL routes, not page text. An ordinary expired-session redirect to `/login` does not start one.
+- **Persistence.** Counters and cooldown live in `pacing-state.json` beside the browser profile (`~/.linkedin-mcp/` by default), so restarting the server or the container does not reset them. A missing or corrupt file starts fresh with a warning.
+
+`get_pacing_status` reports the counters, the next allowed read and write, and any cooldown without touching LinkedIn or waiting for the browser. `close_session` is not paced.
+
+| Variable | CLI flag | Default | Meaning |
+|----------|----------|---------|---------|
+| `PACING_ENABLED` | `--pacing` / `--no-pacing` | `true` | Turn all pacing, caps and the cooldown on or off |
+| `PACING_MIN_INTERVAL_SECONDS` | `--pacing-min-interval` | `8` | Gap after any LinkedIn call, in seconds |
+| `PACING_JITTER_SECONDS` | `--pacing-jitter` | `7` | Random extra (0 to this) added to every gap |
+| `PACING_WRITE_MIN_INTERVAL_SECONDS` | `--pacing-write-min-interval` | `90` | Gap after a write before the next write |
+| `PACING_MAX_READS_PER_HOUR` | `--pacing-max-reads-per-hour` | `40` | Read calls allowed in any 60 minutes |
+| `PACING_MAX_WRITES_PER_HOUR` | `--pacing-max-writes-per-hour` | `6` | Write calls allowed in any 60 minutes |
+| `PACING_MAX_WRITES_PER_DAY` | `--pacing-max-writes-per-day` | `20` | Write calls allowed in any 24 hours |
+| `PACING_COOLDOWN_BASE_SECONDS` | `--pacing-cooldown-base` | `1800` | First cooldown after a 429 or checkpoint |
+
+For every number, `0` switches that limit off. An unreadable value stops the server at startup rather than silently falling back.
+
+To clear a cooldown early, for example after resolving a checkpoint in a normal browser, stop the server, delete `pacing-state.json`, and start it again. Deleting the file while the server runs has no effect, because the running server keeps its own copy.
+
+<br/>
+<br/>
 
 <a id="using-a-proxy"></a>
 

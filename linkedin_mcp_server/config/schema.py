@@ -81,6 +81,37 @@ DEFAULT_BROWSER_IDLE_TIMEOUT_SECONDS: float = 600.0
 #: a literal repeated at both ends.
 DEFAULT_USER_DATA_DIR: str = "~/.linkedin-mcp/profile"
 
+# Account pacing defaults (``pacing.py``). On by default and tuned for a
+# personal account, because a restricted account costs far more than a slow
+# answer. LinkedIn publishes no safe rates, so none of these is an official
+# number; they are placed against what the upstream discussions measured and
+# cited:
+#
+# * Gaps: upstream #957 saw LinkedIn answer HTTP 429 to a get_inbox followed
+#   straight by get_conversation, and settled on a 5s gap for interactive use,
+#   noting that commercial tools (Waalaxy) space profile visits a minute apart
+#   and messages two and a half. 8s plus up to 7s of jitter keeps a burst near
+#   five calls a minute and never a fixed cadence (#732, #709: a constant delay
+#   is itself the tell).
+# * Writes are the actions LinkedIn restricts accounts over. 90s between them
+#   and 6 an hour / 20 a day keep invitations and messages together below the
+#   weekly invitation ceiling commonly reported for personal accounts (around
+#   100, unpublished by LinkedIn) even on a busy week.
+# * 40 reads an hour: #958's bulk budget is 100-150 profile actions a day for
+#   unattended work; an interactive agent is burstier, so the ceiling is hourly
+#   and a busy hour still leaves room for a research session.
+# * A checkpoint or 429 means LinkedIn has already flagged the session. #957
+#   backs off in-call only; carrying on within minutes is what escalates a
+#   checkpoint into a restriction, so the cooldown starts at 30 minutes and
+#   doubles per repeat within a day.
+DEFAULT_PACING_MIN_INTERVAL_SECONDS: float = 8.0
+DEFAULT_PACING_JITTER_SECONDS: float = 7.0
+DEFAULT_PACING_WRITE_MIN_INTERVAL_SECONDS: float = 90.0
+DEFAULT_PACING_MAX_READS_PER_HOUR: int = 40
+DEFAULT_PACING_MAX_WRITES_PER_HOUR: int = 6
+DEFAULT_PACING_MAX_WRITES_PER_DAY: int = 20
+DEFAULT_PACING_COOLDOWN_BASE_SECONDS: float = 1800.0
+
 
 # Proxy schemes Chromium understands on --proxy-server. The SOCKS ones are
 # usable without credentials only: the browser cannot answer a SOCKS auth
@@ -480,17 +511,68 @@ class ServerConfig:
 
 
 @dataclass
+class PacingConfig:
+    """Spacing and budgets for tool calls that reach LinkedIn (``pacing.py``).
+
+    For every number, ``0`` switches that one limit off.
+    """
+
+    enabled: bool = True
+    # Gap between the end of one LinkedIn call and the start of the next.
+    min_interval_seconds: float = DEFAULT_PACING_MIN_INTERVAL_SECONDS
+    # Random extra added to every gap, drawn uniformly from [0, jitter].
+    jitter_seconds: float = DEFAULT_PACING_JITTER_SECONDS
+    # Gap between the end of one write and the start of the next.
+    write_min_interval_seconds: float = DEFAULT_PACING_WRITE_MIN_INTERVAL_SECONDS
+    max_reads_per_hour: int = DEFAULT_PACING_MAX_READS_PER_HOUR
+    max_writes_per_hour: int = DEFAULT_PACING_MAX_WRITES_PER_HOUR
+    max_writes_per_day: int = DEFAULT_PACING_MAX_WRITES_PER_DAY
+    # First cooldown after a checkpoint or 429; doubles per repeat.
+    cooldown_base_seconds: float = DEFAULT_PACING_COOLDOWN_BASE_SECONDS
+
+    def validate(self) -> None:
+        """Refuse values that would switch a limit off by accident."""
+        for name in (
+            "min_interval_seconds",
+            "jitter_seconds",
+            "write_min_interval_seconds",
+            "cooldown_base_seconds",
+        ):
+            value = getattr(self, name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not (math.isfinite(value) and value >= 0)
+            ):
+                raise ConfigurationError(
+                    f"pacing {name} must be a non-negative finite number, got {value}"
+                )
+        for name in (
+            "max_reads_per_hour",
+            "max_writes_per_hour",
+            "max_writes_per_day",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ConfigurationError(
+                    f"pacing {name} must be a non-negative integer, got {value}"
+                )
+
+
+@dataclass
 class AppConfig:
     """Main application configuration."""
 
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
+    pacing: PacingConfig = field(default_factory=PacingConfig)
     is_interactive: bool = field(default=False)
 
     def validate(self) -> None:
         """Validate all configuration values. Call after modifying config."""
         self.browser.validate()
         self.server.validate()
+        self.pacing.validate()
         if self.server.transport == "streamable-http":
             self._validate_transport_config()
             self._validate_path_format()

@@ -6,6 +6,8 @@ import time
 
 from patchright.async_api import Page, TimeoutError as PlaywrightTimeoutError
 
+from linkedin_mcp_server import pacing_signals
+
 from .exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)
@@ -126,6 +128,7 @@ async def detect_rate_limit(page: Page) -> None:
     # Check URL for security challenges
     current_url = page.url
     if "linkedin.com/checkpoint" in current_url or "authwall" in current_url:
+        pacing_signals.report(pacing_signals.SECURITY_CHALLENGE, current_url)
         raise RateLimitError(
             "LinkedIn security checkpoint detected. "
             "You may need to verify your identity or wait before continuing.",

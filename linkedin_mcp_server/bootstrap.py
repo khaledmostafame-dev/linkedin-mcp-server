@@ -45,6 +45,7 @@ from rich.progress import (
 from rich.spinner import Spinner
 from rich.theme import Theme
 
+from linkedin_mcp_server import pacing_signals
 from linkedin_mcp_server.common_utils import secure_mkdir, secure_write_text, utcnow_iso
 from linkedin_mcp_server.config import get_config
 from linkedin_mcp_server.config.schema import is_loopback_host
@@ -4148,7 +4149,10 @@ async def _start_login_if_needed(
             _state.import_attempted = True
             _state.login_supersedes = superseded_by
             _state.import_task = asyncio.create_task(
-                _try_auto_import_session(ctx), name="linkedin-auto-import"
+                _try_auto_import_session(ctx),
+                name="linkedin-auto-import",
+                # A sign-in step, not paced scraping: see detached_context.
+                context=pacing_signals.detached_context(),
             )
             import_task = _state.import_task
         else:
@@ -4204,7 +4208,11 @@ async def _start_login_if_needed(
                 _state.auth_completed_at = None
                 _state.login_supersedes = superseded_by
                 _state.login_task = asyncio.create_task(
-                    _run_login_flow(), name="linkedin-login"
+                    _run_login_flow(),
+                    name="linkedin-login",
+                    # A person passing a checkpoint while signing in is not
+                    # LinkedIn pushing back: see detached_context.
+                    context=pacing_signals.detached_context(),
                 )
                 login_task = _state.login_task
 
@@ -4457,7 +4465,9 @@ async def invalidate_auth_and_trigger_relogin(
         _state.auth_completed_at = None
         _state.login_supersedes = stale_generation
         _state.login_task = asyncio.create_task(
-            _run_login_flow(), name="linkedin-login"
+            _run_login_flow(),
+            name="linkedin-login",
+            context=pacing_signals.detached_context(),
         )
 
     if ctx is not None:

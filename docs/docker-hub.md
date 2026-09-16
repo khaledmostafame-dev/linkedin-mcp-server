@@ -131,6 +131,14 @@ Use `$env:USERPROFILE\.linkedin-mcp` when constructing the host path outside JSO
 | `BROWSER_WAIT` | `25` | How long to wait for another server process to hand over the shared browser, in seconds (max 45; `0` = report busy at once). |
 | `BROWSER_MIN_HOLD` | `20` | Shortest time a process keeps the shared browser before handing it over, in seconds. Clamped to 3 seconds below `BROWSER_WAIT`, so raise that one along with it. Higher means fewer browser restarts but longer waits for other clients. |
 | `BROWSER_IDLE_TIMEOUT` | `600` | Close an idle browser and release the profile after this many seconds without a tool call (`0` = keep it open). |
+| `PACING_ENABLED` | `true` | Pace, cap and cool down tool calls that reach LinkedIn, across every client. See [Pacing and account safety](https://github.com/stickerdaniel/linkedin-mcp-server#pacing). |
+| `PACING_MIN_INTERVAL_SECONDS` | `8` | Gap after any LinkedIn call, in seconds (`0` = none). |
+| `PACING_JITTER_SECONDS` | `7` | Random extra, up to this many seconds, added to every gap. |
+| `PACING_WRITE_MIN_INTERVAL_SECONDS` | `90` | Gap between write calls such as `send_message` and `connect_with_person` (`0` = none). |
+| `PACING_MAX_READS_PER_HOUR` | `40` | Read calls allowed in any 60 minutes; over it, calls fail with the time to retry (`0` = no cap). |
+| `PACING_MAX_WRITES_PER_HOUR` | `6` | Write calls allowed in any 60 minutes (`0` = no cap). |
+| `PACING_MAX_WRITES_PER_DAY` | `20` | Write calls allowed in any 24 hours (`0` = no cap). |
+| `PACING_COOLDOWN_BASE_SECONDS` | `1800` | After an HTTP 429 or a checkpoint redirect, refuse LinkedIn calls this long, doubling on repeats within a day (`0` = no cooldown). State persists in `pacing-state.json` in the mounted `~/.linkedin-mcp`. |
 | `AUTO_IMPORT_FROM_BROWSER` | on | Import a session from a signed-in local browser on the first tool call that needs one. Skipped in containers, which have no host browser or keychain. |
 | `TRANSPORT` | `stdio` | Transport mode: stdio, streamable-http |
 | `HOST` | `127.0.0.1` | HTTP server host (for streamable-http transport) |
