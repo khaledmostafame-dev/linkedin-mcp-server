@@ -41,6 +41,7 @@ from .support.policy_trace import ScriptedPage, TraceRecorder
 
 
 TOOL_DELEGATES = {
+    "archive_conversation": "archive_conversation",
     "comment_on_post": "comment_on_post",
     "connect_with_person": "connect_with_person",
     "create_poll": "create_poll",
@@ -63,6 +64,7 @@ TOOL_DELEGATES = {
     "get_hashtag_feed": "extract_page",
     "get_inbox": "get_inbox",
     "get_invitations": "get_invitations",
+    "get_job_alerts": "get_job_alerts",
     "get_job_details": "scrape_job",
     "get_mutual_connections": "get_mutual_connections",
     "get_my_profile": "get_my_profile",
@@ -77,14 +79,17 @@ TOOL_DELEGATES = {
     "get_scheduled_posts": "get_scheduled_posts",
     "get_sidebar_profiles": "get_sidebar_profiles",
     "list_connections": "list_connections",
+    "mark_conversation_read": "mark_conversation_read",
     "react_to_comment": "react_to_comment",
     "reply_to_comment": "reply_to_comment",
+    "reply_to_conversation": "reply_to_conversation",
     "resolve_geo_location": "resolve_geo_location",
     "respond_to_invitation": "respond_to_invitation",
     "sales_nav_get_list": "sales_nav_get_list",
     "sales_nav_get_lists": "sales_nav_get_lists",
     "sales_nav_search_accounts": "sales_nav_search_accounts",
     "sales_nav_search_leads": "sales_nav_search_leads",
+    "save_job": "save_job",
     "save_post": "save_post",
     "search_companies": "search_companies",
     "search_conversations": "search_conversations",
@@ -164,9 +169,9 @@ async def test_registered_tools_and_extractor_delegates_are_counted_separately()
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 56
+    assert len(tool_names) == 61
     assert tool_names == {*TOOL_DELEGATES, "close_session", "get_pacing_status"}
-    assert len(TOOL_DELEGATES) == 54
+    assert len(TOOL_DELEGATES) == 59
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
     assert "get_pacing_status" not in TOOL_DELEGATES
@@ -543,7 +548,7 @@ def test_facade_methods_are_exactly_the_frozen_coroutine_surface():
     }
 
     assert actual == expected
-    assert len(TOOL_FACADE_METHODS) == 51
+    assert len(TOOL_FACADE_METHODS) == 56
     assert len(COMPATIBILITY_METHODS) == 2
 
 

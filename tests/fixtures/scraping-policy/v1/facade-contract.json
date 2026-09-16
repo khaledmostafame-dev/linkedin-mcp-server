@@ -12,6 +12,10 @@
       "get_page_text"
     ],
     "methods": {
+      "archive_conversation": {
+        "coroutine": true,
+        "signature": "(self, conversation_url_or_thread_id: 'str', *, confirm: 'bool', unarchive: 'bool' = False) -> 'dict[str, Any]'"
+      },
       "click_button_by_text": {
         "coroutine": true,
         "signature": "(self, text: 'str', *, scope: 'str' = 'main', timeout: 'int' = 5000) -> 'bool'"
@@ -96,6 +100,10 @@
         "coroutine": true,
         "signature": "(self, direction: \"Literal['received', 'sent']\" = 'received', max_results: 'int' = 50) -> 'dict[str, Any]'"
       },
+      "get_job_alerts": {
+        "coroutine": true,
+        "signature": "(self) -> 'dict[str, Any]'"
+      },
       "get_mutual_connections": {
         "coroutine": true,
         "signature": "(self, linkedin_username: 'str', max_results: 'int' = 50) -> 'dict[str, Any]'"
@@ -140,6 +148,10 @@
         "coroutine": true,
         "signature": "(self, max_results: 'int' = 100, sort: \"Literal['recently_added', 'first_name', 'last_name']\" = 'recently_added') -> 'dict[str, Any]'"
       },
+      "mark_conversation_read": {
+        "coroutine": true,
+        "signature": "(self, conversation_url_or_thread_id: 'str', *, read: 'bool' = True, confirm: 'bool') -> 'dict[str, Any]'"
+      },
       "react_to_comment": {
         "coroutine": true,
         "signature": "(self, post_url: 'str', comment_urn: 'str', reaction: 'str' = 'like', *, confirm: 'bool') -> 'dict[str, Any]'"
@@ -147,6 +159,10 @@
       "reply_to_comment": {
         "coroutine": true,
         "signature": "(self, post_url: 'str', comment_urn: 'str', text: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "reply_to_conversation": {
+        "coroutine": true,
+        "signature": "(self, conversation_url_or_thread_id: 'str', message: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
       },
       "resolve_geo_location": {
         "coroutine": true,
@@ -171,6 +187,10 @@
       "sales_nav_search_leads": {
         "coroutine": true,
         "signature": "(self, keywords: 'str', filters: 'dict[str, Any] | None' = None, max_pages: 'int' = 1) -> 'dict[str, Any]'"
+      },
+      "save_job": {
+        "coroutine": true,
+        "signature": "(self, job_id: 'str', *, confirm: 'bool', unsave: 'bool' = False) -> 'dict[str, Any]'"
       },
       "save_post": {
         "coroutine": true,
@@ -226,6 +246,7 @@
       }
     },
     "tool_methods": [
+      "archive_conversation",
       "comment_on_post",
       "connect_with_person",
       "create_poll",
@@ -246,6 +267,7 @@
       "get_group_posts",
       "get_inbox",
       "get_invitations",
+      "get_job_alerts",
       "get_mutual_connections",
       "get_my_profile",
       "get_post_analytics",
@@ -256,14 +278,17 @@
       "get_scheduled_posts",
       "get_sidebar_profiles",
       "list_connections",
+      "mark_conversation_read",
       "react_to_comment",
       "reply_to_comment",
+      "reply_to_conversation",
       "resolve_geo_location",
       "respond_to_invitation",
       "sales_nav_get_list",
       "sales_nav_get_lists",
       "sales_nav_search_accounts",
       "sales_nav_search_leads",
+      "save_job",
       "save_post",
       "scrape_company",
       "scrape_job",
@@ -279,6 +304,35 @@
       "withdraw_invitation"
     ],
     "tool_schemas": {
+      "archive_conversation": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to change the archived state. False does a\ndry run and returns {\"status\": \"preview\", ...}.",
+              "type": "boolean"
+            },
+            "conversation": {
+              "description": "LinkedIn messaging thread ID, or a\n/messaging/thread/ URL naming one.",
+              "type": "string"
+            },
+            "unarchive": {
+              "default": false,
+              "description": "Restore the thread to the inbox instead of archiving\nit (default False: archive).",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "conversation",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "close_session": {
         "input": {
           "additionalProperties": false,
@@ -1134,6 +1188,17 @@
           "type": "object"
         }
       },
+      "get_job_alerts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_job_details": {
         "input": {
           "additionalProperties": false,
@@ -1504,6 +1569,35 @@
           "type": "object"
         }
       },
+      "mark_conversation_read": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to change the read state. False does a dry\nrun and returns {\"status\": \"preview\", ...}.",
+              "type": "boolean"
+            },
+            "conversation": {
+              "description": "LinkedIn messaging thread ID, or a\n/messaging/thread/ URL naming one.",
+              "type": "string"
+            },
+            "read": {
+              "default": true,
+              "description": "True to mark as read (default), False to mark as unread.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "conversation",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "react_to_comment": {
         "input": {
           "additionalProperties": false,
@@ -1564,6 +1658,35 @@
             "post_url",
             "comment_urn",
             "text",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "reply_to_conversation": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to send the reply. False does a dry run and\ndoes not change LinkedIn state.",
+              "type": "boolean"
+            },
+            "conversation_url_or_thread_id": {
+              "description": "LinkedIn messaging thread ID (from\nget_inbox, get_conversation, or search_conversations\nreferences), or a /messaging/thread/ URL naming one.",
+              "type": "string"
+            },
+            "message": {
+              "description": "Single-line reply text to send. C0 control characters and\nDEL are rejected, including CR, LF, and tab.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "conversation_url_or_thread_id",
+            "message",
             "confirm"
           ],
           "type": "object"
@@ -1738,6 +1861,35 @@
           },
           "required": [
             "keywords"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "save_job": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to change the saved state. False does a dry\nrun and returns {\"status\": \"preview\", ...} without navigating\nLinkedIn's state.",
+              "type": "boolean"
+            },
+            "job_id": {
+              "description": "LinkedIn job ID (e.g., \"4252026496\", \"3856789012\")",
+              "type": "string"
+            },
+            "unsave": {
+              "default": false,
+              "description": "Remove the job from the saved list instead of adding it\n(default False: save).",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "job_id",
+            "confirm"
           ],
           "type": "object"
         },

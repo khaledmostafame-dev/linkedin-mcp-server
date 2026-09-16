@@ -187,3 +187,9 @@ SAVED_JOBS_PATHS = frozenset({"/my-items/saved-jobs", "/jobs-tracker"})
 # returns the 11th saved job, while ?start=25 lands past the end of a two-page
 # list and yields nothing.
 SAVED_JOBS_PAGE_SIZE = 10
+
+# Best-effort guess following the `/my-items/saved-jobs/` sibling pattern —
+# NOT confirmed against a live LinkedIn account. get_job_alerts treats a page
+# that doesn't match this shape the same way it treats an account with no
+# alerts (an empty result) rather than raising, so a wrong URL fails soft.
+JOB_ALERTS_URL = "https://www.linkedin.com/my-items/job-alerts/"

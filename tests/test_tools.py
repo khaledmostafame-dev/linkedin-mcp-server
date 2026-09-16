@@ -34,6 +34,7 @@ def _make_mock_extractor(scrape_result: dict) -> MagicMock:
     mock.scrape_job = AsyncMock(return_value=scrape_result)
     mock.search_jobs = AsyncMock(return_value=scrape_result)
     mock.get_saved_jobs = AsyncMock(return_value=scrape_result)
+    mock.get_job_alerts = AsyncMock(return_value=scrape_result)
     mock.search_people = AsyncMock(return_value=scrape_result)
     mock.resolve_geo_location = AsyncMock(return_value=scrape_result)
     mock.get_sidebar_profiles = AsyncMock(return_value=scrape_result)
@@ -41,6 +42,10 @@ def _make_mock_extractor(scrape_result: dict) -> MagicMock:
     mock.get_conversation = AsyncMock(return_value=scrape_result)
     mock.search_conversations = AsyncMock(return_value=scrape_result)
     mock.send_message = AsyncMock(return_value=scrape_result)
+    mock.reply_to_conversation = AsyncMock(return_value=scrape_result)
+    mock.mark_conversation_read = AsyncMock(return_value=scrape_result)
+    mock.archive_conversation = AsyncMock(return_value=scrape_result)
+    mock.save_job = AsyncMock(return_value=scrape_result)
     mock.get_my_profile = AsyncMock(return_value=scrape_result)
     mock.search_companies = AsyncMock(return_value=scrape_result)
     mock.search_posts = AsyncMock(return_value=scrape_result)
@@ -943,6 +948,110 @@ class TestJobTools:
         assert result["job_ids"] == ["111", "222"]
         mock_extractor.get_saved_jobs.assert_awaited_once_with(max_pages=2)
 
+    async def test_get_job_alerts(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/my-items/job-alerts/",
+            "sections": {"job_alerts": "Python Developer alert\nData Scientist alert"},
+            "references": {
+                "job_alerts": [
+                    {
+                        "kind": "job_alert",
+                        "url": "https://www.linkedin.com/jobs/search/?keywords=python",
+                    }
+                ]
+            },
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.job import register_job_tools
+
+        mcp = FastMCP("test")
+        register_job_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_job_alerts")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert "job_alerts" in result["sections"]
+        assert result["references"]["job_alerts"][0]["kind"] == "job_alert"
+        mock_extractor.get_job_alerts.assert_awaited_once_with()
+
+    async def test_get_job_alerts_error(self, mock_context):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.exceptions import SessionExpiredError
+
+        mock_extractor = MagicMock()
+        mock_extractor.get_job_alerts = AsyncMock(side_effect=SessionExpiredError())
+
+        from linkedin_mcp_server.tools.job import register_job_tools
+
+        mcp = FastMCP("test")
+        register_job_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_job_alerts")
+        with pytest.raises(ToolError, match="Session expired"):
+            await tool_fn(mock_context, extractor=mock_extractor)
+
+    async def test_save_job(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/jobs/view/12345/",
+            "job_id": "12345",
+            "saved": True,
+            "changed": True,
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.job import register_job_tools
+
+        mcp = FastMCP("test")
+        register_job_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "save_job")
+        result = await tool_fn("12345", True, mock_context, extractor=mock_extractor)
+        assert result == expected
+        mock_extractor.save_job.assert_awaited_once_with(
+            "12345", confirm=True, unsave=False
+        )
+
+    async def test_unsave_job(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/jobs/view/12345/",
+            "job_id": "12345",
+            "saved": False,
+            "changed": True,
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.job import register_job_tools
+
+        mcp = FastMCP("test")
+        register_job_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "save_job")
+        result = await tool_fn(
+            "12345", True, mock_context, unsave=True, extractor=mock_extractor
+        )
+        assert result["saved"] is False
+        mock_extractor.save_job.assert_awaited_once_with(
+            "12345", confirm=True, unsave=True
+        )
+
+    async def test_save_job_error(self, mock_context):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.exceptions import SessionExpiredError
+
+        mock_extractor = MagicMock()
+        mock_extractor.save_job = AsyncMock(side_effect=SessionExpiredError())
+
+        from linkedin_mcp_server.tools.job import register_job_tools
+
+        mcp = FastMCP("test")
+        register_job_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "save_job")
+        with pytest.raises(ToolError, match="Session expired"):
+            await tool_fn("12345", True, mock_context, extractor=mock_extractor)
+
 
 class TestGetSidebarProfilesTool:
     async def test_get_sidebar_profiles_success(self, mock_context):
@@ -1336,6 +1445,188 @@ class TestMessagingTools:
                 mock_context,
                 extractor=mock_extractor,
             )
+
+    async def test_reply_to_conversation_success(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/messaging/thread/2-abc/",
+            "status": "sent",
+            "message": "Reply submitted and confirmed in the conversation UI.",
+            "recipient_selected": True,
+            "sent": True,
+            "retry_safe": False,
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+        mcp = FastMCP("test")
+        register_messaging_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "reply_to_conversation")
+        result = await tool_fn(
+            "2-abc", "Hello!", True, mock_context, extractor=mock_extractor
+        )
+
+        assert result["status"] == "sent"
+        mock_extractor.reply_to_conversation.assert_awaited_once_with(
+            "2-abc", "Hello!", confirm=True
+        )
+
+    async def test_reply_to_conversation_dry_run_refuses_before_the_extractor(
+        self, mock_context
+    ):
+        """A blank message is refused browser-free, before an extractor exists."""
+        mock_extractor = MagicMock()
+        mock_extractor.reply_to_conversation = AsyncMock()
+
+        from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+        mcp = FastMCP("test")
+        register_messaging_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "reply_to_conversation")
+        result = await tool_fn(
+            "2-abc", "   ", True, mock_context, extractor=mock_extractor
+        )
+
+        assert result["status"] == "invalid_message"
+        mock_extractor.reply_to_conversation.assert_not_awaited()
+
+    async def test_reply_to_conversation_error(self, mock_context):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.exceptions import SessionExpiredError
+
+        mock_extractor = MagicMock()
+        mock_extractor.reply_to_conversation = AsyncMock(
+            side_effect=SessionExpiredError()
+        )
+
+        from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+        mcp = FastMCP("test")
+        register_messaging_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "reply_to_conversation")
+        with pytest.raises(ToolError, match="Session expired"):
+            await tool_fn(
+                "2-abc", "Hello!", True, mock_context, extractor=mock_extractor
+            )
+
+    async def test_mark_conversation_read_success(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/messaging/thread/2-abc/",
+            "thread_id": "2-abc",
+            "status": "ok",
+            "changed": True,
+            "read": True,
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+        mcp = FastMCP("test")
+        register_messaging_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "mark_conversation_read")
+        result = await tool_fn("2-abc", True, mock_context, extractor=mock_extractor)
+
+        assert result["status"] == "ok"
+        mock_extractor.mark_conversation_read.assert_awaited_once_with(
+            "2-abc", read=True, confirm=True
+        )
+
+    async def test_mark_conversation_read_unread_direction(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/messaging/thread/2-abc/",
+            "thread_id": "2-abc",
+            "status": "preview",
+            "changed": False,
+            "message": "Set confirm=true to mark this conversation as unread.",
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+        mcp = FastMCP("test")
+        register_messaging_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "mark_conversation_read")
+        result = await tool_fn(
+            "2-abc", False, mock_context, read=False, extractor=mock_extractor
+        )
+
+        assert result["status"] == "preview"
+        mock_extractor.mark_conversation_read.assert_awaited_once_with(
+            "2-abc", read=False, confirm=False
+        )
+
+    async def test_archive_conversation_success(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/messaging/thread/2-abc/",
+            "thread_id": "2-abc",
+            "status": "ok",
+            "changed": True,
+            "archived": True,
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+        mcp = FastMCP("test")
+        register_messaging_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "archive_conversation")
+        result = await tool_fn("2-abc", True, mock_context, extractor=mock_extractor)
+
+        assert result["status"] == "ok"
+        mock_extractor.archive_conversation.assert_awaited_once_with(
+            "2-abc", confirm=True, unarchive=False
+        )
+
+    async def test_unarchive_conversation_direction(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/messaging/thread/2-abc/",
+            "thread_id": "2-abc",
+            "status": "ok",
+            "changed": True,
+            "archived": False,
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+        mcp = FastMCP("test")
+        register_messaging_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "archive_conversation")
+        result = await tool_fn(
+            "2-abc", True, mock_context, unarchive=True, extractor=mock_extractor
+        )
+
+        assert result["archived"] is False
+        mock_extractor.archive_conversation.assert_awaited_once_with(
+            "2-abc", confirm=True, unarchive=True
+        )
+
+    async def test_archive_conversation_error(self, mock_context):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.exceptions import SessionExpiredError
+
+        mock_extractor = MagicMock()
+        mock_extractor.archive_conversation = AsyncMock(
+            side_effect=SessionExpiredError()
+        )
+
+        from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+        mcp = FastMCP("test")
+        register_messaging_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "archive_conversation")
+        with pytest.raises(ToolError, match="Session expired"):
+            await tool_fn("2-abc", True, mock_context, extractor=mock_extractor)
 
 
 class TestGetMyProfileTool:

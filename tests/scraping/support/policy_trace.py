@@ -631,6 +631,8 @@ def semantic_program_id(program: str) -> str:
         ("text.startsWith('Load more')", "profile_details_ready"),
         ("premium/", "premium_dialog_text"),
         ('main a[href*="/in/"]', "sidebar_expanded_profiles"),
+        ("savedLabels.includes(text) ? 'saved' : 'unsaved'", "job_save_state"),
+        ("expectedLabels", "job_save_click"),
     )
     for marker, operation in checks:
         if marker in compact:

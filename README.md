@@ -50,12 +50,17 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_conversation` | Read a specific messaging conversation by username or thread ID |
 | `search_conversations` | Search messages by keyword |
 | `send_message` | Compose/send a new message to a LinkedIn user (requires confirmation; profile-based targeting may open a separate DM instead of replying in an existing thread — see #483) |
+| `reply_to_conversation` | Reply within an existing messaging thread (recruiter/InMail/DM) by thread ID, without opening a new DM (requires confirmation) |
+| `mark_conversation_read` | Mark a conversation thread as read or unread via its options menu (requires confirmation; idempotent) |
+| `archive_conversation` | Archive or unarchive a conversation thread via its options menu (requires confirmation; idempotent) |
 | `get_company_profile` | Extract company information with explicit section selection (posts, jobs); about-section references may include a `company_urn` entry carrying the numeric id used by LinkedIn's people-search `currentCompany` URL facet |
 | `get_company_posts` | Get recent posts from a company's LinkedIn feed |
 | `search_companies` | Search for companies on LinkedIn by keywords, paginating up to `max_pages` and reporting `pages_fetched`/`stopped_reason`/`truncated` |
 | `get_company_employees` | List employees at a company from the /people/ page, with optional keyword filter |
-| `search_jobs` | Search for jobs with keywords and location filters |
+| `search_jobs` | Search for jobs with keywords and location filters; reports LinkedIn's own advertised result total when available |
 | `get_saved_jobs` | List job postings saved by the authenticated user |
+| `save_job` | Save or unsave a job posting for the authenticated account (requires confirmation; idempotent) |
+| `get_job_alerts` | List the authenticated user's job alerts, each alert's own search returned as a reference |
 | `search_people` | Search for people by keywords, location (free text, resolved at call time against LinkedIn's own typeahead, or a numeric geo URN id), connection degree (1st/2nd/3rd), current/past company, school, industry, title, and profile language, paginating up to `max_pages` and reporting `pages_fetched`/`stopped_reason`/`truncated` |
 | `resolve_geo_location` | Resolve a free-text place name to LinkedIn geo URN id candidates without running a search; used internally by `search_people`'s free-text `location`, and directly to disambiguate when it reports more than one candidate |
 | `get_job_details` | Get detailed information about a specific job posting |

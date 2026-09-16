@@ -1416,3 +1416,149 @@ class TestParseTotalFromPageStateText:
 
     def test_no_digits_at_all(self):
         assert parse_total_from_page_state_text("Page unknown of many") is None
+
+
+def _save_evaluate(*, state: str = "unsaved"):
+    """A page.evaluate double for the save-control-state JS.
+
+    Dispatches on a marker substring unique to each script; anything else
+    (the diagnostic body-text read on every navigation) gets a harmless
+    empty string. No locale is read anywhere — every table is tried at once.
+    """
+
+    async def fake_evaluate(script, *args, **kwargs):
+        if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
+            return state
+        if "expectedLabels" in script:
+            return True
+        return ""
+
+    return fake_evaluate
+
+
+class TestSaveJob:
+    async def test_already_saved_is_a_no_op(self, mock_page):
+        mock_page.evaluate = AsyncMock(side_effect=_save_evaluate(state="saved"))
+        reader = _reader(mock_page)
+
+        result = await reader.save_job("12345", confirm=True)
+
+        assert result == {
+            "url": "https://www.linkedin.com/jobs/view/12345/",
+            "job_id": "12345",
+            "saved": True,
+            "changed": False,
+        }
+
+    async def test_dry_run_previews_without_clicking(self, mock_page):
+        mock_page.evaluate = AsyncMock(side_effect=_save_evaluate(state="unsaved"))
+        reader = _reader(mock_page)
+
+        result = await reader.save_job("12345", confirm=False)
+
+        assert result["status"] == "preview"
+        assert result["saved"] is False
+
+    async def test_confirmed_click_saves_the_job(self, mock_page):
+        current = {"state": "unsaved"}
+
+        async def fake_evaluate(script, *args, **kwargs):
+            if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
+                return current["state"]
+            if "expectedLabels" in script:
+                current["state"] = "saved"  # the click sticks
+                return True
+            return ""
+
+        mock_page.evaluate = AsyncMock(side_effect=fake_evaluate)
+        reader = _reader(mock_page)
+
+        with patch.object(job_pages_module.asyncio, "sleep", new_callable=AsyncMock):
+            result = await reader.save_job("12345", confirm=True)
+
+        assert result == {
+            "url": "https://www.linkedin.com/jobs/view/12345/",
+            "job_id": "12345",
+            "saved": True,
+            "changed": True,
+        }
+
+    async def test_unsave_direction_removes_it(self, mock_page):
+        current = {"state": "saved"}
+
+        async def fake_evaluate(script, *args, **kwargs):
+            if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
+                return current["state"]
+            if "expectedLabels" in script:
+                current["state"] = "unsaved"  # the click sticks
+                return True
+            return ""
+
+        mock_page.evaluate = AsyncMock(side_effect=fake_evaluate)
+        reader = _reader(mock_page)
+
+        with patch.object(job_pages_module.asyncio, "sleep", new_callable=AsyncMock):
+            result = await reader.save_job("12345", confirm=True, unsave=True)
+
+        assert result["saved"] is False
+        assert result["changed"] is True
+
+    async def test_arabic_saved_label_is_recognized_without_locale_detection(
+        self, mock_page
+    ):
+        """No `navigator.language` read exists any more: every table is tried."""
+
+        async def fake_evaluate(script, *args, **kwargs):
+            if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
+                return "saved"  # matched against the Arabic "تم الحفظ" entry
+            return ""
+
+        mock_page.evaluate = AsyncMock(side_effect=fake_evaluate)
+        reader = _reader(mock_page)
+
+        result = await reader.save_job("12345", confirm=True)
+
+        assert result["saved"] is True
+        assert result["changed"] is False
+
+    async def test_an_unmatched_control_raises_rather_than_guesses(self, mock_page):
+        from linkedin_mcp_server.core.exceptions import LinkedInScraperException
+
+        mock_page.evaluate = AsyncMock(side_effect=_save_evaluate(state=None))
+        reader = _reader(mock_page)
+
+        with pytest.raises(
+            LinkedInScraperException, match="Could not uniquely identify"
+        ):
+            await reader.save_job("12345", confirm=True)
+
+    async def test_a_click_that_does_not_stick_raises(self, mock_page):
+        """Reporting saved here would make a caller trust a save that never took."""
+        from linkedin_mcp_server.core.exceptions import LinkedInScraperException
+
+        async def fake_evaluate(script, *args, **kwargs):
+            if "savedLabels.includes(text) ? 'saved' : 'unsaved'" in script:
+                return "unsaved"  # never flips, even after the click
+            if "expectedLabels" in script:
+                return True
+            return ""
+
+        mock_page.evaluate = AsyncMock(side_effect=fake_evaluate)
+        reader = _reader(mock_page)
+
+        with (
+            patch.object(job_pages_module.asyncio, "sleep", new_callable=AsyncMock),
+            pytest.raises(LinkedInScraperException, match="did not save"),
+        ):
+            await reader.save_job("12345", confirm=True)
+
+    async def test_normalizes_a_full_job_url(self, mock_page):
+        mock_page.evaluate = AsyncMock(side_effect=_save_evaluate(state="saved"))
+        reader = _reader(mock_page)
+
+        result = await reader.save_job(
+            "https://www.linkedin.com/jobs/view/4252026496/", confirm=True
+        )
+
+        assert result["job_id"] == "4252026496"
+        assert result["url"] == "https://www.linkedin.com/jobs/view/4252026496/"

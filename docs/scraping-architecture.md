@@ -23,7 +23,7 @@ a page-owning collaborator.
 | `connection` | `ActionSignals`, `ConnectionState`, `detect_connection_state()` | `browser-free` |
 | `connection_actions` | `ACTION_SIGNALS_JS`, `CLICK_INCOMING_ACCEPT_JS`, `CLICK_INCOMING_IGNORE_JS`, `CLICK_PENDING_ANCHOR_JS`, `ConnectionActions`, `OPEN_MORE_BUTTON_JS`, `ReadMainProfile`, `respond_to_invitation_preview()`, `withdraw_invitation_preview()` | `page-owning` |
 | `content` | `LARGEST_IMAGE_VARIANT_FN_JS`, `PageContentReader` | `page-owning` |
-| `contracts` | `ExtractedSection`, `FilterValidationError`, `RATE_LIMITED_SECTION_TEXT`, `SEND_INTERRUPTED_WARNING`, `message_action_result()`, `rate_limited_section_error()`, `refuse_an_invalid_message()` | `browser-free` |
+| `contracts` | `ExtractedSection`, `FilterValidationError`, `RATE_LIMITED_SECTION_TEXT`, `SEND_INTERRUPTED_WARNING`, `message_action_result()`, `rate_limited_section_error()`, `refuse_an_invalid_message()`, `refuse_an_invalid_reply()` | `browser-free` |
 | `conversations` | `ConversationReader`, `strip_select_conversation_prefix()` | `page-owning` |
 | `entity_search` | `ENTITY_SEARCH_REFERENCE_CAP`, `MAX_ENTITY_SEARCH_PAGES`, `paginated_entity_search()` | `browser-free` |
 | `events` | `EventScraper` | `browser-free` |
@@ -35,7 +35,7 @@ a page-owning collaborator.
 | `group` | `GroupScraper` | `page-owning` |
 | `identifiers` | `company_page_url()`, `event_page_url()`, `group_page_url()`, `hashtag_feed_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_event_id()`, `normalize_group_id()`, `normalize_hashtag()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_post_url()`, `normalize_post_urn()`, `normalize_thread_id()`, `person_profile_url()`, `post_update_url()` | `browser-free` |
 | `job_pages` | `JOB_IDS_JS`, `JobPageCapture`, `JobPageReader`, `parse_total_from_page_state_text()` | `page-owning` |
-| `job_policy` | `JOB_SEARCH_PATHS`, `RESULTS_PER_LINKEDIN_PAGE`, `SAVED_JOBS_PAGE_SIZE`, `SAVED_JOBS_PATHS`, `SAVED_JOBS_URL`, `SCROLL_BUDGET_TOTAL`, `SCROLL_DEADLINE_MAX`, `SEARCH_TIMEOUT_FRACTION`, `dropped_filters_section_error()`, `dropped_offset_section_error()`, `lost_keywords_section_error()`, `reconcile_search_references()`, `route()`, `same_job_search()` | `browser-free` |
+| `job_policy` | `JOB_ALERTS_URL`, `JOB_SEARCH_PATHS`, `RESULTS_PER_LINKEDIN_PAGE`, `SAVED_JOBS_PAGE_SIZE`, `SAVED_JOBS_PATHS`, `SAVED_JOBS_URL`, `SCROLL_BUDGET_TOTAL`, `SCROLL_DEADLINE_MAX`, `SEARCH_TIMEOUT_FRACTION`, `dropped_filters_section_error()`, `dropped_offset_section_error()`, `lost_keywords_section_error()`, `reconcile_search_references()`, `route()`, `same_job_search()` | `browser-free` |
 | `jobs` | `JobScraper` | `browser-free` |
 | `link_metadata` | `JOB_PATH_RE`, `RawImage`, `RawReference`, `Reference`, `ReferenceKind`, `build_image_references()`, `build_references()`, `choose_reference_text()`, `classify_link()`, `clean_heading()`, `clean_label()`, `dedupe_references()`, `derive_context()`, `normalize_reference()`, `normalize_url()` | `browser-free` |
 | `message_sender` | `MessageSender` | `page-owning` |
@@ -52,7 +52,7 @@ a page-owning collaborator.
 | `sales_navigator` | `SALES_NAVIGATOR_UNAVAILABLE_ERROR`, `SALES_NAVIGATOR_UNAVAILABLE_MESSAGE`, `SalesNavigatorScraper` | `page-owning` |
 | `search_urls` | `CONTENT_DATE_POSTED_MAP`, `CONTENT_SORT_BY_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_event_search_url()`, `build_group_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
 | `session` | `NAV_DELAY`, `ScrapingSession` | `page-owning` |
-| `text` | `DETAIL_CAPTURE_EN_US`, `DetailCaptureTextTable`, `SIDEBAR_CHROME_EN`, `SidebarChromeTable`, `filter_linkedin_noise_lines()`, `normalize_localized_digits()`, `strip_conversation_chrome()`, `strip_linkedin_noise()`, `truncate_linkedin_noise()` | `browser-free` |
+| `text` | `CONVERSATION_OPTIONS_EN`, `CONVERSATION_OPTIONS_TABLES`, `ConversationOptionsTextTable`, `DETAIL_CAPTURE_EN_US`, `DetailCaptureTextTable`, `JOB_SAVE_EN_US`, `JOB_SAVE_TABLES`, `JOB_SEARCH_EN_US`, `JobSaveTextTable`, `JobSearchTextTable`, `SIDEBAR_CHROME_EN`, `SidebarChromeTable`, `filter_linkedin_noise_lines()`, `normalize_localized_digits()`, `strip_conversation_chrome()`, `strip_linkedin_noise()`, `truncate_linkedin_noise()` | `browser-free` |
 
 ## Internal import graph
 
@@ -75,9 +75,9 @@ a page-owning collaborator.
 - `geo_resolver` -> `contracts`, `navigation`, `session`
 - `group` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `search_urls`, `session`
 - `identifiers` -> _(none)_
-- `job_pages` -> `capture`, `content`, `contracts`, `job_policy`, `link_metadata`, `navigation`, `session`, `text`
+- `job_pages` -> `capture`, `content`, `contracts`, `identifiers`, `job_policy`, `link_metadata`, `navigation`, `session`, `text`
 - `job_policy` -> `link_metadata`
-- `jobs` -> `capture`, `contracts`, `identifiers`, `job_pages`, `job_policy`, `link_metadata`, `navigation`, `search_urls`, `session`
+- `jobs` -> `capture`, `contracts`, `identifiers`, `job_pages`, `job_policy`, `link_metadata`, `navigation`, `search_urls`, `session`, `text`
 - `link_metadata` -> _(none)_
 - `message_sender` -> `contracts`, `identifiers`, `navigation`, `session`
 - `navigation` -> `session`
@@ -97,6 +97,7 @@ a page-owning collaborator.
 
 ## `LinkedInExtractor` public coroutine surface
 
+- `archive_conversation`
 - `click_button_by_text`
 - `comment_on_post`
 - `connect_with_person`
@@ -118,6 +119,7 @@ a page-owning collaborator.
 - `get_group_posts`
 - `get_inbox`
 - `get_invitations`
+- `get_job_alerts`
 - `get_mutual_connections`
 - `get_my_profile`
 - `get_page_text`
@@ -129,14 +131,17 @@ a page-owning collaborator.
 - `get_scheduled_posts`
 - `get_sidebar_profiles`
 - `list_connections`
+- `mark_conversation_read`
 - `react_to_comment`
 - `reply_to_comment`
+- `reply_to_conversation`
 - `resolve_geo_location`
 - `respond_to_invitation`
 - `sales_nav_get_list`
 - `sales_nav_get_lists`
 - `sales_nav_search_accounts`
 - `sales_nav_search_leads`
+- `save_job`
 - `save_post`
 - `scrape_company`
 - `scrape_job`

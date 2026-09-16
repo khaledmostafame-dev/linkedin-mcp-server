@@ -17,7 +17,9 @@ from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 from linkedin_mcp_server.core.exceptions import LinkedInScraperException
 import linkedin_mcp_server.scraping.contracts as contracts
 from linkedin_mcp_server.scraping.identifiers import (
+    messaging_thread_url,
     normalize_person_identifier,
+    normalize_thread_id,
     person_profile_url,
 )
 from linkedin_mcp_server.scraping.navigation import PageNavigator
@@ -885,6 +887,574 @@ _MESSAGE_COMPOSER_SUBMIT_JS = (
     }"""
 )
 
+# ---------------------------------------------------------------------------
+# reply_to_conversation: the thread is already pinned by ``thread_id``, so
+# there is no recipient-resolution step and no profile path/URN to cross-check
+# — the identity boundary is simply "did the browser stay on the exact thread
+# route the caller asked for". Everything else (pin the owner across
+# submission, insert text via `execCommand`, wait for the submit button, click
+# it, then confirm via the same message-list mutation-observer technique used
+# by `send_message`) follows the identical discipline for the identical
+# reason: a click can dispatch before `evaluate` reports an error, so the
+# outcome has to be read from the DOM rather than trusted from the call that
+# triggered it.
+# ---------------------------------------------------------------------------
+
+_THREAD_COMPOSER_INSPECT_JS = r"""
+    const visible = element => {
+        const visibility = element && getComputedStyle(element).visibility;
+        return !!(
+            element &&
+            visibility !== 'hidden' &&
+            visibility !== 'collapse' &&
+            (element.offsetWidth || element.offsetHeight || element.getClientRects().length)
+        );
+    };
+    const semanticAncestors = element => {
+        const scopes = [];
+        let ancestor = element?.parentElement;
+        while (ancestor) {
+            if (ancestor.matches('form, dialog, [role="dialog"]')) {
+                scopes.push(ancestor);
+            }
+            ancestor = ancestor.parentElement;
+        }
+        return scopes;
+    };
+    const inspect = target => {
+        const editors = Array.from(
+            document.querySelectorAll('[role="textbox"][contenteditable="true"]')
+        ).filter(visible);
+        if (editors.length !== 1) return {status: 'ambiguous_editor'};
+        const editor = editors[0];
+        const localScopes = semanticAncestors(editor);
+        if (localScopes.length === 0) return {status: 'missing_owner'};
+        const owner = localScopes.find(scope =>
+            scope.matches('dialog, [role="dialog"]')
+        ) || localScopes[0];
+        const submitButtons = scope => Array.from(
+            scope.querySelectorAll('button[type="submit"], button[data-control-name="send"]')
+        ).filter(button =>
+            visible(button) && !button.closest('[data-view-name="message-list-item"]')
+        );
+        const localScope = localScopes.find(scope => submitButtons(scope).length > 0)
+            || localScopes[0];
+        const buttons = submitButtons(localScope);
+        return {
+            status: 'valid',
+            editor,
+            ancestorChain: localScopes,
+            localScope,
+            owner,
+            buttons,
+            active: document.activeElement === editor,
+            empty: !(editor.innerText || '').replace(/\s+/g, ' ').trim(),
+            routeOk: location.href === target.expectedRoute,
+        };
+    };
+"""
+
+_THREAD_COMPOSER_OWNER_JS = (
+    "(arg) => {"
+    + _THREAD_COMPOSER_INSPECT_JS
+    + """
+        const state = inspect(arg.target);
+        if (
+            state.status !== 'valid' ||
+            !state.routeOk ||
+            !state.owner.isConnected ||
+            !state.editor.isConnected ||
+            !state.owner.contains(state.editor) ||
+            state.buttons.length !== 1
+        ) {
+            return null;
+        }
+        const button = state.buttons[0];
+        if (
+            !button.isConnected ||
+            !state.localScope.contains(button) ||
+            (button.form !== null && !state.ancestorChain.includes(button.form))
+        ) {
+            return null;
+        }
+        state.owner.__linkedinMcpReplyComposer = {
+            editor: state.editor,
+            ancestorChain: state.ancestorChain,
+            button,
+            localScope: state.localScope,
+            route: arg.target.expectedRoute,
+            ownedMessage: null,
+        };
+        return state.owner;
+    }"""
+)
+
+_THREAD_COMPOSER_PINNED_JS = r"""
+    const visible = element => {
+        const visibility = element && getComputedStyle(element).visibility;
+        return !!(
+            element &&
+            visibility !== 'hidden' &&
+            visibility !== 'collapse' &&
+            (element.offsetWidth || element.offsetHeight || element.getClientRects().length)
+        );
+    };
+    const semanticAncestors = element => {
+        const scopes = [];
+        let ancestor = element?.parentElement;
+        while (ancestor) {
+            if (ancestor.matches('form, dialog, [role="dialog"]')) {
+                scopes.push(ancestor);
+            }
+            ancestor = ancestor.parentElement;
+        }
+        return scopes;
+    };
+    const validatePinned = (target, requireEnabled = true) => {
+        const pinned = owner?.__linkedinMcpReplyComposer;
+        if (
+            !pinned ||
+            pinned.route !== target.expectedRoute ||
+            location.href !== target.expectedRoute
+        ) {
+            return null;
+        }
+        const {editor, ancestorChain, button, localScope} = pinned;
+        const currentChain = semanticAncestors(editor);
+        if (
+            !owner.isConnected ||
+            !editor?.isConnected ||
+            !button?.isConnected ||
+            !localScope?.isConnected ||
+            !Array.isArray(ancestorChain) ||
+            currentChain.length !== ancestorChain.length ||
+            currentChain.some((scope, index) => scope !== ancestorChain[index]) ||
+            !currentChain.includes(owner) ||
+            !currentChain.includes(localScope) ||
+            !owner.contains(editor) ||
+            !owner.contains(localScope) ||
+            !localScope.contains(button) ||
+            (button.form !== null && !currentChain.includes(button.form)) ||
+            !visible(editor) ||
+            !visible(button) ||
+            !editor.matches('[role="textbox"][contenteditable="true"]')
+        ) {
+            return null;
+        }
+        const buttons = Array.from(localScope.querySelectorAll(
+            'button[type="submit"], button[data-control-name="send"]'
+        )).filter(candidate =>
+            visible(candidate) &&
+            !candidate.closest('[data-view-name="message-list-item"]')
+        );
+        if (
+            buttons.length !== 1 ||
+            buttons[0] !== button ||
+            (requireEnabled && (
+                button.disabled ||
+                (button.getAttribute('aria-disabled') || '').toLowerCase() === 'true'
+            ))
+        ) {
+            return null;
+        }
+        return pinned;
+    };
+"""
+
+_THREAD_COMPOSER_WRITE_JS = (
+    "(owner, arg) => {"
+    + _THREAD_COMPOSER_PINNED_JS
+    + r"""
+        let pinned = validatePinned(arg, false);
+        if (!pinned) return 'invalid';
+        const {editor} = pinned;
+        if ((editor.innerText || '').replace(/\s+/g, ' ').trim()) {
+            return 'occupied';
+        }
+        editor.focus();
+        pinned = validatePinned(arg, false);
+        if (!pinned || document.activeElement !== editor) return 'invalid';
+        if ((editor.innerText || '').replace(/\s+/g, ' ').trim()) {
+            return 'occupied';
+        }
+        if (
+            typeof document.queryCommandSupported !== 'function' ||
+            !document.queryCommandSupported('insertText') ||
+            typeof document.execCommand !== 'function'
+        ) {
+            return 'unsupported';
+        }
+        const inserted = document.execCommand('insertText', false, arg.message);
+        if ((editor.innerText || editor.textContent || '') === arg.message) {
+            pinned.ownedMessage = arg.message;
+        }
+        if (inserted !== true) return 'unsupported';
+        pinned = validatePinned(arg, false);
+        if (
+            !pinned ||
+            document.activeElement !== editor ||
+            pinned.ownedMessage !== arg.message ||
+            (editor.innerText || editor.textContent || '') !== arg.message
+        ) {
+            return 'invalid';
+        }
+        return 'written';
+    }"""
+)
+
+_THREAD_COMPOSER_SUBMIT_READY_JS = (
+    "(owner, arg) => {"
+    + _THREAD_COMPOSER_PINNED_JS
+    + r"""
+        const pinned = validatePinned(arg, false);
+        if (
+            !pinned ||
+            document.activeElement !== pinned.editor ||
+            pinned.ownedMessage !== arg.message ||
+            (pinned.editor.innerText || pinned.editor.textContent || '') !== arg.message
+        ) {
+            return 'invalid';
+        }
+        return pinned.button.disabled ||
+            (pinned.button.getAttribute('aria-disabled') || '').toLowerCase() === 'true'
+            ? 'disabled'
+            : 'ready';
+    }"""
+)
+
+_THREAD_COMPOSER_SUBMIT_JS = (
+    "(owner, arg) => {"
+    + _THREAD_COMPOSER_PINNED_JS
+    + r"""
+        const pinned = validatePinned(arg);
+        if (
+            !pinned ||
+            document.activeElement !== pinned.editor ||
+            pinned.ownedMessage !== arg.message ||
+            (pinned.editor.innerText || pinned.editor.textContent || '') !== arg.message
+        ) {
+            return 'invalid';
+        }
+        pinned.button.click();
+        return 'clicked';
+    }"""
+)
+
+_THREAD_COMPOSER_CLEANUP_JS = r"""(owner, arg) => {
+    const pinned = owner?.__linkedinMcpReplyComposer;
+    if (!pinned || pinned.ownedMessage !== arg.message) return false;
+    const {editor, ancestorChain} = pinned;
+    const currentChain = [];
+    let ancestor = editor?.parentElement;
+    while (ancestor) {
+        if (ancestor.matches('form, dialog, [role="dialog"]')) {
+            currentChain.push(ancestor);
+        }
+        ancestor = ancestor.parentElement;
+    }
+    if (
+        !owner.isConnected ||
+        !editor?.isConnected ||
+        !Array.isArray(ancestorChain) ||
+        currentChain.length !== ancestorChain.length ||
+        currentChain.some((scope, index) => scope !== ancestorChain[index]) ||
+        !currentChain.includes(owner) ||
+        !owner.contains(editor) ||
+        (editor.innerText || editor.textContent || '') !== arg.message
+    ) {
+        return false;
+    }
+    pinned.ownedMessage = null;
+    editor.replaceChildren();
+    editor.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        composed: true,
+        data: null,
+        inputType: 'deleteContentBackward',
+    }));
+    return true;
+}"""
+
+_THREAD_COMPOSER_DISPOSE_JS = r"""owner => {
+    const confirmations = owner?.__linkedinMcpReplyConfirmations;
+    for (const state of confirmations?.values() || []) {
+        if (state?.observer) state.observer.disconnect();
+    }
+    confirmations?.clear();
+    if (owner) {
+        delete owner.__linkedinMcpReplyConfirmations;
+        delete owner.__linkedinMcpReplyComposer;
+    }
+    for (const element of owner?.querySelectorAll(
+        '[data-linkedin-mcp-reply-candidate], [data-linkedin-mcp-reply-editor], '
+        + '[data-linkedin-mcp-reply-confirmation]'
+    ) || []) {
+        element.removeAttribute('data-linkedin-mcp-reply-candidate');
+        element.removeAttribute('data-linkedin-mcp-reply-matched');
+        element.removeAttribute('data-linkedin-mcp-reply-transitioned');
+        element.removeAttribute('data-linkedin-mcp-reply-editor');
+        if (element.hasAttribute('data-linkedin-mcp-reply-confirmation')) {
+            element.remove();
+        }
+    }
+}"""
+
+_THREAD_CONFIRMATION_PREPARE_JS = r"""(arg) => {
+        const pinned = arg.owner?.__linkedinMcpReplyComposer;
+        if (
+            !pinned ||
+            pinned.route !== arg.expectedRoute ||
+            location.href !== arg.expectedRoute ||
+            !arg.owner.isConnected ||
+            !pinned.editor.isConnected ||
+            !arg.owner.contains(pinned.editor) ||
+            document.activeElement !== pinned.editor ||
+            pinned.ownedMessage !== arg.expected ||
+            (pinned.editor.innerText || pinned.editor.textContent || '') !== arg.expected
+        ) {
+            return null;
+        }
+
+        const counter = (arg.owner.__linkedinMcpReplyConfirmationCounter || 0) + 1;
+        arg.owner.__linkedinMcpReplyConfirmationCounter = counter;
+        const token = String(counter);
+        const marker = document.createElement('span');
+        marker.hidden = true;
+        marker.setAttribute('data-linkedin-mcp-reply-confirmation', token);
+        marker.setAttribute('data-linkedin-mcp-reply-invalid', 'false');
+        arg.owner.appendChild(marker);
+        pinned.editor.setAttribute('data-linkedin-mcp-reply-editor', token);
+        const state = {
+            owner: arg.owner,
+            editor: pinned.editor,
+            expected: arg.expected,
+            baseline: new Set(),
+            candidates: new Map(),
+            invalid: false,
+        };
+        const visible = element => {
+            const visibility = element && getComputedStyle(element).visibility;
+            return !!(
+                element &&
+                visibility !== 'hidden' &&
+                visibility !== 'collapse' &&
+                (element.offsetWidth || element.offsetHeight || element.getClientRects().length)
+            );
+        };
+        const exactUnit = (node, requireVisible) => {
+            if (requireVisible && !visible(node)) return false;
+            const elements = [node, ...node.querySelectorAll('*')].filter(
+                element => !requireVisible || visible(element)
+            );
+            const matches = elements.filter(
+                element => (element.innerText || '') === state.expected
+            );
+            const smallest = matches.filter(
+                element => !matches.some(
+                    other => other !== element && element.contains(other)
+                )
+            );
+            return smallest.length === 1;
+        };
+        const remember = node => {
+            if (!(node instanceof Element)) return;
+            const items = [
+                ...(node.matches('[data-view-name="message-list-item"]')
+                    ? [node]
+                    : []),
+                ...node.querySelectorAll('[data-view-name="message-list-item"]'),
+            ];
+            for (const item of items) {
+                if (state.baseline.has(item)) continue;
+                if (!state.candidates.has(item)) {
+                    item.setAttribute('data-linkedin-mcp-reply-candidate', token);
+                    state.candidates.set(item, {
+                        transitioned: false,
+                        matched: false,
+                    });
+                }
+            }
+        };
+        const refresh = () => {
+            for (const [node, candidate] of state.candidates) {
+                if (
+                    node.isConnected &&
+                    state.owner.contains(node) &&
+                    exactUnit(node, true)
+                ) {
+                    candidate.matched = true;
+                    node.setAttribute('data-linkedin-mcp-reply-matched', token);
+                }
+                if (candidate.matched && !node.isConnected) {
+                    state.invalid = true;
+                    marker.setAttribute('data-linkedin-mcp-reply-invalid', 'true');
+                }
+            }
+            if (
+                Array.from(state.candidates.values()).filter(
+                    candidate => candidate.matched
+                ).length > 1
+            ) {
+                state.invalid = true;
+                marker.setAttribute('data-linkedin-mcp-reply-invalid', 'true');
+            }
+        };
+        state.observer = new MutationObserver(records => {
+            for (const record of records) {
+                if (record.type !== 'childList') continue;
+                for (const node of record.addedNodes) remember(node);
+                for (const removed of record.removedNodes) {
+                    if (!(removed instanceof Element)) continue;
+                    if (removed === state.editor || removed.contains(state.editor)) {
+                        state.invalid = true;
+                        marker.setAttribute('data-linkedin-mcp-reply-invalid', 'true');
+                    }
+                    for (const [candidate] of state.candidates) {
+                        if (
+                            (removed === candidate || removed.contains(candidate)) &&
+                            exactUnit(candidate, false)
+                        ) {
+                            state.invalid = true;
+                            marker.setAttribute(
+                                'data-linkedin-mcp-reply-invalid', 'true'
+                            );
+                        }
+                    }
+                }
+            }
+            for (const record of records) {
+                if (
+                    record.type !== 'attributes' ||
+                    !state.candidates.has(record.target)
+                ) {
+                    continue;
+                }
+                const before = (record.oldValue || '').trim();
+                const after = (
+                    record.target.getAttribute('data-event-urn') || ''
+                ).trim();
+                if (before && after && before !== after) {
+                    state.candidates.get(record.target).transitioned = true;
+                    record.target.setAttribute(
+                        'data-linkedin-mcp-reply-transitioned', token
+                    );
+                }
+            }
+            refresh();
+        });
+        state.baseline = new Set(
+            document.querySelectorAll('[data-view-name="message-list-item"]')
+        );
+        state.observer.observe(state.owner, {
+            attributes: true,
+            attributeFilter: ['data-event-urn'],
+            attributeOldValue: true,
+            childList: true,
+            subtree: true,
+        });
+        if (!arg.owner.__linkedinMcpReplyConfirmations) {
+            arg.owner.__linkedinMcpReplyConfirmations = new Map();
+        }
+        arg.owner.__linkedinMcpReplyConfirmations.set(token, state);
+        return token;
+    }"""
+
+_THREAD_CONFIRMATION_READY_JS = r"""(arg) => {
+    if (!arg.owner?.isConnected || location.href !== arg.expectedRoute) return false;
+    const markers = Array.from(
+        arg.owner.querySelectorAll('[data-linkedin-mcp-reply-confirmation]')
+    ).filter(
+        marker => marker.getAttribute('data-linkedin-mcp-reply-confirmation') === arg.token
+    );
+    if (
+        markers.length !== 1 ||
+        markers[0].getAttribute('data-linkedin-mcp-reply-invalid') !== 'false'
+    ) {
+        return false;
+    }
+    const visible = element => {
+        const visibility = element && getComputedStyle(element).visibility;
+        return !!(
+            element &&
+            visibility !== 'hidden' &&
+            visibility !== 'collapse' &&
+            (element.offsetWidth || element.offsetHeight || element.getClientRects().length)
+        );
+    };
+    const exactVisibleUnit = node => {
+        if (!visible(node)) return false;
+        const elements = [node, ...node.querySelectorAll('*')].filter(visible);
+        const matches = elements.filter(
+            element => (element.innerText || '') === arg.expected
+        );
+        return matches.filter(
+            element => !matches.some(
+                other => other !== element && element.contains(other)
+            )
+        ).length === 1;
+    };
+    const candidates = Array.from(
+        arg.owner.querySelectorAll('[data-linkedin-mcp-reply-candidate]')
+    ).filter(node =>
+        node.getAttribute('data-linkedin-mcp-reply-candidate') === arg.token &&
+        node.getAttribute('data-linkedin-mcp-reply-matched') === arg.token &&
+        node.getAttribute('data-linkedin-mcp-reply-transitioned') === arg.token &&
+        (node.getAttribute('data-event-urn') || '').trim() &&
+        exactVisibleUnit(node)
+    );
+    return candidates.length === 1;
+}"""
+
+_THREAD_CONFIRMATION_DISPOSE_JS = r"""arg => {
+    const confirmations = arg.owner?.__linkedinMcpReplyConfirmations;
+    const state = confirmations?.get(arg.token);
+    if (state?.observer) state.observer.disconnect();
+    confirmations?.delete(arg.token);
+    for (const element of arg.owner?.querySelectorAll(
+        '[data-linkedin-mcp-reply-candidate], [data-linkedin-mcp-reply-editor], '
+        + '[data-linkedin-mcp-reply-confirmation]'
+    ) || []) {
+        for (const attribute of [
+            'data-linkedin-mcp-reply-candidate',
+            'data-linkedin-mcp-reply-matched',
+            'data-linkedin-mcp-reply-transitioned',
+            'data-linkedin-mcp-reply-editor',
+        ]) {
+            if (element.getAttribute(attribute) === arg.token) {
+                element.removeAttribute(attribute);
+            }
+        }
+        if (element.getAttribute('data-linkedin-mcp-reply-confirmation') === arg.token) {
+            element.remove();
+        }
+    }
+}"""
+
+_THREAD_COMPOSER_STATE_JS = (
+    "(target) => {"
+    + _THREAD_COMPOSER_INSPECT_JS
+    + """
+        const state = inspect(target);
+        return {
+            status: state.status,
+            active: state.active === true,
+            empty: state.empty === true,
+            routeOk: state.routeOk === true,
+            submitCount: state.buttons ? state.buttons.length : 0,
+        };
+    }"""
+)
+
+_THREAD_COMPOSER_READY_JS = (
+    "(target) => {"
+    + _THREAD_COMPOSER_INSPECT_JS
+    + """
+        const state = inspect(target);
+        return state.status === 'valid' && state.routeOk === true;
+    }"""
+)
+
+
 _LINKEDIN_MESSAGE_HOST_RE = re.compile(r"^(?:[a-z0-9-]+\.)*linkedin\.com$")
 _PROFILE_PATH_RE = re.compile(r"^/in/[^/?#]+/$")
 # A thread id is base64url and keeps its padding literally. Measured live:
@@ -1670,3 +2240,408 @@ class MessageSender:
             if may_have_submitted:
                 logger.warning(contracts.SEND_INTERRUPTED_WARNING)
             raise
+
+    async def reply_to_conversation(
+        self,
+        conversation_url_or_thread_id: str,
+        message: str,
+        *,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Send a reply into an existing messaging thread, by thread id.
+
+        Unlike :meth:`send_message`, there is no recipient to resolve:
+        ``conversation_url_or_thread_id`` already names the thread (a thread
+        id, or a ``/messaging/thread/<id>/`` URL/reference such as one this
+        server's own ``references`` return), and navigating to it is the
+        whole identity boundary. Every step below re-checks that the browser
+        is still on that exact route, the same discipline ``send_message``
+        applies to its own ``expected_route``, so a redirect away from the
+        thread — an expired session, a deleted conversation, one the account
+        cannot open — fails closed rather than composing into whatever page
+        LinkedIn substituted.
+
+        Args:
+            conversation_url_or_thread_id: LinkedIn messaging thread id, or a
+                conversation URL/reference naming one.
+            message: Single-line reply text. C0 control characters and DEL
+                are rejected, including CR, LF, and tab.
+            confirm: Must be True to send. False does a dry run.
+
+        Returns:
+            Same shape as :meth:`send_message`: url, status, message,
+            recipient_selected (here: whether the thread's composer was
+            resolved), sent, and retry_safe.
+        """
+        refusal = contracts.refuse_an_invalid_reply(
+            conversation_url_or_thread_id, message
+        )
+        if refusal is not None:
+            return refusal
+        thread_id = normalize_thread_id(conversation_url_or_thread_id)
+        thread_url = messaging_thread_url(thread_id, "/")
+
+        await self._navigator._navigate_to_page(thread_url)
+        await self._session.check_rate_limit()
+
+        landed = _safe_linkedin_url(self._page.url)
+        if landed is None or not _MESSAGE_THREAD_PATH_RE.fullmatch(landed.path):
+            return contracts.message_action_result(
+                self._page.url,
+                "recipient_resolution_failed",
+                "LinkedIn did not open the requested conversation thread. It "
+                "may not exist, or this account may not have access to it.",
+            )
+        expected_route = self._page.url
+
+        try:
+            await self._page.wait_for_selector("main")
+        except PlaywrightTimeoutError:
+            logger.debug("Thread page did not load for %s", thread_id)
+        if self._page.url != expected_route:
+            return contracts.message_action_result(
+                self._page.url,
+                "recipient_resolution_failed",
+                "The conversation URL changed while the thread was loading.",
+            )
+
+        try:
+            await self._page.wait_for_function(
+                _THREAD_COMPOSER_READY_JS, arg={"expectedRoute": expected_route}
+            )
+        except PlaywrightTimeoutError:
+            pass
+        except Exception:
+            logger.debug("Could not wait for the reply composer", exc_info=True)
+        if self._page.url != expected_route:
+            return contracts.message_action_result(
+                self._page.url,
+                "recipient_resolution_failed",
+                "The conversation URL changed while the thread was loading.",
+            )
+
+        state = await self._page.evaluate(
+            _THREAD_COMPOSER_STATE_JS, {"expectedRoute": expected_route}
+        )
+        if (
+            not isinstance(state, dict)
+            or state.get("status") != "valid"
+            or not state.get("routeOk")
+        ):
+            return contracts.message_action_result(
+                self._page.url,
+                "composer_unavailable",
+                "LinkedIn did not expose one usable message composer for this thread.",
+            )
+        recipient_selected = True
+
+        if not confirm:
+            return contracts.message_action_result(
+                self._page.url,
+                "confirmation_required",
+                "Set confirm=true to send the reply.",
+                recipient_selected=recipient_selected,
+            )
+
+        if self._page.url != expected_route:
+            return contracts.message_action_result(
+                self._page.url,
+                "recipient_resolution_failed",
+                "The conversation URL changed before text entry.",
+                recipient_selected=recipient_selected,
+            )
+        state = await self._page.evaluate(
+            _THREAD_COMPOSER_STATE_JS, {"expectedRoute": expected_route}
+        )
+        if not isinstance(state, dict):
+            state = {"status": "invalid"}
+        if state.get("status") == "valid" and state.get("empty") is not True:
+            # Text already in the composer belongs to whoever typed it.
+            # Clearing it would trade a possible double-send for destroying
+            # their draft.
+            return contracts.message_action_result(
+                self._page.url,
+                "composer_occupied",
+                "The composer already holds a draft that would be sent along "
+                "with the reply. The draft was left untouched.",
+                recipient_selected=recipient_selected,
+            )
+        if state.get("status") != "valid" or not state.get("routeOk"):
+            return contracts.message_action_result(
+                self._page.url,
+                "compose_interact_failed",
+                "The verified reply composer changed before text entry.",
+                recipient_selected=recipient_selected,
+            )
+        if state.get("submitCount") != 1:
+            return contracts.message_action_result(
+                self._page.url,
+                "send_unavailable",
+                "The local submit path was missing or ambiguous.",
+                recipient_selected=recipient_selected,
+            )
+
+        may_have_submitted = False
+        try:
+            owner = await self._page.evaluate_handle(
+                _THREAD_COMPOSER_OWNER_JS,
+                arg={"target": {"expectedRoute": expected_route}},
+            )
+            if owner.as_element() is None:
+                await self._dispose_reply_owner(owner)
+                return contracts.message_action_result(
+                    self._page.url,
+                    "recipient_resolution_failed",
+                    "The verified reply composer changed before text entry.",
+                    recipient_selected=recipient_selected,
+                )
+
+            try:
+                write_result = await owner.evaluate(
+                    _THREAD_COMPOSER_WRITE_JS,
+                    {"expectedRoute": expected_route, "message": message},
+                )
+                if self._page.url != expected_route:
+                    return contracts.message_action_result(
+                        self._page.url,
+                        "recipient_resolution_failed",
+                        "The conversation URL changed during text entry.",
+                        recipient_selected=recipient_selected,
+                    )
+                if write_result == "occupied":
+                    return contracts.message_action_result(
+                        self._page.url,
+                        "composer_occupied",
+                        "The composer already holds a draft that would be sent "
+                        "along with the reply. The draft was left untouched.",
+                        recipient_selected=recipient_selected,
+                    )
+                if write_result != "written":
+                    return contracts.message_action_result(
+                        self._page.url,
+                        "compose_interact_failed",
+                        "The verified reply editor could not accept the message.",
+                        recipient_selected=recipient_selected,
+                    )
+
+                ready = await self._wait_for_reply_submit_ready(
+                    message, expected_route=expected_route, owner=owner
+                )
+                if not ready:
+                    return contracts.message_action_result(
+                        self._page.url,
+                        "send_unavailable",
+                        "The pinned submit button did not become available "
+                        "without changing the verified composer.",
+                        recipient_selected=recipient_selected,
+                    )
+
+                confirmation = await self._page.evaluate(
+                    _THREAD_CONFIRMATION_PREPARE_JS,
+                    {
+                        "owner": owner,
+                        "expectedRoute": expected_route,
+                        "expected": message,
+                    },
+                )
+                if not isinstance(confirmation, str) or not confirmation:
+                    return contracts.message_action_result(
+                        self._page.url,
+                        "recipient_resolution_failed",
+                        "The verified reply composer changed before submission.",
+                        recipient_selected=recipient_selected,
+                    )
+
+                try:
+                    try:
+                        # A click can dispatch before the evaluate call reports
+                        # an error, so an exception from this round trip is
+                        # ambiguous.
+                        may_have_submitted = True
+                        submission = await owner.evaluate(
+                            _THREAD_COMPOSER_SUBMIT_JS,
+                            {"expectedRoute": expected_route, "message": message},
+                        )
+                    except Exception:
+                        logger.debug("Reply submission did not complete", exc_info=True)
+                        return contracts.message_action_result(
+                            self._page.url,
+                            "send_unconfirmed",
+                            "The reply submission was interrupted and LinkedIn "
+                            "did not confirm the send. Check the conversation "
+                            "before retrying; retrying may deliver the message "
+                            "twice.",
+                            recipient_selected=recipient_selected,
+                            retry_safe=False,
+                        )
+
+                    if submission != "clicked":
+                        may_have_submitted = False
+                        return contracts.message_action_result(
+                            self._page.url,
+                            "send_unavailable",
+                            "The local submit path was missing, disabled, or "
+                            "ambiguous.",
+                            recipient_selected=recipient_selected,
+                        )
+
+                    confirmed = await self._reply_send_confirmed(
+                        message,
+                        expected_route=expected_route,
+                        owner=owner,
+                        confirmation=confirmation,
+                    )
+                    if not confirmed:
+                        return contracts.message_action_result(
+                            self._page.url,
+                            "send_unconfirmed",
+                            "The reply was submitted but LinkedIn did not "
+                            "confirm the message-list transition in time. "
+                            "Check the conversation before retrying; retrying "
+                            "may deliver the message twice.",
+                            recipient_selected=recipient_selected,
+                            retry_safe=False,
+                        )
+
+                    return contracts.message_action_result(
+                        self._page.url,
+                        "sent",
+                        "Reply submitted and confirmed in the conversation UI.",
+                        recipient_selected=recipient_selected,
+                        sent=True,
+                        retry_safe=False,
+                    )
+                finally:
+                    await self._dispose_reply_confirmation(owner, confirmation)
+            finally:
+                try:
+                    if not may_have_submitted:
+                        await self._cleanup_owned_reply(message, owner)
+                finally:
+                    await self._dispose_reply_owner(owner)
+        except Exception:
+            if not may_have_submitted:
+                raise
+            logger.debug("Reply send failed after a possible submission", exc_info=True)
+            return contracts.message_action_result(
+                self._page.url,
+                "send_unconfirmed",
+                "The reply may already have been submitted when the send "
+                "failed, and LinkedIn did not confirm the outcome. Check the "
+                "conversation before retrying; retrying may deliver the "
+                "message twice.",
+                recipient_selected=recipient_selected,
+                retry_safe=False,
+            )
+        except BaseException:
+            if may_have_submitted:
+                logger.warning(contracts.SEND_INTERRUPTED_WARNING)
+            raise
+
+    async def _wait_for_reply_submit_ready(
+        self, message: str, *, expected_route: str, owner: Any
+    ) -> bool:
+        """Wait briefly for the pinned reply submit button to become active."""
+        deadline = time.monotonic() + _MESSAGE_SUBMIT_READY_TIMEOUT_MS / 1_000
+        argument = {"expectedRoute": expected_route, "message": message}
+        while True:
+            try:
+                state = await owner.evaluate(_THREAD_COMPOSER_SUBMIT_READY_JS, argument)
+                if state == "ready":
+                    return True
+                if state != "disabled":
+                    return False
+            except Exception:
+                logger.debug(
+                    "Could not wait for the pinned reply submit button",
+                    exc_info=True,
+                )
+                return False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(0.05, remaining))
+
+    async def _reply_send_confirmed(
+        self,
+        message: str,
+        *,
+        expected_route: str,
+        owner: Any,
+        confirmation: str,
+    ) -> bool:
+        """Wait for one message-list node to gain a different opaque event ID.
+
+        Same discipline as ``_message_send_confirmed``: every timeout,
+        remount, replacement or ambiguity answers "not observed" because
+        submission already happened.
+        """
+        try:
+            await self._page.wait_for_function(
+                _THREAD_CONFIRMATION_READY_JS,
+                arg={
+                    "owner": owner,
+                    "expectedRoute": expected_route,
+                    "expected": message,
+                    "token": confirmation,
+                },
+            )
+            return True
+        except Exception:
+            logger.debug("Reply send could not be confirmed", exc_info=True)
+            return False
+
+    @staticmethod
+    async def _cleanup_owned_reply(message: str, owner: Any) -> None:
+        """Best-effort removal of text proven to belong to this tool call."""
+        with anyio.move_on_after(
+            _MESSAGE_CLEANUP_TIMEOUT_SECONDS, shield=True
+        ) as scope:
+            try:
+                await owner.evaluate(_THREAD_COMPOSER_CLEANUP_JS, {"message": message})
+            except Exception:
+                logger.debug("Could not clear tool-owned reply text", exc_info=True)
+        if scope.cancel_called:
+            logger.warning("Timed out clearing tool-owned reply text")
+        await anyio.lowlevel.checkpoint()
+
+    @staticmethod
+    async def _dispose_reply_owner(owner: Any) -> None:
+        """Release all owner-scoped observers, pins, markers and handles."""
+        try:
+            with anyio.move_on_after(
+                _MESSAGE_CLEANUP_TIMEOUT_SECONDS, shield=True
+            ) as dom_scope:
+                try:
+                    await owner.evaluate(_THREAD_COMPOSER_DISPOSE_JS)
+                except Exception:
+                    logger.debug("Could not clear pinned reply nodes", exc_info=True)
+            if dom_scope.cancel_called:
+                logger.warning("Timed out clearing pinned reply nodes")
+        finally:
+            with anyio.move_on_after(
+                _MESSAGE_CLEANUP_TIMEOUT_SECONDS, shield=True
+            ) as handle_scope:
+                try:
+                    await owner.dispose()
+                except Exception:
+                    logger.debug("Could not release reply owner handle", exc_info=True)
+            if handle_scope.cancel_called:
+                logger.warning("Timed out releasing reply owner handle")
+        await anyio.lowlevel.checkpoint()
+
+    async def _dispose_reply_confirmation(self, owner: Any, confirmation: str) -> None:
+        """Disconnect a request-local confirmation observer."""
+        with anyio.move_on_after(
+            _MESSAGE_CLEANUP_TIMEOUT_SECONDS, shield=True
+        ) as scope:
+            try:
+                await self._page.evaluate(
+                    _THREAD_CONFIRMATION_DISPOSE_JS,
+                    {"owner": owner, "token": confirmation},
+                )
+            except Exception:
+                logger.debug("Could not disconnect reply observer", exc_info=True)
+        if scope.cancel_called:
+            logger.warning("Timed out disconnecting reply observer")
+        await anyio.lowlevel.checkpoint()

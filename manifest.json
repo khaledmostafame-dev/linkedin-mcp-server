@@ -85,11 +85,19 @@
     },
     {
       "name": "search_jobs",
-      "description": "Search for jobs with filters like keywords and location"
+      "description": "Search for jobs with filters like keywords and location; reports LinkedIn's own advertised result total when available"
     },
     {
       "name": "get_saved_jobs",
       "description": "List job postings saved by the authenticated LinkedIn user"
+    },
+    {
+      "name": "save_job",
+      "description": "Save or unsave a LinkedIn job posting for the authenticated account, with explicit confirmation; idempotent"
+    },
+    {
+      "name": "get_job_alerts",
+      "description": "List the authenticated LinkedIn user's job alerts, with each alert's own search returned as a reference"
     },
     {
       "name": "search_people",
@@ -114,6 +122,18 @@
     {
       "name": "send_message",
       "description": "Compose and send a new single-line message without C0 or DEL control characters (including CR, LF, and tab) to a LinkedIn user with explicit confirmation and optional profile URN support; profile-based targeting may create a separate DM instead of replying in an existing thread, and when no normal Message action is exposed, use connect_with_person and retry after acceptance"
+    },
+    {
+      "name": "reply_to_conversation",
+      "description": "Reply within an existing LinkedIn messaging thread (recruiter/InMail/DM) by thread ID, with explicit confirmation"
+    },
+    {
+      "name": "mark_conversation_read",
+      "description": "Mark a LinkedIn conversation thread as read or unread via its options menu, with explicit confirmation; idempotent"
+    },
+    {
+      "name": "archive_conversation",
+      "description": "Archive or unarchive a LinkedIn conversation thread via its options menu, with explicit confirmation; idempotent"
     },
     {
       "name": "get_feed",

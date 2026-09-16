@@ -263,6 +263,150 @@ def strip_conversation_chrome(text: str, locale: str = "en") -> str:
     return "\n".join(lines[start:end]).strip()
 
 
+# Job search's advertised result count. LinkedIn prints it as a standalone
+# line near the top of the results rail ("28 results", "1,000+ results"), with
+# no URL or attribute carrying the number, so it is read from the same
+# innerText `search_jobs` already captures rather than a second navigation.
+# Guarded by an explicit per-locale table like the other text-only signals in
+# this module. Only the first three non-empty lines are checked, matching
+# where both the classic layout (count under the heading) and the redesigned
+# layout (count first) place it; a number appearing later belongs to a job
+# card, not the header.
+@dataclass(frozen=True)
+class JobSearchTextTable:
+    """Visible-text policy for reading the job-search result count."""
+
+    result_count_pattern: re.Pattern[str]
+
+    def result_count(self, text: str) -> tuple[int, bool] | None:
+        """The advertised `(count, exact)` from the first lines, or ``None``.
+
+        ``exact`` is false when LinkedIn printed a trailing ``+`` (a lower
+        bound, e.g. "1,000+ results"). Returns ``None`` when no candidate line
+        matches — an absent count is not reported as zero.
+        """
+        for line in [line.strip() for line in text.splitlines() if line.strip()][:3]:
+            match = self.result_count_pattern.fullmatch(line)
+            if match:
+                digits = match.group("count").replace(",", "")
+                return int(digits), match.group("plus") is None
+        return None
+
+
+_JOB_SEARCH_TEXT: dict[str, JobSearchTextTable] = {
+    "en-US": JobSearchTextTable(
+        result_count_pattern=re.compile(
+            r"(?P<count>[0-9][0-9,]*)(?P<plus>\+)? results?", re.IGNORECASE
+        ),
+    ),
+}
+
+# BrowserManager forces the browser context to en-US (core/browser.py), so the
+# search workflow receives this exact entry. An unsupported locale reports no
+# count rather than guessing at a translated word for "results".
+JOB_SEARCH_EN_US = _JOB_SEARCH_TEXT["en-US"]
+
+
+# The job-posting Save control's two states. LinkedIn exposes no URL,
+# attribute or icon distinguishing "not yet saved" from "already saved" that
+# has been found so far (a bookmark-glyph or `aria-pressed` toggle would be
+# preferred per CLAUDE.md -> Scraping Rules, but the button was not observed
+# to carry one) — the button's own text is the only signal, so detection is
+# guarded by this explicit per-locale table and fails closed on an unknown
+# locale rather than guessing. Every table is tried at once (the same shape
+# as `core/utils.py`'s `_MODAL_DISMISS_ARIA_LABELS`), not gated on
+# `navigator.language`: a session's actual UI locale is what LinkedIn chose
+# for it, and there is no guarantee it matches the browser's reported
+# language, so this reads whichever locale's label is actually on the page
+# rather than trusting the report and refusing everyone else.
+@dataclass(frozen=True)
+class JobSaveTextTable:
+    """Visible-text policy for reading and toggling the job Save control."""
+
+    saved: str
+    unsaved: str
+
+
+_JOB_SAVE_TEXT: dict[str, JobSaveTextTable] = {
+    "en": JobSaveTextTable(saved="Saved", unsaved="Save"),
+    # Best-effort transcription, not verified against a live LinkedIn Arabic
+    # session — see docs/i18n-audit.md's caveat on every table in this file.
+    "ar": JobSaveTextTable(saved="تم الحفظ", unsaved="حفظ"),
+}
+
+# Kept for callers that still want the single historical entry (and for
+# backward compatibility with existing tests); `save_job` itself reads
+# `JOB_SAVE_TABLES` so every listed locale's label is recognized.
+JOB_SAVE_EN_US = _JOB_SAVE_TEXT["en"]
+JOB_SAVE_TABLES: tuple[JobSaveTextTable, ...] = tuple(_JOB_SAVE_TEXT.values())
+
+
+# The per-thread options menu (opened from the header of an open conversation)
+# used to mark a thread read/unread and archive/unarchive it. Preferred
+# locale-independent signals — item order, an icon/`data-test-icon`, or an
+# `aria-pressed`/`aria-checked` toggle state on the item itself — were looked
+# for and not found: LinkedIn renders each item as a plain `role="menuitem"`
+# with no icon markup and no ARIA toggle state, and item order was not
+# confirmed stable (archive/unarchive and mark-read/unread are offered
+# together with no documented fixed position). So the item's own label is the
+# only signal available today, and it names the action offered rather than
+# the current state (a thread already read offers "Mark as unread", not the
+# reverse) — callers read whichever of a pair is present to tell the two
+# apart, guarded by this explicit per-locale table (CLAUDE.md -> Scraping
+# Rules) and failing closed when none of the tabled labels are found. If a
+# structural signal is confirmed later, prefer it and keep this table only as
+# a fallback.
+#
+# ``menu_opener_prefix`` reuses the exact aria-label prefix
+# `_MessagingChromeTable.thread_header_prefix` already relies on for chrome
+# stripping ("Open the options list in your conversation with") — that
+# English string is a rendered, tested signal in this codebase, not a fresh
+# guess; its Arabic counterpart below is not.
+#
+# Every table is tried at once (matching `core/utils.py`'s
+# `_MODAL_DISMISS_ARIA_LABELS` shape) rather than gated on a single detected
+# locale, so a session in any listed locale is recognized without first
+# proving which one it is. The four toggle labels and the Arabic opener
+# prefix are best-effort transcriptions, not confirmed against a live
+# LinkedIn menu in either language; see docs/i18n-audit.md's caveat on every
+# table in this file.
+@dataclass(frozen=True)
+class ConversationOptionsTextTable:
+    """Visible-text policy for the per-thread options menu."""
+
+    menu_opener_prefix: str
+    mark_read: str
+    mark_unread: str
+    archive: str
+    unarchive: str
+
+
+_CONVERSATION_OPTIONS_STRINGS: dict[str, ConversationOptionsTextTable] = {
+    "en": ConversationOptionsTextTable(
+        menu_opener_prefix="Open the options list in your conversation with",
+        mark_read="Mark as read",
+        mark_unread="Mark as unread",
+        archive="Archive",
+        unarchive="Unarchive",
+    ),
+    "ar": ConversationOptionsTextTable(
+        menu_opener_prefix="افتح قائمة الخيارات في محادثتك مع",
+        mark_read="وضع علامة كمقروءة",
+        mark_unread="وضع علامة كغير مقروءة",
+        archive="أرشفة",
+        unarchive="إلغاء الأرشفة",
+    ),
+}
+
+# Kept for callers/tests that want the single historical entry; the DOM
+# lookups themselves read `CONVERSATION_OPTIONS_TABLES` so every listed
+# locale's labels are recognized.
+CONVERSATION_OPTIONS_EN = _CONVERSATION_OPTIONS_STRINGS["en"]
+CONVERSATION_OPTIONS_TABLES: tuple[ConversationOptionsTextTable, ...] = tuple(
+    _CONVERSATION_OPTIONS_STRINGS.values()
+)
+
+
 # Sidebar recommendation headings on a person page, and the control that opens
 # the full list behind one. Neither carries a URL, an attribute or a structural
 # count separating it from any other heading or anchor in the same container,

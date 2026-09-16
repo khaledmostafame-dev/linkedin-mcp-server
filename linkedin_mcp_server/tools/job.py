@@ -110,7 +110,11 @@ def register_job_tools(
 
         Returns:
             Dict with url, sections (name -> raw text), job_ids (list of
-            numeric job ID strings usable with get_job_details), and optional references.
+            numeric job ID strings usable with get_job_details), optional
+            references, and an optional total: {count, exact} — LinkedIn's
+            own advertised result count from the first page ("28 results",
+            "1,000+ results" -> exact=false), present only when that line
+            could be read.
         """
         try:
             # Before the browser, because FastMCP is already timing this call
@@ -161,6 +165,67 @@ def register_job_tools(
 
     @mcp.tool(
         timeout=tool_timeout,
+        title="Save Job",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"job", "write", "actions"},
+        exclude_args=["extractor"],
+    )
+    async def save_job(
+        job_id: str,
+        confirm: bool,
+        ctx: Context,
+        unsave: bool = False,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Save or unsave a LinkedIn job posting for the authenticated account.
+
+        Idempotent: a job already in the requested state is reported without
+        changing anything, so a retry is always safe. This is a write
+        operation when confirm is True.
+
+        Args:
+            job_id: LinkedIn job ID (e.g., "4252026496", "3856789012")
+            confirm: Must be True to change the saved state. False does a dry
+                run and returns {"status": "preview", ...} without navigating
+                LinkedIn's state.
+            ctx: FastMCP context for progress reporting
+            unsave: Remove the job from the saved list instead of adding it
+                (default False: save).
+
+        Returns:
+            Dict with url, job_id, saved (the resulting state), and changed
+            (whether this call flipped it).
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="save_job"
+            )
+            logger.info(
+                "%s job %s (confirm=%s)",
+                "Unsaving" if unsave else "Saving",
+                job_id,
+                confirm,
+            )
+
+            await ctx.report_progress(progress=0, total=100, message="Opening job")
+
+            result = await extractor.save_job(job_id, confirm=confirm, unsave=unsave)
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            return result
+
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "save_job")
+        except Exception as e:
+            raise_tool_error(e, "save_job")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
         title="Get Saved Jobs",
         annotations={"readOnlyHint": True, "openWorldHint": True},
         tags={"job", "scraping"},
@@ -207,3 +272,52 @@ def register_job_tools(
                 raise_tool_error(relogin_exc, "get_saved_jobs")
         except Exception as e:
             raise_tool_error(e, "get_saved_jobs")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Get Job Alerts",
+        annotations={"readOnlyHint": True, "openWorldHint": True},
+        tags={"job", "scraping"},
+        exclude_args=["extractor"],
+    )
+    async def get_job_alerts(
+        ctx: Context,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        List the authenticated LinkedIn user's job alerts.
+
+        Each alert's own saved search is returned as a job_alert reference
+        carrying its search URL (filters live in that URL's query string,
+        not in the section text).
+
+        Args:
+            ctx: FastMCP context for progress reporting
+
+        Returns:
+            Dict with url, sections (job_alerts -> raw text), and optional
+            references (job_alerts -> [{kind: "job_alert", url, text?}, ...]).
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="get_job_alerts"
+            )
+            logger.info("Fetching job alerts")
+
+            await ctx.report_progress(
+                progress=0, total=100, message="Loading job alerts"
+            )
+
+            result = await extractor.get_job_alerts()
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            return result
+
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "get_job_alerts")
+        except Exception as e:
+            raise_tool_error(e, "get_job_alerts")  # NoReturn

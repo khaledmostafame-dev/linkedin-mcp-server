@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from linkedin_mcp_server.scraping.identifiers import (
+    messaging_thread_url,
     normalize_person_identifier,
+    normalize_thread_id,
     person_profile_url,
 )
 from linkedin_mcp_server.scraping.link_metadata import Reference
@@ -108,6 +110,30 @@ def refuse_an_invalid_message(
         return None
     return message_action_result(
         person_profile_url(normalize_person_identifier(linkedin_username), "/"),
+        "invalid_message",
+        reason,
+    )
+
+
+def refuse_an_invalid_reply(
+    conversation_url_or_thread_id: str, message: str
+) -> dict[str, Any] | None:
+    """Return the shared browser-free refusal for an unsafe thread reply.
+
+    Mirrors :func:`refuse_an_invalid_message`: normalizing the thread
+    reference here, inside the refusal path, means an unusable one raises
+    ``InvalidReferenceError`` before a browser session is ever acquired.
+    """
+    thread_id = normalize_thread_id(conversation_url_or_thread_id)
+    reason = None
+    if not message.strip():
+        reason = "Message must contain non-whitespace characters."
+    elif any(ord(character) < 32 or ord(character) == 127 for character in message):
+        reason = "Message must not contain control characters or line breaks."
+    if reason is None:
+        return None
+    return message_action_result(
+        messaging_thread_url(thread_id, "/"),
         "invalid_message",
         reason,
     )

@@ -9,6 +9,7 @@ diagnostics that decide what a page *means* stay with the workflow.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Literal
 
 import asyncio
 import logging
@@ -33,6 +34,7 @@ from linkedin_mcp_server.scraping.contracts import (
     RATE_LIMITED_SECTION_TEXT,
     ExtractedSection,
 )
+from linkedin_mcp_server.scraping.identifiers import job_view_url, normalize_job_id
 from linkedin_mcp_server.scraping.job_policy import (
     SCROLL_DEADLINE_MAX,
     route,
@@ -42,6 +44,7 @@ from linkedin_mcp_server.scraping.link_metadata import build_references
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.session import ScrapingSession
 from linkedin_mcp_server.scraping.text import (
+    JOB_SAVE_TABLES,
     filter_linkedin_noise_lines,
     normalize_localized_digits,
     truncate_linkedin_noise,
@@ -113,6 +116,49 @@ def parse_total_from_page_state_text(text: str | None) -> int | None:
         return None
     numbers = re.findall(r"\d+", normalize_localized_digits(text))
     return int(numbers[-1]) if len(numbers) == 2 else None
+
+
+# The job-posting Save control's text is the only state signal LinkedIn
+# exposes — no distinguishing URL, attribute or icon that has been found (an
+# `aria-pressed` toggle or a filled/outline bookmark icon would be preferred
+# per CLAUDE.md -> Scraping Rules, but the control was not observed to carry
+# either) — so both the read and the click below are guarded by
+# `JOB_SAVE_TABLES`, every listed locale's labels tried in the same pass
+# (matching `core/utils.py`'s `_MODAL_DISMISS_ARIA_LABELS` shape) rather than
+# gated on a single detected locale, and fail closed when the control's text
+# matches none of them rather than guessing at an untabled translation.
+# `aria-expanded` excludes menu openers that happen to carry the same visible
+# word, and `disabled` excludes a control mid-transition.
+_JOB_SAVE_CONTROL_JS = r"""({ savedLabels, unsavedLabels }) => {
+    const root = document.querySelector('main') || document.body;
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
+    const controls = Array.from(
+        root.querySelectorAll('button, [role="button"]')
+    ).filter(element => {
+        if (element.hasAttribute('aria-expanded')) return false;
+        if (element.hasAttribute('disabled')) return false;
+        const text = normalize(element.innerText || element.textContent);
+        return savedLabels.includes(text) || unsavedLabels.includes(text);
+    });
+    if (controls.length !== 1) return null;
+    const text = normalize(controls[0].innerText || controls[0].textContent);
+    return savedLabels.includes(text) ? 'saved' : 'unsaved';
+}"""
+
+_JOB_SAVE_CLICK_JS = r"""({ expectedLabels }) => {
+    const root = document.querySelector('main') || document.body;
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
+    const controls = Array.from(
+        root.querySelectorAll('button, [role="button"]')
+    ).filter(element =>
+        !element.hasAttribute('aria-expanded') &&
+        !element.hasAttribute('disabled') &&
+        expectedLabels.includes(normalize(element.innerText || element.textContent))
+    );
+    if (controls.length !== 1) return false;
+    controls[0].click();
+    return true;
+}"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -610,3 +656,107 @@ class JobPageReader:
             if (normalized := normalize_localized_digits(label)).isdigit()
         ]
         return max(numbers) if numbers else None
+
+    async def _job_save_state(self) -> Literal["saved", "unsaved"] | None:
+        """Read the job Save control's state, or ``None`` if it cannot be told.
+
+        Every locale in ``JOB_SAVE_TABLES`` is tried in the same call rather
+        than gated on a detected `navigator.language` — a session's actual
+        LinkedIn UI locale is not guaranteed to match what the browser
+        reports. ``None`` covers a page where the control cannot be uniquely
+        identified against any tabled label — callers treat that as "could
+        not determine" rather than guessing which state it is in.
+        """
+        saved_labels = [table.saved for table in JOB_SAVE_TABLES]
+        unsaved_labels = [table.unsaved for table in JOB_SAVE_TABLES]
+        state = await self._session.page.evaluate(
+            _JOB_SAVE_CONTROL_JS,
+            {"savedLabels": saved_labels, "unsavedLabels": unsaved_labels},
+        )
+        return state if state in ("saved", "unsaved") else None
+
+    async def _click_job_save_control(
+        self, current_state: Literal["saved", "unsaved"]
+    ) -> bool:
+        """Click the unique Save control while it shows ``current_state``."""
+        expected_labels = [
+            table.saved if current_state == "saved" else table.unsaved
+            for table in JOB_SAVE_TABLES
+        ]
+        try:
+            return bool(
+                await self._session.page.evaluate(
+                    _JOB_SAVE_CLICK_JS, {"expectedLabels": expected_labels}
+                )
+            )
+        except Exception:
+            logger.debug("Job Save control click failed", exc_info=True)
+            return False
+
+    async def save_job(
+        self, job_id: str, *, confirm: bool, unsave: bool = False
+    ) -> dict[str, Any]:
+        """Save or unsave one job posting, confirmation-gated for the write.
+
+        Idempotent both ways: a job already in the requested state is
+        reported without navigating LinkedIn's state at all, so a retry after
+        an ambiguous prior result is always safe to make.
+        """
+        job_id = normalize_job_id(job_id)
+        url = job_view_url(job_id, "/")
+        target_state: Literal["saved", "unsaved"] = "unsaved" if unsave else "saved"
+
+        await self._navigator._navigate_to_page(url)
+        await detect_rate_limit(self._session.page)
+        try:
+            await self._session.page.wait_for_selector("main")
+        except PlaywrightTimeoutError:
+            logger.debug("Job page did not load for %s", job_id)
+        await handle_modal_close(self._session.page)
+
+        state = await self._job_save_state()
+        if state is None:
+            raise LinkedInScraperException(
+                "Could not uniquely identify the LinkedIn job Save control, "
+                "or its label did not match any known locale's Save/Saved text."
+            )
+        if state == target_state:
+            return {
+                "url": url,
+                "job_id": job_id,
+                "saved": target_state == "saved",
+                "changed": False,
+            }
+
+        if not confirm:
+            action = "unsave" if unsave else "save"
+            return {
+                "url": url,
+                "job_id": job_id,
+                "status": "preview",
+                "saved": state == "saved",
+                "message": f"Set confirm=true to {action} this job.",
+            }
+
+        clicked = await self._click_job_save_control(state)
+        if not clicked:
+            raise LinkedInScraperException(
+                "Could not find or click the LinkedIn Save control for this job."
+            )
+
+        # The click helper only proves the DOM click dispatched. LinkedIn can
+        # swallow it (overlay, transient disable) without changing state, so
+        # report the observed state rather than the attempt — the idempotent
+        # branch above makes a caller retry safe either way.
+        await asyncio.sleep(1)
+        if await self._job_save_state() != target_state:
+            action = "unsave" if unsave else "save"
+            raise LinkedInScraperException(
+                f"Clicked the LinkedIn Save control, but it did not {action} this job."
+            )
+        return {
+            "url": url,
+            "job_id": job_id,
+            "saved": target_state == "saved",
+            "changed": True,
+        }

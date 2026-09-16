@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import logging
 import re
@@ -27,6 +27,7 @@ from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.profile_page import ProfilePageReader
 from linkedin_mcp_server.scraping.session import ScrapingSession
 from linkedin_mcp_server.scraping.text import (
+    CONVERSATION_OPTIONS_TABLES,
     strip_conversation_chrome,
     strip_linkedin_noise,
 )
@@ -46,6 +47,77 @@ _SELECT_CONVERSATION_PREFIX_RE = re.compile(
 def strip_select_conversation_prefix(aria_label: str) -> str:
     """Drop the en-US selection verb from one conversation row's aria-label."""
     return _SELECT_CONVERSATION_PREFIX_RE.sub("", aria_label).strip()
+
+
+# The opener for the per-thread options menu carries no aria-label or class
+# name of its own; the only tested signal is the visually-hidden label text
+# in front of it (`ConversationOptionsTextTable.menu_opener_prefix`, the same
+# string `strip_conversation_chrome` already relies on). This walks up from
+# whichever leaf text node starts with that prefix to the nearest clickable
+# ancestor within a few levels — the same bounded-ancestor-walk shape
+# `connection_actions.py` uses to find a profile's own More button — and
+# clicks it. Returns false rather than guessing when no such ancestor exists.
+_OPEN_CONVERSATION_OPTIONS_JS = r"""(prefixes) => {
+    const visible = element => {
+        const visibility = element && getComputedStyle(element).visibility;
+        return !!(
+            element &&
+            visibility !== 'hidden' &&
+            visibility !== 'collapse' &&
+            (element.offsetWidth || element.offsetHeight || element.getClientRects().length)
+        );
+    };
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
+    const main = document.querySelector('main');
+    if (!main) return false;
+    // Every known locale's opener prefix is tried in the same pass (the
+    // shape core/utils.py's `_MODAL_DISMISS_ARIA_LABELS` uses) rather than
+    // gated on a detected locale, so a session in any listed language is
+    // recognized without first proving which one it is.
+    const labels = Array.from(main.querySelectorAll('*')).filter(
+        element => {
+            if (element.children.length !== 0) return false;
+            const text = normalize(element.textContent);
+            return prefixes.some(prefix => text.startsWith(prefix));
+        }
+    );
+    for (const label of labels) {
+        let ancestor = label;
+        for (let depth = 0; depth < 6 && ancestor; depth++) {
+            if (
+                ancestor.matches('button, [role="button"]') &&
+                visible(ancestor) &&
+                !ancestor.hasAttribute('disabled')
+            ) {
+                ancestor.click();
+                return true;
+            }
+            ancestor = ancestor.parentElement;
+        }
+    }
+    return false;
+}"""
+
+# Menu items inside the opened `[role="menu"]`. `role="menuitem"` covers the
+# accessible case; a plain `button` inside the menu is kept as a fallback for
+# a menu LinkedIn renders without the ARIA role.
+_READ_CONVERSATION_MENU_ITEMS_JS = r"""() => {
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
+    return Array.from(
+        document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] button')
+    ).map(element => normalize(element.innerText || element.textContent))
+        .filter(Boolean);
+}"""
+
+_CLICK_CONVERSATION_MENU_ITEM_JS = r"""(labels) => {
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
+    const items = Array.from(
+        document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] button')
+    ).filter(element => labels.includes(normalize(element.innerText || element.textContent)));
+    if (items.length !== 1) return false;
+    items[0].click();
+    return true;
+}"""
 
 
 class ConversationReader:
@@ -523,3 +595,228 @@ class ConversationReader:
             cleaned,
             references=references,
         )
+
+    async def _navigate_to_thread_for_options(
+        self, conversation_url_or_thread_id: str
+    ) -> tuple[str, str] | dict[str, Any]:
+        """Open a thread by id and confirm it is the one that loaded.
+
+        Returns ``(thread_id, url)`` on success, or a result dict callers can
+        return directly on failure — mirroring the route-pinning discipline
+        ``reply_to_conversation`` uses, since acting on the options menu of
+        whatever page LinkedIn substituted would be worse than failing.
+        """
+        thread_id = normalize_thread_id(conversation_url_or_thread_id)
+        url = messaging_thread_url(thread_id, "/")
+        await self._navigator._navigate_to_page(url)
+        await self._session.check_rate_limit()
+
+        landed = urlparse(self._session.page.url)
+        if landed.netloc != "www.linkedin.com" or not re.fullmatch(
+            r"/messaging/thread/[A-Za-z0-9_=-]+", landed.path.rstrip("/")
+        ):
+            return {
+                "url": self._session.page.url,
+                "thread_id": thread_id,
+                "status": "conversation_unavailable",
+                "changed": False,
+                "message": (
+                    "LinkedIn did not open the requested conversation thread. "
+                    "It may not exist, or this account may not have access "
+                    "to it."
+                ),
+            }
+
+        try:
+            await self._session.page.wait_for_selector("main")
+        except PlaywrightTimeoutError:
+            logger.debug("Thread page did not load for %s", thread_id)
+        await self._session.dismiss_modal()
+        return thread_id, self._session.page.url
+
+    async def _toggle_conversation_option(
+        self,
+        conversation_url_or_thread_id: str,
+        *,
+        confirm: bool,
+        action_labels: tuple[str, ...],
+        opposite_labels: tuple[str, ...],
+        action_description: str,
+    ) -> dict[str, Any]:
+        """Open the thread's options menu and act on one toggle-labelled item.
+
+        The menu item names the action it offers, not the current state (a
+        thread already read offers "Mark as unread"), so whichever of
+        ``action_labels``/``opposite_labels`` is present tells the two apart.
+        Each is every known locale's spelling of the same action (built from
+        ``CONVERSATION_OPTIONS_TABLES``), tried together rather than gated on
+        a detected locale. Neither present, or the menu itself unreachable,
+        fails closed as ``action_unavailable`` rather than guessing.
+        """
+        navigated = await self._navigate_to_thread_for_options(
+            conversation_url_or_thread_id
+        )
+        if isinstance(navigated, dict):
+            return navigated
+        thread_id, url = navigated
+
+        opener_prefixes = [
+            table.menu_opener_prefix for table in CONVERSATION_OPTIONS_TABLES
+        ]
+        opened = False
+        try:
+            opened = await self._session.page.evaluate(
+                _OPEN_CONVERSATION_OPTIONS_JS, opener_prefixes
+            )
+        except Exception:
+            logger.debug("Could not open the conversation options menu", exc_info=True)
+        if opened:
+            try:
+                await self._session.page.wait_for_selector(
+                    "[role='menu']", state="visible", timeout=3000
+                )
+            except PlaywrightTimeoutError:
+                logger.debug("Conversation options menu did not appear")
+                opened = False
+        if not opened:
+            return {
+                "url": url,
+                "thread_id": thread_id,
+                "status": "action_unavailable",
+                "changed": False,
+                "message": (
+                    "LinkedIn did not expose an options menu for this conversation."
+                ),
+            }
+
+        try:
+            items = await self._session.page.evaluate(_READ_CONVERSATION_MENU_ITEMS_JS)
+            if not isinstance(items, list):
+                items = []
+
+            if any(label in items for label in action_labels):
+                if not confirm:
+                    return {
+                        "url": url,
+                        "thread_id": thread_id,
+                        "status": "preview",
+                        "changed": False,
+                        "message": f"Set confirm=true to {action_description}.",
+                    }
+                clicked = await self._session.page.evaluate(
+                    _CLICK_CONVERSATION_MENU_ITEM_JS, list(action_labels)
+                )
+                if not clicked:
+                    return {
+                        "url": url,
+                        "thread_id": thread_id,
+                        "status": "action_unavailable",
+                        "changed": False,
+                        "message": (
+                            "Could not click the LinkedIn conversation menu item."
+                        ),
+                    }
+                return {
+                    "url": url,
+                    "thread_id": thread_id,
+                    "status": "ok",
+                    "changed": True,
+                }
+
+            if any(label in items for label in opposite_labels):
+                # LinkedIn is already offering the reverse action, which means
+                # the requested state already holds. Nothing to click.
+                return {
+                    "url": url,
+                    "thread_id": thread_id,
+                    "status": "ok",
+                    "changed": False,
+                }
+
+            return {
+                "url": url,
+                "thread_id": thread_id,
+                "status": "action_unavailable",
+                "changed": False,
+                "message": (
+                    "Could not find this option in LinkedIn's conversation menu."
+                ),
+            }
+        finally:
+            try:
+                await self._session.page.keyboard.press("Escape")
+            except Exception:
+                logger.debug(
+                    "Could not close the conversation options menu",
+                    exc_info=True,
+                )
+
+    async def mark_conversation_read(
+        self,
+        conversation_url_or_thread_id: str,
+        *,
+        read: bool = True,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Mark a conversation thread read or unread via its options menu.
+
+        Idempotent: a thread already in the requested state is reported
+        without clicking anything, so a retry is always safe to make.
+        """
+        action_labels = tuple(
+            table.mark_read if read else table.mark_unread
+            for table in CONVERSATION_OPTIONS_TABLES
+        )
+        opposite_labels = tuple(
+            table.mark_unread if read else table.mark_read
+            for table in CONVERSATION_OPTIONS_TABLES
+        )
+        action_description = (
+            "mark this conversation as read"
+            if read
+            else "mark this conversation as unread"
+        )
+        result = await self._toggle_conversation_option(
+            conversation_url_or_thread_id,
+            confirm=confirm,
+            action_labels=action_labels,
+            opposite_labels=opposite_labels,
+            action_description=action_description,
+        )
+        if result["status"] == "ok":
+            result["read"] = read
+        return result
+
+    async def archive_conversation(
+        self,
+        conversation_url_or_thread_id: str,
+        *,
+        confirm: bool,
+        unarchive: bool = False,
+    ) -> dict[str, Any]:
+        """Archive or unarchive a conversation thread via its options menu.
+
+        Idempotent: a thread already in the requested state is reported
+        without clicking anything, so a retry is always safe to make.
+        """
+        action_labels = tuple(
+            table.unarchive if unarchive else table.archive
+            for table in CONVERSATION_OPTIONS_TABLES
+        )
+        opposite_labels = tuple(
+            table.archive if unarchive else table.unarchive
+            for table in CONVERSATION_OPTIONS_TABLES
+        )
+        action_description = (
+            "unarchive this conversation" if unarchive else "archive this conversation"
+        )
+        result = await self._toggle_conversation_option(
+            conversation_url_or_thread_id,
+            confirm=confirm,
+            action_labels=action_labels,
+            opposite_labels=opposite_labels,
+            action_description=action_description,
+        )
+        if result["status"] == "ok":
+            result["archived"] = not unarchive
+        return result
