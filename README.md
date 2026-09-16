@@ -68,6 +68,7 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `comment_on_post` | Post a top-level comment on a post (requires `confirm`; confirms the comment appeared; @mentions not supported) |
 | `react_to_comment` | Like one comment located by URN (requires `confirm`; never removes an existing reaction) |
 | `create_post` | Publish or schedule a post with real @mentions (`@[Name](profile or company URL)`, verified by identity, fails closed), up to 20 images or one PDF/PPTX document carousel, visibility, posting as a company page you admin (`post_as`), and LinkedIn-native scheduling (requires `confirm`; `confirm=false` previews without a browser) |
+| `create_poll` | Publish or schedule a poll (question ≤140 chars, 2–4 options ≤30 chars, 1/3/7/14 days) with optional text, `post_as` and `schedule_at` (requires `confirm`; `confirm=false` previews without a browser) |
 | `get_scheduled_posts` | List scheduled posts with identifiers |
 | `edit_scheduled_post` | Change a scheduled post's text and/or time by identifier (requires `confirm`) |
 | `delete_scheduled_post` | Delete a scheduled post by identifier (requires `confirm`) |

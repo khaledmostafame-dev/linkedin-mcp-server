@@ -24,6 +24,7 @@ from linkedin_mcp_server.error_handler import raise_tool_error
 from linkedin_mcp_server.post_media import media_staging, stage_post_attachments
 from linkedin_mcp_server.scraping.post_content import (
     PostValidationError,
+    build_poll,
     build_post_edit,
     build_post_request,
     parse_post_url,
@@ -462,3 +463,87 @@ def register_posting_tools(
                 raise_tool_error(relogin_exc, "edit_post")
         except Exception as e:
             raise_tool_error(e, "edit_post")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Create Poll",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"posting", "write"},
+        exclude_args=["extractor"],
+    )
+    async def create_poll(
+        question: str,
+        options: Annotated[list[str], Field(min_length=2, max_length=4)],
+        duration_days: Literal[1, 3, 7, 14],
+        confirm: bool,
+        ctx: Context,
+        text: str = "",
+        post_as: str | None = None,
+        schedule_at: str | None = None,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Publish or schedule a LinkedIn poll from the authenticated account.
+
+        LinkedIn's limits are checked before any browser work: a question of
+        at most 140 characters, 2 to 4 distinct options of at most 30
+        characters each, and a duration of 1, 3, 7 or 14 days. The poll form
+        is filled field by field, every value must read back exactly, and the
+        composer's poll preview must show the same question and options
+        before anything is posted. text is the optional post body and may use
+        the @[Name](URL or URN) mention syntax. post_as and schedule_at work
+        as in create_post.
+
+        This is a write operation when confirm is True. With confirm False
+        nothing is sent to LinkedIn and a preview is returned.
+
+        Args:
+            question: The poll question.
+            options: 2 to 4 answer options.
+            duration_days: How long the poll runs: 1, 3, 7 or 14.
+            confirm: False returns a preview; True publishes or schedules.
+            ctx: FastMCP context for progress reporting
+            text: Optional post text shown above the poll.
+            post_as: Optional company page to post as (URL, numeric id or URN).
+            schedule_at: Optional ISO 8601 date-time with an explicit offset.
+
+        Returns:
+            Dict with url, status ("preview", "published", "scheduled", or a
+            refusal such as "poll_unavailable"), message and retry_safe, which
+            is False once the post action may have been clicked.
+        """
+        try:
+            poll = build_poll(question, options, duration_days)
+            request = build_post_request(
+                text,
+                schedule_at=schedule_at,
+                post_as=post_as,
+                poll=poll,
+            )
+            if not confirm:
+                return post_preview(request)
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="create_poll"
+            )
+            await ctx.report_progress(
+                progress=0, total=100, message="Opening the share composer"
+            )
+            result = await extractor.create_poll(request)
+            try:
+                await ctx.report_progress(progress=100, total=100, message="Complete")
+            except BaseException:
+                if result.get("retry_safe") is False:
+                    logger.warning(POST_INTERRUPTED_WARNING)
+                raise
+            return result
+        except PostValidationError as e:
+            raise ToolError(str(e)) from e
+        except ToolError:
+            raise
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "create_poll")
+        except Exception as e:
+            raise_tool_error(e, "create_poll")  # NoReturn

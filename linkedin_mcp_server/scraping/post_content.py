@@ -30,6 +30,12 @@ LINKEDIN_POST_CHARACTER_LIMIT = 3000
 # from racing the clock while the composer is being driven.
 SCHEDULE_MIN_LEAD = timedelta(minutes=10)
 SCHEDULE_MAX_AHEAD = timedelta(days=90)
+# LinkedIn's poll form limits.
+POLL_QUESTION_LIMIT = 140
+POLL_OPTION_LIMIT = 30
+POLL_MIN_OPTIONS = 2
+POLL_MAX_OPTIONS = 4
+POLL_DURATIONS_DAYS: tuple[int, ...] = (1, 3, 7, 14)
 
 Visibility = Literal["anyone", "connections"]
 VISIBILITIES: tuple[str, ...] = ("anyone", "connections")
@@ -87,6 +93,15 @@ class PostAttachment:
 
 
 @dataclass(frozen=True)
+class PollSpec:
+    """A validated poll: question, 2-4 options and a duration in days."""
+
+    question: str
+    options: tuple[str, ...]
+    duration_days: int
+
+
+@dataclass(frozen=True)
 class PostRequest:
     """A validated post, ready for the composer."""
 
@@ -97,6 +112,7 @@ class PostRequest:
     document: PostAttachment | None = None
     document_title: str | None = None
     post_as: MentionTarget | None = None
+    poll: PollSpec | None = None
 
     @property
     def rendered_text(self) -> str:
@@ -267,6 +283,7 @@ def build_post_request(
     now: datetime | None = None,
     attachments_pending: bool = False,
     post_as: str | None = None,
+    poll: PollSpec | None = None,
 ) -> PostRequest:
     """Validate everything about a post that can be checked without a browser."""
     if visibility not in VISIBILITIES:
@@ -280,7 +297,11 @@ def build_post_request(
         )
     segments = parse_post_text(text)
     rendered = render_segments(segments)
-    has_attachments = attachments_pending or bool(images) or document is not None
+    has_attachments = (
+        attachments_pending or bool(images) or document is not None or poll is not None
+    )
+    if poll is not None and (images or document is not None or attachments_pending):
+        raise PostValidationError("A poll post cannot also carry attachments.")
     if not rendered.strip() and not has_attachments:
         raise PostValidationError("A post needs text or an attachment.")
     if utf16_length(rendered) > LINKEDIN_POST_CHARACTER_LIMIT:
@@ -307,7 +328,54 @@ def build_post_request(
         document=document,
         document_title=" ".join((document_title or "").split()) or None,
         post_as=actor,
+        poll=poll,
     )
+
+
+def _single_line(value: Any, field: str) -> str:
+    if not isinstance(value, str):
+        raise PostValidationError(f"{field} must be text.")
+    text = " ".join(value.split())
+    if any(ord(c) < 32 or ord(c) == 127 for c in value.replace("\n", " ")):
+        raise PostValidationError(f"{field} must not contain control characters.")
+    if not text:
+        raise PostValidationError(f"{field} must not be blank.")
+    return text
+
+
+def build_poll(question: str, options: Any, duration_days: Any) -> PollSpec:
+    """Validate a poll against LinkedIn's form limits without a browser."""
+    question = _single_line(question, "question")
+    if utf16_length(question) > POLL_QUESTION_LIMIT:
+        raise PostValidationError(
+            f"The poll question is {utf16_length(question)} characters; LinkedIn "
+            f"allows {POLL_QUESTION_LIMIT}."
+        )
+    if not isinstance(options, (list, tuple)) or not (
+        POLL_MIN_OPTIONS <= len(options) <= POLL_MAX_OPTIONS
+    ):
+        raise PostValidationError(
+            f"A poll needs {POLL_MIN_OPTIONS} to {POLL_MAX_OPTIONS} options."
+        )
+    cleaned = tuple(
+        _single_line(option, f"options[{index}]")
+        for index, option in enumerate(options)
+    )
+    for index, option in enumerate(cleaned):
+        if utf16_length(option) > POLL_OPTION_LIMIT:
+            raise PostValidationError(
+                f"options[{index}] is {utf16_length(option)} characters; LinkedIn "
+                f"allows {POLL_OPTION_LIMIT}."
+            )
+    if len({option.casefold() for option in cleaned}) != len(cleaned):
+        raise PostValidationError("Poll options must be distinct.")
+    if isinstance(duration_days, bool) or duration_days not in POLL_DURATIONS_DAYS:
+        raise PostValidationError(
+            "duration_days must be one of "
+            + ", ".join(str(days) for days in POLL_DURATIONS_DAYS)
+            + "."
+        )
+    return PollSpec(question, cleaned, int(duration_days))
 
 
 def parse_post_as(value: str) -> MentionTarget:
@@ -437,6 +505,18 @@ def post_preview(request: PostRequest) -> dict[str, Any]:
             else None
         ),
         "schedule": schedule_summary(request.schedule_at),
+        "poll": (
+            {
+                "question": request.poll.question,
+                "question_characters": utf16_length(request.poll.question),
+                "question_limit": POLL_QUESTION_LIMIT,
+                "options": list(request.poll.options),
+                "option_limit": POLL_OPTION_LIMIT,
+                "duration_days": request.poll.duration_days,
+            }
+            if request.poll is not None
+            else None
+        ),
         "post_as": (
             {
                 "kind": "company",

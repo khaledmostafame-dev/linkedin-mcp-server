@@ -47,6 +47,7 @@ async def test_write_and_read_annotations_follow_the_shared_contract():
         "edit_scheduled_post",
         "delete_post",
         "edit_post",
+        "create_poll",
     ):
         annotations = tools[name].annotations
         assert annotations is not None
@@ -203,3 +204,61 @@ async def test_edit_post_warns_about_distribution():
     tool = await mcp.get_tool("edit_post")
     assert tool is not None
     assert "re-evaluates a post's distribution" in (tool.description or "")
+
+
+async def test_poll_preview_is_browser_free(mock_context):
+    create_poll = await _tool("create_poll")
+    with patch(
+        "linkedin_mcp_server.tools.posting.get_ready_extractor", new=AsyncMock()
+    ) as ready:
+        result = await create_poll(
+            "Best format?", ["Carousel", "Video"], 7, False, mock_context
+        )
+    ready.assert_not_awaited()
+    assert result["status"] == "preview"
+    assert result["poll"]["options"] == ["Carousel", "Video"]
+
+
+async def test_poll_limits_are_refused_before_a_browser(mock_context):
+    create_poll = await _tool("create_poll")
+    with patch(
+        "linkedin_mcp_server.tools.posting.get_ready_extractor", new=AsyncMock()
+    ) as ready:
+        with pytest.raises(ToolError, match="140"):
+            await create_poll("q" * 141, ["Yes", "No"], 7, True, mock_context)
+    ready.assert_not_awaited()
+
+
+async def test_confirmed_poll_goes_to_the_poll_delegate(mock_context):
+    extractor = MagicMock()
+    extractor.create_poll = AsyncMock(
+        return_value={"status": "published", "retry_safe": False}
+    )
+    create_poll = await _tool("create_poll")
+
+    await create_poll(
+        "Best format?",
+        ["Carousel", "Video"],
+        3,
+        True,
+        mock_context,
+        post_as="12345",
+        extractor=extractor,
+    )
+
+    call = extractor.create_poll.await_args
+    assert call is not None
+    request = call.args[0]
+    assert request.poll.duration_days == 3
+    assert request.post_as.key == "company:urn:12345"
+
+
+async def test_poll_schema_carries_the_limits():
+    mcp = FastMCP("test")
+    register_posting_tools(mcp)
+    tool = await mcp.get_tool("create_poll")
+    assert tool is not None
+    properties = tool.parameters["properties"]
+    assert properties["duration_days"]["enum"] == [1, 3, 7, 14]
+    assert properties["options"]["minItems"] == 2
+    assert properties["options"]["maxItems"] == 4

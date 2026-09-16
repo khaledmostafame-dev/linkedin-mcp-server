@@ -43,6 +43,7 @@ from .support.policy_trace import ScriptedPage, TraceRecorder
 TOOL_DELEGATES = {
     "comment_on_post": "comment_on_post",
     "connect_with_person": "connect_with_person",
+    "create_poll": "create_poll",
     "create_post": "create_post",
     "delete_post": "delete_post",
     "delete_scheduled_post": "delete_scheduled_post",
@@ -153,9 +154,9 @@ async def test_registered_tools_and_extractor_delegates_are_counted_separately()
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 48
+    assert len(tool_names) == 49
     assert tool_names == {*TOOL_DELEGATES, "close_session", "get_pacing_status"}
-    assert len(TOOL_DELEGATES) == 46
+    assert len(TOOL_DELEGATES) == 47
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
     assert "get_pacing_status" not in TOOL_DELEGATES
@@ -532,7 +533,7 @@ def test_facade_methods_are_exactly_the_frozen_coroutine_surface():
     }
 
     assert actual == expected
-    assert len(TOOL_FACADE_METHODS) == 44
+    assert len(TOOL_FACADE_METHODS) == 45
     assert len(COMPATIBILITY_METHODS) == 2
 
 

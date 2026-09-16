@@ -18,7 +18,7 @@ work, health checks, or background maintenance.
 - Never enable the plugin or its MCP server, edit Codex configuration, or start
   a login flow merely because LinkedIn might be useful. If either component is
   disabled, explain that state and stop.
-- `send_message`, `connect_with_person`, the comment writes, `create_post`,
+- `send_message`, `connect_with_person`, the comment writes, `create_post`, `create_poll`,
   `edit_scheduled_post`, `delete_scheduled_post`, `edit_post`, `delete_post`,
   `follow`, `withdraw_invitation` and `respond_to_invitation` are write
   actions. Each requires `confirm` (`confirm_send` for `send_message`). Use them only when the user
@@ -51,7 +51,7 @@ instances, clear profiles, or replace the user's browser session.
   `get_profile_analytics`, and `get_company_page_analytics` (pages they
   administer).
 - Messages: `get_inbox`, `get_conversation`, and `search_conversations`.
-- Posting: `get_scheduled_posts` (read); `create_post`,
+- Posting: `get_scheduled_posts` (read); `create_post`, `create_poll`,
   `edit_scheduled_post`, `delete_scheduled_post`, `edit_post` and
   `delete_post` (writes).
 - Network: `list_connections`, `get_mutual_connections`, `get_invitations`,

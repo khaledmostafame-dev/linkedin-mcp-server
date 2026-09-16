@@ -488,3 +488,7 @@ class LinkedInExtractor:
     ) -> dict[str, Any]:
         """Read the admin analytics of a company page the member administers."""
         return await self._analytics.get_company_page_analytics(company, sections)
+
+    async def create_poll(self, request: PostRequest) -> dict[str, Any]:
+        """Publish or schedule a validated poll through the share composer."""
+        return await self._post_composer.create_poll(request)

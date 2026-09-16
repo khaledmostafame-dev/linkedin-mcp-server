@@ -24,6 +24,10 @@
         "coroutine": true,
         "signature": "(self, username: 'str', *, note: 'str | None' = None) -> 'dict[str, Any]'"
       },
+      "create_poll": {
+        "coroutine": true,
+        "signature": "(self, request: 'PostRequest') -> 'dict[str, Any]'"
+      },
       "create_post": {
         "coroutine": true,
         "signature": "(self, request: 'PostRequest') -> 'dict[str, Any]'"
@@ -200,6 +204,7 @@
     "tool_methods": [
       "comment_on_post",
       "connect_with_person",
+      "create_poll",
       "create_post",
       "delete_post",
       "delete_scheduled_post",
@@ -311,6 +316,80 @@
           },
           "required": [
             "linkedin_username",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "create_poll": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False returns a preview; True publishes or schedules.",
+              "type": "boolean"
+            },
+            "duration_days": {
+              "description": "How long the poll runs: 1, 3, 7 or 14.",
+              "enum": [
+                1,
+                3,
+                7,
+                14
+              ],
+              "type": "integer"
+            },
+            "options": {
+              "description": "2 to 4 answer options.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 4,
+              "minItems": 2,
+              "type": "array"
+            },
+            "post_as": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional company page to post as (URL, numeric id or URN)."
+            },
+            "question": {
+              "description": "The poll question.",
+              "type": "string"
+            },
+            "schedule_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional ISO 8601 date-time with an explicit offset."
+            },
+            "text": {
+              "default": "",
+              "description": "Optional post text shown above the poll.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "question",
+            "options",
+            "duration_days",
             "confirm"
           ],
           "type": "object"
