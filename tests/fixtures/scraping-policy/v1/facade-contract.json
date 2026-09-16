@@ -52,6 +52,10 @@
         "coroutine": true,
         "signature": "(self, url: 'str', section_name: 'str', max_scrolls: 'int | None' = None) -> 'ExtractedSection'"
       },
+      "follow": {
+        "coroutine": true,
+        "signature": "(self, target_url: 'str', *, confirm: 'bool', unfollow: 'bool' = False) -> 'dict[str, Any]'"
+      },
       "get_company_employees": {
         "coroutine": true,
         "signature": "(self, company_name: 'str', keywords: 'str | None' = None) -> 'dict[str, Any]'"
@@ -60,9 +64,25 @@
         "coroutine": true,
         "signature": "(self, linkedin_username: 'str | None' = None, thread_id: 'str | None' = None, index: 'int' = 0) -> 'dict[str, Any]'"
       },
+      "get_group_members": {
+        "coroutine": true,
+        "signature": "(self, group_id: 'str', max_members: 'int' = 50, keywords: 'str | None' = None) -> 'dict[str, Any]'"
+      },
+      "get_group_posts": {
+        "coroutine": true,
+        "signature": "(self, group_id: 'str', max_posts: 'int' = 20) -> 'dict[str, Any]'"
+      },
       "get_inbox": {
         "coroutine": true,
         "signature": "(self, limit: 'int' = 20) -> 'dict[str, Any]'"
+      },
+      "get_invitations": {
+        "coroutine": true,
+        "signature": "(self, direction: \"Literal['received', 'sent']\" = 'received', max_results: 'int' = 50) -> 'dict[str, Any]'"
+      },
+      "get_mutual_connections": {
+        "coroutine": true,
+        "signature": "(self, linkedin_username: 'str', max_results: 'int' = 50) -> 'dict[str, Any]'"
       },
       "get_my_profile": {
         "coroutine": true,
@@ -88,6 +108,10 @@
         "coroutine": true,
         "signature": "(self, username: 'str') -> 'dict[str, Any]'"
       },
+      "list_connections": {
+        "coroutine": true,
+        "signature": "(self, max_results: 'int' = 100, sort: \"Literal['recently_added', 'first_name', 'last_name']\" = 'recently_added') -> 'dict[str, Any]'"
+      },
       "react_to_comment": {
         "coroutine": true,
         "signature": "(self, post_url: 'str', comment_urn: 'str', reaction: 'str' = 'like', *, confirm: 'bool') -> 'dict[str, Any]'"
@@ -95,6 +119,10 @@
       "reply_to_comment": {
         "coroutine": true,
         "signature": "(self, post_url: 'str', comment_urn: 'str', text: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "respond_to_invitation": {
+        "coroutine": true,
+        "signature": "(self, linkedin_username: 'str', *, action: \"Literal['accept', 'ignore']\", confirm: 'bool') -> 'dict[str, Any]'"
       },
       "scrape_company": {
         "coroutine": true,
@@ -116,6 +144,10 @@
         "coroutine": true,
         "signature": "(self, keywords: 'str', limit: 'int' = 20) -> 'dict[str, Any]'"
       },
+      "search_groups": {
+        "coroutine": true,
+        "signature": "(self, keywords: 'str') -> 'dict[str, Any]'"
+      },
       "search_jobs": {
         "coroutine": true,
         "signature": "(self, keywords: 'str', location: 'str | None' = None, max_pages: 'int' = 3, date_posted: 'str | None' = None, job_type: 'str | None' = None, experience_level: 'str | None' = None, work_type: 'str | None' = None, easy_apply: 'bool' = False, sort_by: 'str | None' = None, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'"
@@ -131,6 +163,10 @@
       "send_message": {
         "coroutine": true,
         "signature": "(self, linkedin_username: 'str', message: 'str', *, confirm_send: 'bool', profile_urn: 'str | None' = None) -> 'dict[str, Any]'"
+      },
+      "withdraw_invitation": {
+        "coroutine": true,
+        "signature": "(self, linkedin_username: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
       }
     },
     "tool_methods": [
@@ -143,25 +179,34 @@
       "edit_scheduled_post",
       "extract_feed",
       "extract_page",
+      "follow",
       "get_company_employees",
       "get_conversation",
+      "get_group_members",
+      "get_group_posts",
       "get_inbox",
+      "get_invitations",
+      "get_mutual_connections",
       "get_my_profile",
       "get_post_comments",
       "get_saved_jobs",
       "get_scheduled_posts",
       "get_sidebar_profiles",
+      "list_connections",
       "react_to_comment",
       "reply_to_comment",
+      "respond_to_invitation",
       "scrape_company",
       "scrape_job",
       "scrape_person",
       "search_companies",
       "search_conversations",
+      "search_groups",
       "search_jobs",
       "search_people",
       "search_posts",
-      "send_message"
+      "send_message",
+      "withdraw_invitation"
     ],
     "tool_schemas": {
       "close_session": {
@@ -556,6 +601,35 @@
           "type": "object"
         }
       },
+      "follow": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to act. False returns a preview with no\nbrowser interaction and no state change.",
+              "type": "boolean"
+            },
+            "target_url": {
+              "description": "A LinkedIn person profile or company page URL/slug\n(e.g. \"https://www.linkedin.com/company/anthropic/\" or\n\"stickerdaniel\"). A bare slug is treated as a person.",
+              "type": "string"
+            },
+            "unfollow": {
+              "default": false,
+              "description": "Set True to request unfollowing instead of following.\nThe click is the same toggle either way; this only affects\nthe returned message and the ``requested`` field.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "target_url",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_company_employees": {
         "input": {
           "additionalProperties": false,
@@ -698,6 +772,70 @@
           "type": "object"
         }
       },
+      "get_group_members": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "group_id": {
+              "description": "Numeric LinkedIn group id, or a group URL",
+              "type": "string"
+            },
+            "keywords": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional server-side member filter (name, headline\nterm) applied via the page's member search box"
+            },
+            "max_members": {
+              "default": 50,
+              "description": "Approximate cap on how many members to load via\nbounded scrolling (1-500, default 50)",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "group_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_group_posts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "group_id": {
+              "description": "Numeric LinkedIn group id, or a group URL",
+              "type": "string"
+            },
+            "max_posts": {
+              "default": 20,
+              "description": "Approximate cap on how many posts to load via bounded\nscrolling (1-100, default 20)",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "group_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_inbox": {
         "input": {
           "additionalProperties": false,
@@ -706,6 +844,34 @@
               "default": 20,
               "description": "Maximum number of conversations to load (1-50, default 20)",
               "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_invitations": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "default": "received",
+              "description": "\"received\" (default) or \"sent\"",
+              "enum": [
+                "received",
+                "sent"
+              ],
+              "type": "string"
+            },
+            "max_results": {
+              "default": 50,
+              "description": "Approximate cap on how many invitations to load via\nbounded scrolling (1-200, default 50).",
+              "maximum": 200,
               "minimum": 1,
               "type": "integer"
             }
@@ -728,6 +894,32 @@
           },
           "required": [
             "job_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "get_mutual_connections": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "linkedin_username": {
+              "description": "LinkedIn username of the other profile (e.g. \"stickerdaniel\"). A full profile URL is accepted too.",
+              "type": "string"
+            },
+            "max_results": {
+              "default": 50,
+              "description": "Approximate cap on how many shared connections to\nload via bounded scrolling (1-200, default 50). LinkedIn's\nown page size varies, so this bounds effort more than it\nguarantees an exact count.",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "linkedin_username"
           ],
           "type": "object"
         },
@@ -919,6 +1111,35 @@
           "type": "object"
         }
       },
+      "list_connections": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "max_results": {
+              "default": 100,
+              "description": "Approximate cap on how many connections to load via\nbounded scrolling (1-500, default 100).",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "sort": {
+              "default": "recently_added",
+              "description": "\"recently_added\" (default), \"first_name\", or \"last_name\".",
+              "enum": [
+                "recently_added",
+                "first_name",
+                "last_name"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "react_to_comment": {
         "input": {
           "additionalProperties": false,
@@ -988,6 +1209,39 @@
           "type": "object"
         }
       },
+      "respond_to_invitation": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "description": "\"accept\" or \"ignore\"",
+              "enum": [
+                "accept",
+                "ignore"
+              ],
+              "type": "string"
+            },
+            "confirm": {
+              "description": "Must be True to act. False returns a preview with no\nbrowser interaction and no state change.",
+              "type": "boolean"
+            },
+            "linkedin_username": {
+              "description": "LinkedIn username of the invitation sender. A full profile URL is accepted too.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "linkedin_username",
+            "action",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "search_companies": {
         "input": {
           "additionalProperties": false,
@@ -1021,6 +1275,25 @@
               "maximum": 50,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          "required": [
+            "keywords"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "search_groups": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "keywords": {
+              "description": "Search keywords (e.g., \"automation anywhere\", \"RPA UAE\")",
+              "type": "string"
             }
           },
           "required": [
@@ -1265,6 +1538,30 @@
             "linkedin_username",
             "message",
             "confirm_send"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "withdraw_invitation": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to withdraw. False returns a preview with\nno browser interaction and no state change.",
+              "type": "boolean"
+            },
+            "linkedin_username": {
+              "description": "LinkedIn username of the invitation recipient. A full profile URL is accepted too.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "linkedin_username",
+            "confirm"
           ],
           "type": "object"
         },

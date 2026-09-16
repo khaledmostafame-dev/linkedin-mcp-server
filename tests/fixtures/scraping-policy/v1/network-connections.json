@@ -1,0 +1,115 @@
+{
+  "call": {
+    "arguments": {
+      "max_results": 20,
+      "sort": "first_name"
+    },
+    "method": "list_connections"
+  },
+  "events": [
+    {
+      "call": "list_connections",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "list_connections",
+      "extra": {
+        "target_url": "https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=FIRST_NAME",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "list_connections",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=FIRST_NAME",
+      "requested_url": "https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=FIRST_NAME",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "list_connections",
+      "description": "goto https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=FIRST_NAME",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "list_connections",
+      "extra": {
+        "target_url": "https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=FIRST_NAME",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "list_connections",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "list_connections",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "list_connections",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "list_connections",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "list_connections",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "arg": null,
+      "call": "list_connections",
+      "kind": "wait_for_function",
+      "operation": "company_people_ready",
+      "program_digest": "6615c14bd135",
+      "timeout_ms": 5000
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "list_connections",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 2,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "list_connections",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "e8a0e21ac6f5"
+    }
+  ],
+  "result": {
+    "section_names": [
+      "connections"
+    ],
+    "sections": {
+      "connections": "Listing content"
+    },
+    "stopped_reason": "end_of_results",
+    "url": "https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=FIRST_NAME"
+  },
+  "scenario": "list_connections__baseline",
+  "schema_version": 1
+}

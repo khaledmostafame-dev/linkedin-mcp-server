@@ -49,9 +49,11 @@ from linkedin_mcp_server.core.exceptions import InvalidReferenceError
 
 __all__ = [
     "company_page_url",
+    "group_page_url",
     "job_view_url",
     "messaging_thread_url",
     "normalize_company_identifier",
+    "normalize_group_id",
     "normalize_job_id",
     "normalize_opaque_id",
     "normalize_person_identifier",
@@ -132,6 +134,7 @@ _ORGANIZATION_ROUTES = {"company"}
 # instructions. Refusing it would refuse this server's own output.
 _JOB_ROUTE = ("jobs", "view")
 _THREAD_ROUTE = ("messaging", "thread")
+_GROUP_ROUTE = ("groups",)
 
 # A LinkedIn job id is the number in /jobs/view/<id>. Everything that produces
 # one here extracts ``\d+``, and anything else navigates to a 404 that costs a
@@ -529,3 +532,15 @@ def normalize_post_urn(value: str) -> str:
 def post_update_url(post_urn: str) -> str:
     """Post detail URL for an already-normalized post URN."""
     return f"https://www.linkedin.com/feed/update/{quote(post_urn, safe=':')}/"
+
+
+def normalize_group_id(value: str) -> str:
+    """The numeric id for a LinkedIn group, from the id or from a reference to it."""
+    return normalize_opaque_id(
+        value, field="group_id", route=_GROUP_ROUTE, numeric=True
+    )
+
+
+def group_page_url(group_id: str, suffix: str = "") -> str:
+    """Group URL for an already-normalized numeric id, escaped as one segment."""
+    return f"https://www.linkedin.com/groups/{quote(group_id, safe='')}{suffix}"

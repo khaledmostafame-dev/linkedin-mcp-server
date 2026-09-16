@@ -965,6 +965,23 @@ class TestClassifyLink:
         )
         assert result == ("conversation", "/messaging/thread/2-abc123/")
 
+    def test_group_url(self):
+        assert classify_link("https://www.linkedin.com/groups/12345/") == (
+            "group",
+            "/groups/12345/",
+        )
+
+    def test_group_url_with_subpath_keeps_the_numeric_id(self):
+        assert classify_link("https://www.linkedin.com/groups/12345/members/") == (
+            "group",
+            "/groups/12345/",
+        )
+
+    def test_a_non_numeric_groups_path_is_not_a_group_link(self):
+        """/groups/ is also LinkedIn's own nav chrome path in some contexts;
+        only a numeric id after it is a real group reference."""
+        assert classify_link("https://www.linkedin.com/groups/discover/") is None
+
     def test_inbox_references_include_threads(self):
         references = build_references(
             [

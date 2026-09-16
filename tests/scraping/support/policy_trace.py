@@ -600,6 +600,7 @@ def semantic_program_id(program: str) -> str:
         ("SIDEBAR_SECTIONS", "sidebar_profiles"),
         ("showAllUrls", "sidebar_profiles"),
         ("hasInvite", "connection_action_signals"),
+        ("facetConnectionOf", "mutual_connections_link"),
         ("expanded === 'false'", "open_more_button"),
         ("hasIncomingActionRow", "incoming_accept"),
         ("status === 'resolved'", "profile_message_target_ready"),

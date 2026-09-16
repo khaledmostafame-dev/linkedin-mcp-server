@@ -160,6 +160,42 @@
       "description": "Delete the authenticated user's own published LinkedIn post after verifying authorship, with explicit confirmation"
     },
     {
+      "name": "get_mutual_connections",
+      "description": "List LinkedIn connections shared between the authenticated user and another profile, reached via the profile's own shared-connections search link"
+    },
+    {
+      "name": "list_connections",
+      "description": "List the authenticated user's 1st-degree connections, sorted by recently-added, first name, or last name"
+    },
+    {
+      "name": "get_invitations",
+      "description": "List outgoing or incoming LinkedIn connection-request invitations"
+    },
+    {
+      "name": "withdraw_invitation",
+      "description": "Withdraw a previously-sent, still-pending connection request, identified by profile URL"
+    },
+    {
+      "name": "respond_to_invitation",
+      "description": "Accept or ignore an incoming connection request, identified by profile URL"
+    },
+    {
+      "name": "follow",
+      "description": "Follow or unfollow a LinkedIn person or company page"
+    },
+    {
+      "name": "search_groups",
+      "description": "Search for LinkedIn groups by keyword"
+    },
+    {
+      "name": "get_group_posts",
+      "description": "List recent posts from a LinkedIn group's home feed"
+    },
+    {
+      "name": "get_group_members",
+      "description": "List members of a LinkedIn group from its /members/ page; the full list requires the authenticated account to be a member of the group"
+    },
+    {
       "name": "close_session",
       "description": "Properly close browser session and clean up resources"
     },

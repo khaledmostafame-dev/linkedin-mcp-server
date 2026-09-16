@@ -20,7 +20,7 @@ a page-owning collaborator.
 | `comments` | `COMMENT_INTERRUPTED_WARNING`, `COMMENT_MAX_LENGTH`, `CommentReference`, `CommentScraper`, `CommentSort`, `CommentUrn`, `MAX_COMMENTS_LIMIT`, `build_comment_references()`, `comment_action_result()`, `comment_permalink()`, `normalize_comment_text()`, `normalize_comment_urn()`, `parse_comment_urn()`, `posted_at_from_id()`, `prepare_comment_reaction()`, `prepare_comment_write()` | `browser-free` |
 | `company` | `CompanyScraper` | `browser-free` |
 | `connection` | `ActionSignals`, `ConnectionState`, `detect_connection_state()` | `browser-free` |
-| `connection_actions` | `ACTION_SIGNALS_JS`, `CLICK_INCOMING_ACCEPT_JS`, `ConnectionActions`, `OPEN_MORE_BUTTON_JS`, `ReadMainProfile` | `page-owning` |
+| `connection_actions` | `ACTION_SIGNALS_JS`, `CLICK_INCOMING_ACCEPT_JS`, `CLICK_INCOMING_IGNORE_JS`, `CLICK_PENDING_ANCHOR_JS`, `ConnectionActions`, `OPEN_MORE_BUTTON_JS`, `ReadMainProfile` | `page-owning` |
 | `content` | `PageContentReader` | `page-owning` |
 | `contracts` | `ExtractedSection`, `FilterValidationError`, `RATE_LIMITED_SECTION_TEXT`, `SEND_INTERRUPTED_WARNING`, `message_action_result()`, `rate_limited_section_error()`, `refuse_an_invalid_message()` | `browser-free` |
 | `conversations` | `ConversationReader`, `strip_select_conversation_prefix()` | `page-owning` |
@@ -28,19 +28,21 @@ a page-owning collaborator.
 | `feed` | `FeedScraper` | `page-owning` |
 | `feed_payload` | `POST_SLUG_URL_RE`, `build_feed_references()`, `is_feed_payload_response()` | `browser-free` |
 | `fields` | `COMPANY_SECTIONS`, `PERSON_SECTIONS`, `parse_company_sections()`, `parse_person_sections()` | `browser-free` |
-| `identifiers` | `company_page_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_post_urn()`, `normalize_thread_id()`, `person_profile_url()`, `post_update_url()` | `browser-free` |
+| `group` | `GroupScraper` | `page-owning` |
+| `identifiers` | `company_page_url()`, `group_page_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_group_id()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_post_urn()`, `normalize_thread_id()`, `person_profile_url()`, `post_update_url()` | `browser-free` |
 | `job_pages` | `JOB_IDS_JS`, `JobPageCapture`, `JobPageReader`, `parse_total_from_page_state_text()` | `page-owning` |
 | `job_policy` | `JOB_SEARCH_PATHS`, `RESULTS_PER_LINKEDIN_PAGE`, `SAVED_JOBS_PAGE_SIZE`, `SAVED_JOBS_PATHS`, `SAVED_JOBS_URL`, `SCROLL_BUDGET_TOTAL`, `SCROLL_DEADLINE_MAX`, `SEARCH_TIMEOUT_FRACTION`, `dropped_filters_section_error()`, `dropped_offset_section_error()`, `lost_keywords_section_error()`, `reconcile_search_references()`, `route()`, `same_job_search()` | `browser-free` |
 | `jobs` | `JobScraper` | `browser-free` |
 | `link_metadata` | `JOB_PATH_RE`, `RawReference`, `Reference`, `ReferenceKind`, `build_references()`, `choose_reference_text()`, `classify_link()`, `clean_heading()`, `clean_label()`, `dedupe_references()`, `derive_context()`, `normalize_reference()`, `normalize_url()` | `browser-free` |
 | `message_sender` | `MessageSender` | `page-owning` |
 | `navigation` | `PageNavigator`, `WaitUntil` | `page-owning` |
+| `network` | `ConnectionSort`, `InvitationDirection`, `NetworkScraper` | `page-owning` |
 | `person` | `PersonScraper` | `page-owning` |
 | `post_composer` | `FEED_URL`, `PostComposer`, `SHARE_URL`, `collapse_whitespace()`, `evidence_keys()`, `evidence_matches()`, `post_result()`, `scheduled_identifier()` | `page-owning` |
 | `post_content` | `LINKEDIN_POST_CHARACTER_LIMIT`, `MentionKind`, `MentionSegment`, `MentionTarget`, `PostAttachment`, `PostEdit`, `PostRequest`, `PostValidationError`, `SCHEDULE_MAX_AHEAD`, `SCHEDULE_MIN_LEAD`, `TextSegment`, `VISIBILITIES`, `Visibility`, `attachment_summary()`, `build_post_edit()`, `build_post_request()`, `date_matches()`, `format_schedule_date()`, `format_schedule_time()`, `identity_key_from_url()`, `identity_key_from_urn()`, `normalize_text()`, `parse_mention_target()`, `parse_post_as()`, `parse_post_text()`, `parse_post_url()`, `parse_schedule_at()`, `post_preview()`, `render_segments()`, `resolve_date_order()`, `schedule_summary()`, `time_matches()`, `utf16_length()` | `browser-free` |
 | `posts` | `PostSearch` | `browser-free` |
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `page-owning` |
-| `search_urls` | `CONTENT_DATE_POSTED_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
+| `search_urls` | `CONTENT_DATE_POSTED_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_group_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
 | `session` | `NAV_DELAY`, `ScrapingSession` | `page-owning` |
 | `text` | `DETAIL_CAPTURE_EN_US`, `DetailCaptureTextTable`, `SIDEBAR_CHROME_EN`, `SidebarChromeTable`, `filter_linkedin_noise_lines()`, `normalize_localized_digits()`, `strip_conversation_chrome()`, `strip_linkedin_noise()`, `truncate_linkedin_noise()` | `browser-free` |
 
@@ -55,10 +57,11 @@ a page-owning collaborator.
 - `content` -> `session`, `text`
 - `contracts` -> `identifiers`, `link_metadata`
 - `conversations` -> `content`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `session`, `text`
-- `extractor` -> `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `feed`, `job_pages`, `jobs`, `message_sender`, `navigation`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `session`, `text`
+- `extractor` -> `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `session`, `text`
 - `feed` -> `content`, `contracts`, `feed_payload`, `navigation`, `session`, `text`
 - `feed_payload` -> `link_metadata`
 - `fields` -> `capture`
+- `group` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `search_urls`, `session`
 - `identifiers` -> _(none)_
 - `job_pages` -> `capture`, `content`, `contracts`, `job_policy`, `link_metadata`, `navigation`, `session`, `text`
 - `job_policy` -> `link_metadata`
@@ -66,6 +69,7 @@ a page-owning collaborator.
 - `link_metadata` -> _(none)_
 - `message_sender` -> `contracts`, `identifiers`, `navigation`, `session`
 - `navigation` -> `session`
+- `network` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `session`
 - `person` -> `capture`, `contracts`, `fields`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `search_urls`, `session`, `text`
 - `post_composer` -> `navigation`, `post_content`, `session`
 - `post_content` -> _(none)_
@@ -87,26 +91,35 @@ a page-owning collaborator.
 - `edit_scheduled_post`
 - `extract_feed`
 - `extract_page`
+- `follow`
 - `get_company_employees`
 - `get_conversation`
+- `get_group_members`
+- `get_group_posts`
 - `get_inbox`
+- `get_invitations`
+- `get_mutual_connections`
 - `get_my_profile`
 - `get_page_text`
 - `get_post_comments`
 - `get_saved_jobs`
 - `get_scheduled_posts`
 - `get_sidebar_profiles`
+- `list_connections`
 - `react_to_comment`
 - `reply_to_comment`
+- `respond_to_invitation`
 - `scrape_company`
 - `scrape_job`
 - `scrape_person`
 - `search_companies`
 - `search_conversations`
+- `search_groups`
 - `search_jobs`
 - `search_people`
 - `search_posts`
 - `send_message`
+- `withdraw_invitation`
 
 ## `LinkedInExtractor` construction-state allowlist
 
@@ -117,8 +130,10 @@ a page-owning collaborator.
 - `_content`
 - `_conversations`
 - `_feed`
+- `_group`
 - `_jobs`
 - `_message_sender`
+- `_network`
 - `_person`
 - `_post_composer`
 - `_posts`

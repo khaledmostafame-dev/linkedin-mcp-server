@@ -48,27 +48,36 @@ TOOL_DELEGATES = {
     "delete_scheduled_post": "delete_scheduled_post",
     "edit_post": "edit_post",
     "edit_scheduled_post": "edit_scheduled_post",
+    "follow": "follow",
     "get_company_employees": "get_company_employees",
     "get_company_posts": "extract_page",
     "get_company_profile": "scrape_company",
     "get_conversation": "get_conversation",
     "get_feed": "extract_feed",
+    "get_group_members": "get_group_members",
+    "get_group_posts": "get_group_posts",
     "get_inbox": "get_inbox",
+    "get_invitations": "get_invitations",
     "get_job_details": "scrape_job",
+    "get_mutual_connections": "get_mutual_connections",
     "get_my_profile": "get_my_profile",
     "get_person_profile": "scrape_person",
     "get_post_comments": "get_post_comments",
     "get_saved_jobs": "get_saved_jobs",
     "get_scheduled_posts": "get_scheduled_posts",
     "get_sidebar_profiles": "get_sidebar_profiles",
+    "list_connections": "list_connections",
     "react_to_comment": "react_to_comment",
     "reply_to_comment": "reply_to_comment",
+    "respond_to_invitation": "respond_to_invitation",
     "search_companies": "search_companies",
     "search_conversations": "search_conversations",
+    "search_groups": "search_groups",
     "search_jobs": "search_jobs",
     "search_people": "search_people",
     "search_posts": "search_posts",
     "send_message": "send_message",
+    "withdraw_invitation": "withdraw_invitation",
 }
 
 
@@ -104,8 +113,10 @@ async def test_constructor_export_and_dependency_use_the_same_facade(monkeypatch
         "_content",
         "_conversations",
         "_feed",
+        "_group",
         "_jobs",
         "_message_sender",
+        "_network",
         "_person",
         "_post_composer",
         "_posts",
@@ -131,9 +142,9 @@ async def test_registered_tools_and_extractor_delegates_are_counted_separately()
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 30
+    assert len(tool_names) == 39
     assert tool_names == {*TOOL_DELEGATES, "close_session", "get_pacing_status"}
-    assert len(TOOL_DELEGATES) == 28
+    assert len(TOOL_DELEGATES) == 37
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
     assert "get_pacing_status" not in TOOL_DELEGATES
@@ -510,7 +521,7 @@ def test_facade_methods_are_exactly_the_frozen_coroutine_surface():
     }
 
     assert actual == expected
-    assert len(TOOL_FACADE_METHODS) == 28
+    assert len(TOOL_FACADE_METHODS) == 37
     assert len(COMPATIBILITY_METHODS) == 2
 
 

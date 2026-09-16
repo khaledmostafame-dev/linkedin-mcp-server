@@ -1117,6 +1117,99 @@ async def _own_post_unresolved_member_scenario(method: str) -> dict[str, Any]:
     )
 
 
+_NETWORK_PROFILE = "ada-lovelace"
+_NETWORK_GROUP = "1234567"
+
+
+async def _network_preview_scenario(method: str) -> dict[str, Any]:
+    """Network writes answer ``confirm=False`` before the page is touched.
+
+    Follow, withdraw and respond each return a preview built from the
+    normalized target alone, and the trace proves it: no page operation is
+    recorded, so a preview can never change anything on LinkedIn.
+    """
+    recorder = TraceRecorder(f"{method}__preview", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "network"):
+            if method == "follow":
+                arguments = {
+                    "target_url": "https://www.linkedin.com/company/analytical-engine/",
+                    "confirm": False,
+                }
+                result = await extractor.follow(**arguments)
+            elif method == "withdraw_invitation":
+                arguments = {"linkedin_username": _NETWORK_PROFILE, "confirm": False}
+                result = await extractor.withdraw_invitation(**arguments)
+            elif method == "respond_to_invitation":
+                arguments = {
+                    "linkedin_username": _NETWORK_PROFILE,
+                    "action": "ignore",
+                    "confirm": False,
+                }
+                result = await extractor.respond_to_invitation(**arguments)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
+async def _network_capture_scenario(method: str) -> dict[str, Any]:
+    """Network and group listings are one bounded section capture each."""
+    recorder = TraceRecorder(f"{method}__baseline", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder).script("evaluate:root_content", _root("Listing content"))
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method):
+            if method == "list_connections":
+                arguments = {"max_results": 20, "sort": "first_name"}
+                result = await extractor.list_connections(**arguments)
+            elif method == "get_invitations":
+                arguments = {"direction": "sent", "max_results": 10}
+                result = await extractor.get_invitations(**arguments)
+            elif method == "search_groups":
+                arguments = {"keywords": "mathematics"}
+                result = await extractor.search_groups(**arguments)
+            elif method == "get_group_posts":
+                arguments = {"group_id": _NETWORK_GROUP, "max_posts": 10}
+                result = await extractor.get_group_posts(**arguments)
+            elif method == "get_group_members":
+                arguments = {"group_id": _NETWORK_GROUP, "max_members": 20}
+                result = await extractor.get_group_members(**arguments)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": method, "arguments": arguments},
+        _complete_mapping_result(result, section_names=list(result["sections"])),
+    )
+
+
+async def _mutual_connections_no_link_scenario() -> dict[str, Any]:
+    """Without the profile's shared-connections link nothing else is opened.
+
+    The member URN the people search needs is only reachable through that
+    anchor, so when the profile exposes none the call ends on the profile page
+    with an explicit stop reason instead of guessing a search URL.
+    """
+    method = "get_mutual_connections"
+    recorder = TraceRecorder(f"{method}__no_link", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder).script("evaluate:mutual_connections_link", None)
+    extractor = _extractor(page)
+    arguments = {"linkedin_username": _NETWORK_PROFILE, "max_results": 20}
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "mutual_connections"):
+            result = await extractor.get_mutual_connections(**arguments)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
 async def _facade_contract_trace() -> dict[str, Any]:
     global _TOOL_SCHEMAS
 
@@ -1160,25 +1253,34 @@ TOOL_FACADE_METHODS = {
     "edit_scheduled_post",
     "extract_feed",
     "extract_page",
+    "follow",
     "get_company_employees",
     "get_conversation",
+    "get_group_members",
+    "get_group_posts",
     "get_inbox",
+    "get_invitations",
+    "get_mutual_connections",
     "get_my_profile",
     "get_post_comments",
     "get_saved_jobs",
     "get_scheduled_posts",
     "get_sidebar_profiles",
+    "list_connections",
     "react_to_comment",
     "reply_to_comment",
+    "respond_to_invitation",
     "scrape_company",
     "scrape_job",
     "scrape_person",
     "search_companies",
     "search_conversations",
+    "search_groups",
     "search_jobs",
     "search_people",
     "search_posts",
     "send_message",
+    "withdraw_invitation",
 }
 COMPATIBILITY_METHODS = {"get_page_text", "click_button_by_text"}
 
@@ -1286,6 +1388,19 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         "post-edit-member-unresolved.json": (
             await _own_post_unresolved_member_scenario("edit_post")
         ),
+        "network-follow-preview.json": await _network_preview_scenario("follow"),
+        "network-withdraw-preview.json": await _network_preview_scenario(
+            "withdraw_invitation"
+        ),
+        "network-respond-preview.json": await _network_preview_scenario(
+            "respond_to_invitation"
+        ),
+        "network-connections.json": await _network_capture_scenario("list_connections"),
+        "network-invitations.json": await _network_capture_scenario("get_invitations"),
+        "network-mutual-no-link.json": await _mutual_connections_no_link_scenario(),
+        "group-search.json": await _network_capture_scenario("search_groups"),
+        "group-posts.json": await _network_capture_scenario("get_group_posts"),
+        "group-members.json": await _network_capture_scenario("get_group_members"),
     }
     return traces
 
