@@ -625,6 +625,58 @@ belongs behind something that provides it.
 <br/>
 
 
+<a id="non-english-linkedin-ui"></a>
+
+## 🌐 Non-English LinkedIn UI
+
+LinkedIn's display language is an **account** setting (Settings -> Account
+preferences -> Language), not a browser one — this server forces its browser
+context to `en-US`, but that only biases `Accept-Language`/`navigator.language`
+and does not override what a signed-in account has chosen. An account whose
+LinkedIn is set to a language other than English will see that language
+through this server exactly as it would through any other browser.
+
+**What works regardless of UI language:** the tools this project could verify
+depend only on URL patterns, DOM structure, and attribute presence, not on
+button or label text — connection-state detection (`connect_with_person`),
+message composition and sending (`send_message`), job-id and profile-url
+extraction, and every tool's raw-text section content
+(`{url, sections: {name: raw_text}}`, per `AGENTS.md`'s Tool Return Format —
+the text itself is returned as-is in whatever language LinkedIn rendered it,
+for the calling client to interpret). Job-search and saved-jobs pagination
+counts now also parse Arabic-Indic digits.
+
+**What's best-effort or degrades on a non-English UI**, with a documented
+fallback rather than a crash:
+
+- Popup/modal auto-dismiss (`handle_modal_close`) falls back to a
+  design-system CSS class when neither its English nor its Arabic
+  `aria-label` table matches; a locale outside those two may leave a modal
+  open.
+- A profile's optional sidebar recommendations
+  ("People you may know" / "More profiles for you") and the chrome LinkedIn
+  wraps around a conversation thread are matched on English section headings
+  and control text; on a non-English session, sidebar recommendations may
+  come back empty and a conversation's inbox/composer chrome may not be
+  stripped from its text.
+- A few short, well-known reference labels (e.g. anchors whose only text is
+  "Follow" or a section heading like "Experience") are recognized in English
+  and a best-effort Arabic transcription; any other language, or a
+  mistranscribed Arabic string, falls back to the label passing through
+  unfiltered rather than being cleaned up.
+
+None of the above breaks a tool call — every fallback is "return the text as
+LinkedIn rendered it" or "collect nothing for this optional extra", never an
+error. See [`docs/i18n-audit.md`](docs/i18n-audit.md) for the full file-by-file
+inventory, including what still needs a live non-English session to verify.
+
+**Workaround** if you want every fallback above to also match: switch the
+account's LinkedIn display language to English (Settings -> Account
+preferences -> Language) before using this server.
+
+<br/>
+<br/>
+
 <a id="using-a-proxy"></a>
 
 ## 🛡️ Using a proxy
