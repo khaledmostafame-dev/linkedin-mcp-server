@@ -1647,6 +1647,7 @@ class TestToolTimeouts:
             "get_feed",
             "search_posts",
             "close_session",
+            "get_pacing_status",
         )
 
         for name in tool_names:
@@ -1680,6 +1681,7 @@ class TestToolTimeouts:
             "get_feed",
             "search_posts",
             "close_session",
+            "get_pacing_status",
         )
 
         for name in tool_names:

@@ -408,11 +408,12 @@ class TestClaimingACustomRoot:
         The list is spelled out rather than imported to avoid an import cycle,
         and a hand-copied constant is exactly the kind that drifts.
         """
-        from linkedin_mcp_server import bootstrap, profile_lease
+        from linkedin_mcp_server import bootstrap, pacing, profile_lease
         from linkedin_mcp_server.profile_claim import (
             _IGNORED_WHEN_JUDGING_EMPTINESS as ignored,
         )
 
+        assert pacing.STATE_FILE in ignored
         assert profile_lease._LEASE_FILE in ignored
         assert profile_lease._HANDOFF_FILE in ignored
         assert bootstrap._BROWSER_DIR in ignored

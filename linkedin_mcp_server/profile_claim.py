@@ -88,6 +88,8 @@ _IGNORED_WHEN_JUDGING_EMPTINESS = frozenset(
         # bootstrap._BROWSER_DIR, _BROWSER_INSTALL_METADATA
         "patchright-browsers",
         "browser-install.json",
+        # pacing.STATE_FILE
+        "pacing-state.json",
     }
 )
 
