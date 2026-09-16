@@ -124,6 +124,10 @@
       "description": "Publish or schedule a LinkedIn post with explicit confirmation: real @mentions resolved by profile/company URL or URN (fails closed when no suggestion matches), up to 20 images or one PDF/PPTX/DOCX document carousel with a title, visibility, posting as an administered company page, and LinkedIn-native scheduling; confirm=false returns a browser-free preview"
     },
     {
+      "name": "create_poll",
+      "description": "Publish or schedule a LinkedIn poll with explicit confirmation: question up to 140 characters, 2-4 distinct options up to 30 characters, 1/3/7/14-day duration, optional text with mentions, post_as and schedule_at; confirm=false returns a browser-free preview"
+    },
+    {
       "name": "get_scheduled_posts",
       "description": "List the authenticated user's scheduled LinkedIn posts with identifiers for delete_scheduled_post"
     },

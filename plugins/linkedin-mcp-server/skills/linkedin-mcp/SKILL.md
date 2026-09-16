@@ -18,7 +18,7 @@ work, health checks, or background maintenance.
 - Never enable the plugin or its MCP server, edit Codex configuration, or start
   a login flow merely because LinkedIn might be useful. If either component is
   disabled, explain that state and stop.
-- `send_message`, `connect_with_person`, `create_post`,
+- `send_message`, `connect_with_person`, `create_post`, `create_poll`,
   `edit_scheduled_post`, `delete_scheduled_post`, `edit_post` and
   `delete_post` are write actions. Use them only when the user
   explicitly authorizes the exact recipient and action (for a post, the exact
@@ -47,7 +47,7 @@ instances, clear profiles, or replace the user's browser session.
 - Jobs: `search_jobs`, `get_saved_jobs`, and `get_job_details`.
 - Content: `get_feed` and `search_posts`.
 - Messages: `get_inbox`, `get_conversation`, and `search_conversations`.
-- Posting: `get_scheduled_posts` (read); `create_post`,
+- Posting: `get_scheduled_posts` (read); `create_post`, `create_poll`,
   `edit_scheduled_post`, `delete_scheduled_post`, `edit_post` and
   `delete_post` (writes).
 - Writes: `send_message` and `connect_with_person`, subject to the explicit
