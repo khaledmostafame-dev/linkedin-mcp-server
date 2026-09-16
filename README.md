@@ -60,6 +60,10 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
 | `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) |
+| `get_post_comments` | Read a post's comments and replies, with each comment's URN, parent, author, permalink and excerpt (bounded, locale-independent expansion; `sort` relevant/recent) |
+| `reply_to_comment` | Reply to one comment located by URN (requires `confirm`; verifies the reply box belongs to that comment, confirms the reply appeared; @mentions not supported) |
+| `comment_on_post` | Post a top-level comment on a post (requires `confirm`; confirms the comment appeared; @mentions not supported) |
+| `react_to_comment` | Like one comment located by URN (requires `confirm`; never removes an existing reaction) |
 | `close_session` | Close browser session and clean up resources |
 
 <br/>
