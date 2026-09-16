@@ -24,10 +24,12 @@ a page-owning collaborator.
 | `content` | `PageContentReader` | `page-owning` |
 | `contracts` | `ExtractedSection`, `FilterValidationError`, `RATE_LIMITED_SECTION_TEXT`, `SEND_INTERRUPTED_WARNING`, `message_action_result()`, `rate_limited_section_error()`, `refuse_an_invalid_message()` | `browser-free` |
 | `conversations` | `ConversationReader`, `strip_select_conversation_prefix()` | `page-owning` |
+| `entity_search` | `ENTITY_SEARCH_REFERENCE_CAP`, `MAX_ENTITY_SEARCH_PAGES`, `paginated_entity_search()` | `browser-free` |
 | `extractor` | `LinkedInExtractor` | `page-owning` |
 | `feed` | `FeedScraper` | `page-owning` |
 | `feed_payload` | `POST_SLUG_URL_RE`, `build_feed_references()`, `is_feed_payload_response()` | `browser-free` |
 | `fields` | `COMPANY_SECTIONS`, `PERSON_SECTIONS`, `parse_company_sections()`, `parse_person_sections()` | `browser-free` |
+| `geo_resolver` | `GeoCandidate`, `GeoLocationResolver`, `GeoResolution`, `MAX_CANDIDATES` | `page-owning` |
 | `group` | `GroupScraper` | `page-owning` |
 | `identifiers` | `company_page_url()`, `group_page_url()`, `job_view_url()`, `messaging_thread_url()`, `normalize_company_identifier()`, `normalize_group_id()`, `normalize_job_id()`, `normalize_opaque_id()`, `normalize_person_identifier()`, `normalize_post_urn()`, `normalize_thread_id()`, `person_profile_url()`, `post_update_url()` | `browser-free` |
 | `job_pages` | `JOB_IDS_JS`, `JobPageCapture`, `JobPageReader`, `parse_total_from_page_state_text()` | `page-owning` |
@@ -42,7 +44,7 @@ a page-owning collaborator.
 | `post_content` | `LINKEDIN_POST_CHARACTER_LIMIT`, `MentionKind`, `MentionSegment`, `MentionTarget`, `PostAttachment`, `PostEdit`, `PostRequest`, `PostValidationError`, `SCHEDULE_MAX_AHEAD`, `SCHEDULE_MIN_LEAD`, `TextSegment`, `VISIBILITIES`, `Visibility`, `attachment_summary()`, `build_post_edit()`, `build_post_request()`, `date_matches()`, `format_schedule_date()`, `format_schedule_time()`, `identity_key_from_url()`, `identity_key_from_urn()`, `normalize_text()`, `parse_mention_target()`, `parse_post_as()`, `parse_post_text()`, `parse_post_url()`, `parse_schedule_at()`, `post_preview()`, `render_segments()`, `resolve_date_order()`, `schedule_summary()`, `time_matches()`, `utf16_length()` | `browser-free` |
 | `posts` | `PostSearch` | `browser-free` |
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `page-owning` |
-| `search_urls` | `CONTENT_DATE_POSTED_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_group_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
+| `search_urls` | `CONTENT_DATE_POSTED_MAP`, `CONTENT_SORT_BY_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_group_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
 | `session` | `NAV_DELAY`, `ScrapingSession` | `page-owning` |
 | `text` | `DETAIL_CAPTURE_EN_US`, `DetailCaptureTextTable`, `SIDEBAR_CHROME_EN`, `SidebarChromeTable`, `filter_linkedin_noise_lines()`, `normalize_localized_digits()`, `strip_conversation_chrome()`, `strip_linkedin_noise()`, `truncate_linkedin_noise()` | `browser-free` |
 
@@ -51,16 +53,18 @@ a page-owning collaborator.
 - `__init__` -> `extractor`, `fields`
 - `capture` -> `content`, `contracts`, `link_metadata`, `navigation`, `session`, `text`
 - `comments` -> `content`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `session`, `text`
-- `company` -> `capture`, `contracts`, `fields`, `identifiers`, `link_metadata`, `search_urls`, `session`
+- `company` -> `capture`, `contracts`, `entity_search`, `fields`, `identifiers`, `link_metadata`, `search_urls`, `session`
 - `connection` -> _(none)_
 - `connection_actions` -> `connection`, `identifiers`, `navigation`, `session`
 - `content` -> `session`, `text`
 - `contracts` -> `identifiers`, `link_metadata`
 - `conversations` -> `content`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `session`, `text`
+- `entity_search` -> `capture`, `contracts`, `job_policy`, `link_metadata`, `session`
 - `extractor` -> `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_composer`, `post_content`, `posts`, `profile_page`, `session`, `text`
 - `feed` -> `content`, `contracts`, `feed_payload`, `navigation`, `session`, `text`
 - `feed_payload` -> `link_metadata`
 - `fields` -> `capture`
+- `geo_resolver` -> `contracts`, `navigation`, `session`
 - `group` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `search_urls`, `session`
 - `identifiers` -> _(none)_
 - `job_pages` -> `capture`, `content`, `contracts`, `job_policy`, `link_metadata`, `navigation`, `session`, `text`
@@ -70,7 +74,7 @@ a page-owning collaborator.
 - `message_sender` -> `contracts`, `identifiers`, `navigation`, `session`
 - `navigation` -> `session`
 - `network` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `session`
-- `person` -> `capture`, `contracts`, `fields`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `search_urls`, `session`, `text`
+- `person` -> `capture`, `contracts`, `entity_search`, `fields`, `geo_resolver`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `search_urls`, `session`, `text`
 - `post_composer` -> `navigation`, `post_content`, `session`
 - `post_content` -> _(none)_
 - `posts` -> `capture`, `contracts`, `link_metadata`, `search_urls`
@@ -108,6 +112,7 @@ a page-owning collaborator.
 - `list_connections`
 - `react_to_comment`
 - `reply_to_comment`
+- `resolve_geo_location`
 - `respond_to_invitation`
 - `scrape_company`
 - `scrape_job`

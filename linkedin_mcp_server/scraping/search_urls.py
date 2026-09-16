@@ -60,9 +60,42 @@ CONTENT_DATE_POSTED_MAP = {
     "past_month": "past-month",
 }
 
+# Content-search ``sortBy`` facet tokens. Ported from
+# stickerdaniel/linkedin-mcp-server#880, which verified live that LinkedIn's
+# Posts tab encodes sort the same way as ``datePosted`` -- a one-element JSON
+# list carrying a literal token (``sortBy=["date_posted"]`` /
+# ``["relevance"]``) -- not the ``sortBy=DD|R`` codes job search uses. "latest"
+# is this server's own spelling (matching the tool's documented values);
+# "date"/"date_posted" are accepted too so the naming lines up with
+# ``search_jobs``'s ``sort_by``.
+CONTENT_SORT_BY_MAP = {
+    "relevance": "relevance",
+    "latest": "date_posted",
+    "date": "date_posted",
+    "date_posted": "date_posted",
+}
+
 # Valid tokens for the people-search ``network`` facet.
 # LinkedIn accepts "F" (1st-degree), "S" (2nd-degree), "O" (3rd-degree and beyond).
 NETWORK_TOKENS = ("F", "S", "O")
+
+# People-search facets whose value is a numeric LinkedIn URN id, validated and
+# encoded identically to the pre-existing ``current_company`` facet. Not
+# verified live in this fork (unlike the facets above, which each carry a
+# "verified live" note) -- these are the widely documented parameter names
+# for LinkedIn's People search "All filters" panel. Flag for live
+# verification before relying on them in production.
+_URN_LIST_FACETS = {
+    "current_company": "currentCompany",
+    "past_company": "pastCompany",
+    "school": "school",
+    "industry": "industry",
+}
+
+# ISO 639-1 two-letter codes, lowercase. LinkedIn's people-search
+# ``profileLanguage`` facet takes language codes rather than numeric ids
+# (unlike every other facet below it) -- not verified live in this fork.
+_PROFILE_LANGUAGE_RE = re.compile(r"^[a-z]{2}$")
 
 
 def _normalize_csv(value: str, mapping: dict[str, str]) -> str:
@@ -119,19 +152,52 @@ def build_job_search_url(
     return f"https://www.linkedin.com/jobs/search/?{params}"
 
 
+def _validate_urn_list(name: str, values: list[str]) -> None:
+    """Refuse a URN-id facet list carrying anything but ASCII digits.
+
+    Shared by every numeric-id people-search facet (``current_company`` and
+    the prospecting facets below it), so a caller sees the same actionable
+    message regardless of which one they got wrong.
+    """
+    invalid = [v for v in values if not re.fullmatch(r"[0-9]+", v)]
+    if invalid:
+        raise FilterValidationError(
+            f"{name} values must be numeric LinkedIn URN ids (e.g. '1115' "
+            f"for the SAP company URN); got {invalid!r}. Plain-text names "
+            f"are silently ignored by LinkedIn. Look up a company/school URN "
+            f'via get_company_profile -> references["about"] (or the '
+            f"equivalent school reference); there is no in-app lookup for "
+            f"industry codes -- read them off LinkedIn's own People search "
+            f"'Industry' filter panel."
+        )
+
+
 def build_people_search_url(
     keywords: str,
     location: str | None = None,
     network: list[str] | None = None,
-    current_company: str | None = None,
+    current_company: list[str] | None = None,
+    past_company: list[str] | None = None,
+    school: list[str] | None = None,
+    industry: list[str] | None = None,
+    title: str | None = None,
+    profile_language: list[str] | None = None,
 ) -> str:
     """Build a LinkedIn people search URL, refusing filters LinkedIn ignores.
 
-    Both refusals happen before a URL exists, so a workflow calling this can
+    Every refusal happens before a URL exists, so a workflow calling this can
     never navigate on a filter LinkedIn would swallow. An unknown ``network``
-    token and a plain-text ``currentCompany`` are each accepted by the URL and
-    then dropped, which answers with the unfiltered result set while the
-    request still reads as filtered.
+    token, a plain-text company/school/industry id, or a free-text
+    ``location`` are each accepted by the URL and then dropped, which answers
+    with the unfiltered result set while the request still reads as filtered.
+
+    ``current_company``, ``past_company``, ``school`` and ``industry`` all
+    take numeric LinkedIn URN ids (see ``_validate_urn_list``); ``location``
+    takes a single numeric geo URN id (LinkedIn's ``geoUrn`` facet -- the
+    free-text ``location`` param it also accepts is silently ignored, ported
+    from stickerdaniel/linkedin-mcp-server#722); ``profile_language`` takes
+    ISO 639-1 two-letter codes; ``title`` is free text matched against the
+    member's current/past title, sent as-is like ``keywords``.
     """
     if network is not None:
         invalid = [t for t in network if t not in NETWORK_TOKENS]
@@ -141,21 +207,50 @@ def build_people_search_url(
                 f"{invalid!r}; expected any of {list(NETWORK_TOKENS)!r}"
             )
 
-    if current_company and not re.fullmatch(r"[0-9]+", current_company):
+    if location and not re.fullmatch(r"[0-9]+", location):
         raise FilterValidationError(
-            f"current_company must be a numeric LinkedIn company URN id "
-            f"(e.g. '1115' for SAP); got {current_company!r}. Plain-text "
-            f"company names are silently ignored by LinkedIn. Look up the "
-            f'URN via get_company_profile -> references["about"].'
+            f"location must be a numeric LinkedIn geo URN id (e.g. "
+            f"'103644278' for the United States); got {location!r}. "
+            f"LinkedIn's people-search geo facet only filters on the URN id; "
+            f"plain-text place names are silently ignored and return the "
+            f"unfiltered result set. Omit the filter and put the place name "
+            f"in `keywords` if you do not have the URN."
         )
+
+    urn_list_facets = {
+        "current_company": current_company,
+        "past_company": past_company,
+        "school": school,
+        "industry": industry,
+    }
+    for name, values in urn_list_facets.items():
+        if values:
+            _validate_urn_list(name, values)
+
+    if profile_language:
+        invalid = [
+            code
+            for code in profile_language
+            if not _PROFILE_LANGUAGE_RE.fullmatch(code)
+        ]
+        if invalid:
+            raise FilterValidationError(
+                f"profile_language values must be lowercase ISO 639-1 "
+                f"two-letter codes (e.g. 'en', 'ar'); got {invalid!r}."
+            )
 
     params = f"keywords={quote_plus(keywords)}"
     if location:
-        params += f"&location={quote_plus(location)}"
+        params += f"&geoUrn={_encode_list_facet([location])}"
     if network:
         params += f"&network={_encode_list_facet(network)}"
-    if current_company:
-        params += f"&currentCompany={_encode_list_facet([current_company])}"
+    for name, values in urn_list_facets.items():
+        if values:
+            params += f"&{_URN_LIST_FACETS[name]}={_encode_list_facet(values)}"
+    if title and title.strip():
+        params += f"&title={quote_plus(title)}"
+    if profile_language:
+        params += f"&profileLanguage={_encode_list_facet(profile_language)}"
 
     return f"https://www.linkedin.com/search/results/people/?{params}"
 
@@ -190,6 +285,7 @@ def build_group_search_url(keywords: str) -> str:
 def build_content_search_url(
     keywords: str,
     date_posted: str | None = None,
+    sort_by: str | None = None,
 ) -> str:
     """Build a LinkedIn content (post) search URL.
 
@@ -197,10 +293,11 @@ def build_content_search_url(
     Posts results tab, e.g. for "Buscamos Unity" in the past week:
     ``/search/results/content/?keywords=Buscamos+Unity&origin=FACETED_SEARCH&datePosted=%5B%22past-week%22%5D``
 
-    The ``datePosted`` facet is a one-element JSON list carrying a literal
-    LinkedIn token, URL-encoded — unlike job search, which uses
-    ``f_TPR=r<seconds>``. The value is mapped through
-    ``CONTENT_DATE_POSTED_MAP`` so the server's own underscore spelling
+    The ``datePosted`` and ``sortBy`` facets are each a one-element JSON list
+    carrying a literal LinkedIn token, URL-encoded — unlike job search, which
+    uses ``f_TPR=r<seconds>`` / ``sortBy=DD|R``. Values are mapped through
+    ``CONTENT_DATE_POSTED_MAP`` / ``CONTENT_SORT_BY_MAP`` (ported from
+    stickerdaniel/linkedin-mcp-server#880) so the server's own spelling
     reaches LinkedIn in the form it recognizes. An unmapped value is refused
     here rather than sent, because LinkedIn ignores one instead of rejecting
     it and answers an unfiltered search that reads as a filtered one.
@@ -215,8 +312,21 @@ def build_content_search_url(
             f"{list(CONTENT_DATE_POSTED_MAP)!r}."
         )
 
+    if (
+        sort_by is not None
+        and sort_by.strip()
+        and sort_by.strip() not in CONTENT_SORT_BY_MAP
+    ):
+        raise FilterValidationError(
+            f"Invalid sort_by {sort_by!r}; expected one of "
+            f"{list(CONTENT_SORT_BY_MAP)!r}."
+        )
+
     params = f"keywords={quote_plus(keywords)}&origin=FACETED_SEARCH"
     if date_posted and date_posted.strip():
         token = CONTENT_DATE_POSTED_MAP.get(date_posted.strip(), date_posted.strip())
         params += f"&datePosted={_encode_list_facet([token])}"
+    if sort_by and sort_by.strip():
+        token = CONTENT_SORT_BY_MAP.get(sort_by.strip(), sort_by.strip())
+        params += f"&sortBy={_encode_list_facet([token])}"
     return f"https://www.linkedin.com/search/results/content/?{params}"

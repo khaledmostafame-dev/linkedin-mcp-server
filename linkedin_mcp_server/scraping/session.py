@@ -47,9 +47,13 @@ class ScrapingSession:
         """Close an obstructing modal when one is present."""
         return await handle_modal_close(self.page)
 
-    async def scroll_body(self, pause_time: float = 1.0, max_scrolls: int = 10) -> None:
-        """Scroll the page body through the shared utility boundary."""
-        await scroll_to_bottom(
+    async def scroll_body(self, pause_time: float = 1.0, max_scrolls: int = 10) -> bool:
+        """Scroll the page body through the shared utility boundary.
+
+        Returns what ``scroll_to_bottom`` returns: True when its own height
+        stopped growing, False when ``max_scrolls`` was spent first.
+        """
+        return await scroll_to_bottom(
             self.page,
             pause_time=pause_time,
             max_scrolls=max_scrolls,

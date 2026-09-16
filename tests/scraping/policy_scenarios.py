@@ -19,6 +19,7 @@ from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 from linkedin_mcp_server.callbacks import ProgressCallback
 from linkedin_mcp_server.core.exceptions import InvalidReferenceError
 from linkedin_mcp_server.scraping import capture as capture_module
+from linkedin_mcp_server.scraping.contracts import FilterValidationError
 from linkedin_mcp_server.scraping import company as company_module
 from linkedin_mcp_server.scraping import feed as feed_module
 from linkedin_mcp_server.scraping import job_pages as job_pages_module
@@ -1117,6 +1118,39 @@ async def _own_post_unresolved_member_scenario(method: str) -> dict[str, Any]:
     )
 
 
+async def _resolve_geo_location_blank_query_scenario() -> dict[str, Any]:
+    """Early refusal: a blank query never reaches the browser.
+
+    The only ``resolve_geo_location`` path this harness can express without
+    fabricating LinkedIn's own typeahead DOM structure -- driving it for
+    real is exercised in ``tests/scraping/test_geo_resolver.py`` against a
+    directly-mocked page instead. This scenario exists to keep
+    ``resolve_geo_location`` inside the exhaustively-checked facade-method
+    inventory (``TOOL_FACADE_METHODS``) and to pin the zero-navigation
+    refusal shape.
+    """
+    recorder = TraceRecorder("resolve_geo_location__blank_query", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("resolve_geo_location"):
+            try:
+                await extractor.resolve_geo_location("   ")
+            except FilterValidationError as e:
+                result: dict[str, Any] = {
+                    "raised": "FilterValidationError",
+                    "message": str(e),
+                }
+            else:
+                raise AssertionError("blank query should have been refused")
+    page.assert_clean()
+    return recorder.trace(
+        {"method": "resolve_geo_location", "arguments": {"query": "   "}},
+        result,
+    )
+
+
 _NETWORK_PROFILE = "ada-lovelace"
 _NETWORK_GROUP = "1234567"
 
@@ -1269,6 +1303,7 @@ TOOL_FACADE_METHODS = {
     "list_connections",
     "react_to_comment",
     "reply_to_comment",
+    "resolve_geo_location",
     "respond_to_invitation",
     "scrape_company",
     "scrape_job",
@@ -1401,6 +1436,9 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         "group-search.json": await _network_capture_scenario("search_groups"),
         "group-posts.json": await _network_capture_scenario("get_group_posts"),
         "group-members.json": await _network_capture_scenario("get_group_members"),
+        "resolve-geo-location-blank.json": (
+            await _resolve_geo_location_blank_query_scenario()
+        ),
     }
     return traces
 

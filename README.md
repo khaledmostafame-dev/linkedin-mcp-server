@@ -52,14 +52,15 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `send_message` | Compose/send a new message to a LinkedIn user (requires confirmation; profile-based targeting may open a separate DM instead of replying in an existing thread — see #483) |
 | `get_company_profile` | Extract company information with explicit section selection (posts, jobs); about-section references may include a `company_urn` entry carrying the numeric id used by LinkedIn's people-search `currentCompany` URL facet |
 | `get_company_posts` | Get recent posts from a company's LinkedIn feed |
-| `search_companies` | Search for companies on LinkedIn by keywords |
+| `search_companies` | Search for companies on LinkedIn by keywords, paginating up to `max_pages` and reporting `pages_fetched`/`stopped_reason`/`truncated` |
 | `get_company_employees` | List employees at a company from the /people/ page, with optional keyword filter |
 | `search_jobs` | Search for jobs with keywords and location filters |
 | `get_saved_jobs` | List job postings saved by the authenticated user |
-| `search_people` | Search for people by keywords, location, connection degree (1st/2nd/3rd), and current company |
+| `search_people` | Search for people by keywords, location (free text, resolved at call time against LinkedIn's own typeahead, or a numeric geo URN id), connection degree (1st/2nd/3rd), current/past company, school, industry, title, and profile language, paginating up to `max_pages` and reporting `pages_fetched`/`stopped_reason`/`truncated` |
+| `resolve_geo_location` | Resolve a free-text place name to LinkedIn geo URN id candidates without running a search; used internally by `search_people`'s free-text `location`, and directly to disambiguate when it reports more than one candidate |
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
-| `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) |
+| `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) and sort order (relevance/latest), reporting `stopped_reason`/`truncated` |
 | `get_post_comments` | Read a post's comments and replies, with each comment's URN, parent, author, permalink and excerpt (bounded, locale-independent expansion; `sort` relevant/recent) |
 | `reply_to_comment` | Reply to one comment located by URN (requires `confirm`; verifies the reply box belongs to that comment, confirms the reply appeared; @mentions not supported) |
 | `comment_on_post` | Post a top-level comment on a post (requires `confirm`; confirms the comment appeared; @mentions not supported) |

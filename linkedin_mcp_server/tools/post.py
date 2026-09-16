@@ -41,6 +41,7 @@ def register_post_tools(
         ctx: Context,
         date_posted: str | None = None,
         max_pages: Annotated[int, Field(ge=1, le=10)] = 3,
+        sort_by: str | None = None,
         extractor: Any | None = None,
     ) -> dict[str, Any]:
         """
@@ -63,24 +64,32 @@ def register_post_tools(
                 (1-10, default 3). Content search is an infinite scroll, so
                 this caps how far the page is scrolled rather than fetching
                 discrete pages.
+            sort_by: Optional sort order. "relevance" (default, LinkedIn's
+                "Top match") or "latest" (also accepts "date"/"date_posted",
+                matching search_jobs's spelling) for LinkedIn's "Latest".
 
         Returns:
-            Dict with url, sections (search_results -> raw text), and optional
-            references (post authors, companies, linked jobs) and
-            section_errors. The results page carries no per-post permalinks,
-            so reach a post through its author. The LLM should parse the raw
-            text to extract each post's author, headline/role, company, body,
-            posted date, and reaction/comment counts.
+            Dict with url, sections (search_results -> raw text),
+            stopped_reason ("scroll_cap"|"end_of_results"|"error") and
+            truncated (bool) describing whether more posts may exist past
+            what was captured, and optional references (post authors,
+            companies, linked jobs) and section_errors. The results page
+            carries no per-post permalinks, so reach a post through its
+            author. The LLM should parse the raw text to extract each post's
+            author, headline/role, company, body, posted date, and
+            reaction/comment counts.
         """
         try:
             extractor = extractor or await get_ready_extractor(
                 ctx, tool_name="search_posts"
             )
             logger.info(
-                "Searching posts: keywords='%s', date_posted='%s', max_pages=%d",
+                "Searching posts: keywords='%s', date_posted='%s', "
+                "max_pages=%d, sort_by='%s'",
                 keywords,
                 date_posted,
                 max_pages,
+                sort_by,
             )
 
             await ctx.report_progress(
@@ -92,6 +101,7 @@ def register_post_tools(
                     keywords,
                     date_posted=date_posted,
                     max_pages=max_pages,
+                    sort_by=sort_by,
                 )
             except FilterValidationError as e:
                 # Validation messages carry actionable detail; surface them as

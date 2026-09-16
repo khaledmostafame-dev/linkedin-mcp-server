@@ -202,31 +202,58 @@ class LinkedInExtractor:
         keywords: str,
         location: str | None = None,
         network: list[str] | None = None,
-        current_company: str | None = None,
+        current_company: list[str] | None = None,
+        past_company: list[str] | None = None,
+        school: list[str] | None = None,
+        industry: list[str] | None = None,
+        title: str | None = None,
+        profile_language: list[str] | None = None,
+        max_pages: int = 1,
+        tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS,
     ) -> dict[str, Any]:
-        """Search for people and extract the results page."""
+        """Search for people, walking ``&page=N`` up to ``max_pages`` deep."""
         return await self._person.search_people(
             keywords,
             location=location,
             network=network,
             current_company=current_company,
+            past_company=past_company,
+            school=school,
+            industry=industry,
+            title=title,
+            profile_language=profile_language,
+            max_pages=max_pages,
+            tool_timeout=tool_timeout,
         )
 
-    async def search_companies(self, keywords: str) -> dict[str, Any]:
-        """Search for companies and extract the results page."""
-        return await self._company.search_companies(keywords)
+    async def search_companies(
+        self,
+        keywords: str,
+        max_pages: int = 1,
+        tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS,
+    ) -> dict[str, Any]:
+        """Search for companies, walking ``&page=N`` up to ``max_pages`` deep."""
+        return await self._company.search_companies(
+            keywords, max_pages=max_pages, tool_timeout=tool_timeout
+        )
+
+    async def resolve_geo_location(self, query: str) -> dict[str, Any]:
+        """Resolve a free-text place name to LinkedIn geo URN id candidates."""
+        return await self._person.resolve_geo_location(query)
 
     async def search_posts(
         self,
         keywords: str,
         date_posted: str | None = None,
         max_pages: int = 3,
+        sort_by: str | None = None,
     ) -> dict[str, Any]:
         """Search LinkedIn posts and extract the results page."""
         return await self._posts.search_posts(
             keywords,
             date_posted=date_posted,
             max_pages=max_pages,
+            sort_by=sort_by,
         )
 
     async def get_inbox(self, limit: int = 20) -> dict[str, Any]:

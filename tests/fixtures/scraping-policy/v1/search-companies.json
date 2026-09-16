@@ -100,12 +100,15 @@
     }
   ],
   "result": {
+    "pages_fetched": 1,
     "section_names": [
       "search_results"
     ],
     "sections": {
       "search_results": "Result content"
     },
+    "stopped_reason": "no_more_results",
+    "truncated": false,
     "url": "https://www.linkedin.com/search/results/companies/?keywords=engine"
   },
   "scenario": "search_companies__baseline",

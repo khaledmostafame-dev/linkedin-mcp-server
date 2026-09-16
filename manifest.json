@@ -73,7 +73,7 @@
     },
     {
       "name": "search_companies",
-      "description": "Search for companies on LinkedIn by keywords"
+      "description": "Search for companies on LinkedIn by keywords, paginating up to max_pages and reporting pages_fetched/stopped_reason/truncated"
     },
     {
       "name": "get_company_employees",
@@ -93,7 +93,11 @@
     },
     {
       "name": "search_people",
-      "description": "Search for people on LinkedIn by keywords, location, connection degree (1st/2nd/3rd), and current company"
+      "description": "Search for people on LinkedIn by keywords, location (free text, resolved at call time, or a numeric geo URN id), connection degree (1st/2nd/3rd), current/past company, school, industry, title, and profile language, paginating up to max_pages and reporting pages_fetched/stopped_reason/truncated"
+    },
+    {
+      "name": "resolve_geo_location",
+      "description": "Resolve a free-text place name to LinkedIn geo URN id candidates via LinkedIn's own location typeahead, without running a search"
     },
     {
       "name": "get_inbox",
@@ -117,7 +121,7 @@
     },
     {
       "name": "search_posts",
-      "description": "Search LinkedIn posts/content globally by keyword (the 'Posts' tab) with an optional recency filter (past-24h/past-week/past-month)"
+      "description": "Search LinkedIn posts/content globally by keyword (the 'Posts' tab) with an optional recency filter (past-24h/past-week/past-month) and sort order (relevance/latest), reporting stopped_reason/truncated"
     },
     {
       "name": "get_post_comments",
