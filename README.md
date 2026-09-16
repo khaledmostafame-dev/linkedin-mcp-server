@@ -60,6 +60,10 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
 | `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) |
+| `sales_nav_search_leads` | Search Sales Navigator leads (people) by keyword and optional filters. Requires a Sales Navigator seat — see [Sales Navigator tools](#sales-navigator-tools) |
+| `sales_nav_search_accounts` | Search Sales Navigator accounts (companies) by keyword and optional filters. Requires a Sales Navigator seat |
+| `sales_nav_get_lists` | List the authenticated user's Sales Navigator lead or account lists. Requires a Sales Navigator seat |
+| `sales_nav_get_list` | Read one Sales Navigator list's members, bounded by `max_items`. Requires a Sales Navigator seat |
 | `close_session` | Close browser session and clean up resources |
 
 <br/>
@@ -624,6 +628,36 @@ belongs behind something that provides it.
 <br/>
 <br/>
 
+
+<a id="sales-navigator-tools"></a>
+
+## 🧭 Sales Navigator tools
+
+`sales_nav_search_leads`, `sales_nav_search_accounts`, `sales_nav_get_lists`
+and `sales_nav_get_list` are read-only: no InMail, connect, save, or
+list-membership writes. All four require the authenticated account to hold a
+paid Sales Navigator seat.
+
+**Seat detection is automatic and locale-independent.** An account without a
+seat is redirected by LinkedIn away from `/sales/` the moment any Sales
+Navigator page loads. Every tool here checks the *landed URL* for that,
+never page text, and stops immediately — no scrolling, no further
+navigation — returning a `section_errors` entry with `error_type:
+"sales_navigator_unavailable"` instead of an empty or misleading result.
+
+**The URL shapes these tools navigate to are this project's own
+construction** (`/sales/search/people`, `/sales/search/companies`,
+`/sales/lists/people`, `/sales/lists/company`, plus flat `keywords=`/filter
+query parameters), not confirmed against a live Sales Navigator seat.
+LinkedIn's real Sales Navigator search is widely reported to encode filters
+inside one structured `query` parameter rather than flat parameters; that
+exact grammar has not been reproduced here for lack of a live capture to
+verify it against. Treat `filters` as best-effort until verified: pass
+LinkedIn's own parameter names if you know them, and expect that an unknown
+filter may simply be ignored by LinkedIn rather than rejected.
+
+<br/>
+<br/>
 
 <a id="non-english-linkedin-ui"></a>
 
