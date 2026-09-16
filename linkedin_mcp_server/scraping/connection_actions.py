@@ -24,7 +24,7 @@ primary button.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote_plus
 
 import asyncio
@@ -271,6 +271,58 @@ CLICK_INCOMING_ACCEPT_JS = (
 )
 
 
+# Click Ignore on an incoming-request profile: the same live-verified
+# fingerprint as CLICK_INCOMING_ACCEPT_JS (see _FIND_INCOMING_ACTION_ROW_FN_JS
+# above), but the SECOND labeled button instead of the first. The row's
+# shape is documented there as "two with aria-label (Accept, Ignore)
+# preceding one unlabeled expander (More)". Only the accept path (index 0)
+# has been exercised against a real incoming-request profile; this mirrors
+# it structurally rather than duplicating a second live-verified claim it
+# cannot yet make -- respond_to_invitation's post-click verification (state
+# must move off "incoming_request") is the safety net if this ordering
+# ever proves wrong on some LinkedIn UI variant.
+CLICK_INCOMING_IGNORE_JS = (
+    r"""
+(() => {
+"""
+    + _FIND_INCOMING_ACTION_ROW_FN_JS
+    + r"""
+  const main = document.querySelector('main');
+  if (!main) return false;
+  const row = findIncomingActionRow(main);
+  if (!row) return false;
+  const labeled = row.querySelectorAll('button[aria-label]');
+  if (labeled.length < 2) return false;
+  labeled[1].click();
+  return true;
+})
+"""
+)
+
+# Click the Pending control (an <a aria-label>) in the action root to open
+# LinkedIn's withdraw-invitation confirmation dialog. Only reachable once
+# detect_connection_state has already classified the profile as "pending",
+# so this never fires on a Message/Follow/Connect control -- those are not
+# what has_labeled_action_anchor detects (see connection.py).
+CLICK_PENDING_ANCHOR_JS = (
+    r"""
+(() => {
+"""
+    + _FIND_ACTION_ROOT_FN_JS
+    + r"""
+  const main = document.querySelector('main');
+  if (!main) return false;
+  const actionRoot = findActionRoot(main);
+  if (!actionRoot) return false;
+  const anchor = actionRoot.querySelector('a[aria-label]');
+  if (!anchor) return false;
+  anchor.click();
+  return true;
+})
+"""
+)
+
+
 def _connection_result(
     url: str,
     status: str,
@@ -451,6 +503,29 @@ class ConnectionActions:
             return bool(await self._session.page.evaluate(CLICK_INCOMING_ACCEPT_JS))
         except Exception:
             logger.debug("Incoming accept click via JS failed", exc_info=True)
+            return False
+
+    async def _click_incoming_ignore(self) -> bool:
+        """Click Ignore on an incoming-request profile, locale-independently.
+
+        See ``CLICK_INCOMING_IGNORE_JS`` for the fingerprint and the caveat
+        that only the sibling Accept click has been live-verified.
+        """
+        try:
+            return bool(await self._session.page.evaluate(CLICK_INCOMING_IGNORE_JS))
+        except Exception:
+            logger.debug("Incoming ignore click via JS failed", exc_info=True)
+            return False
+
+    async def _click_pending_anchor(self) -> bool:
+        """Click the Pending control to open the withdraw confirmation dialog.
+
+        See ``CLICK_PENDING_ANCHOR_JS``.
+        """
+        try:
+            return bool(await self._session.page.evaluate(CLICK_PENDING_ANCHOR_JS))
+        except Exception:
+            logger.debug("Pending control click via JS failed", exc_info=True)
             return False
 
     async def _read_action_signals(self, username: str) -> ActionSignals:
@@ -862,5 +937,205 @@ class ConnectionActions:
             "Connection request sent."
             + (f" State after send: {verified_state}." if verified_state else ""),
             note_sent=note_sent,
+            profile=verified_text or page_text,
+        )
+
+    async def respond_to_invitation(
+        self,
+        username: str,
+        *,
+        action: Literal["accept", "ignore"],
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Accept or ignore an incoming connection request, identified by profile URL.
+
+        Reached via the profile's top-card action row -- the same
+        structurally-fingerprinted incoming-request row ``connect_with_person``
+        already verifies live for Accept -- rather than the
+        invitation-manager list page, whose row layout has not been
+        verified here. ``confirm=False`` returns a preview with no browser
+        interaction and no state change.
+        """
+        username = normalize_person_identifier(username)
+        url = person_profile_url(username, "/")
+
+        if not confirm:
+            return {
+                "url": url,
+                "status": "preview",
+                "message": (
+                    f"Would {action} the incoming connection request from "
+                    f"{username}. Pass confirm=True to proceed."
+                ),
+            }
+
+        profile = await self._read_main_profile(username)
+        page_text = profile.get("sections", {}).get("main_profile", "")
+        if not page_text:
+            return _connection_result(
+                url, "unavailable", "Could not read profile page."
+            )
+
+        signals = await self._read_action_signals(username)
+        state = connection.detect_connection_state(signals)
+        if state != "incoming_request":
+            return _connection_result(
+                url,
+                "not_incoming",
+                f"No incoming connection request found for this profile (state: {state}).",
+                profile=page_text,
+            )
+
+        clicked = (
+            await self._click_incoming_accept()
+            if action == "accept"
+            else await self._click_incoming_ignore()
+        )
+        if not clicked:
+            return _connection_result(
+                url,
+                "send_failed",
+                f"Could not find or click the {action.capitalize()} control.",
+                profile=page_text,
+            )
+
+        # Same settle-and-retry discipline as connect_with_person's incoming
+        # branch: LinkedIn propagates the new state asynchronously, so an
+        # immediate re-read can still show the stale top card.
+        verified_text = ""
+        verified_state: str | None = None
+        for attempt in range(2):
+            if attempt:
+                await asyncio.sleep(3.0)
+            verified = await self._read_main_profile(username)
+            verified_text = verified.get("sections", {}).get("main_profile", "")
+            verified_signals = await self._read_action_signals(username)
+            verified_state = connection.detect_connection_state(verified_signals)
+            if verified_state != "incoming_request":
+                break
+
+        if verified_state == "incoming_request":
+            return _connection_result(
+                url,
+                "send_failed",
+                f"Clicked {action}, but the profile still shows an incoming request.",
+                profile=verified_text or page_text,
+            )
+
+        if action == "accept" and verified_state != "already_connected":
+            # The click landed and the incoming row is gone, but the profile
+            # did not reach the expected connected state either -- report
+            # what was actually observed instead of claiming success.
+            return _connection_result(
+                url,
+                "send_failed",
+                "Accepted, but the profile did not transition to 1st-degree "
+                f"(state: {verified_state}).",
+                profile=verified_text or page_text,
+            )
+
+        status = "accepted" if action == "accept" else "ignored"
+        return _connection_result(
+            url,
+            status,
+            f"Connection request {status}.",
+            profile=verified_text or page_text,
+        )
+
+    async def withdraw_invitation(
+        self,
+        username: str,
+        *,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Withdraw a previously-sent, still-pending connection request.
+
+        Identified by profile URL -- the strongest form of identify-by-URL,
+        stronger than matching a row in the invitation-manager list: this
+        navigates to the profile itself and acts only when
+        ``detect_connection_state`` already classifies it as ``pending``.
+        LinkedIn renders the Pending state there as an ``<a aria-label>``
+        (see ``connection.py``), clicked structurally, then confirmed
+        through the same dialog-button helpers ``connect_with_person`` uses
+        for the invite dialog. ``confirm=False`` returns a preview with no
+        browser interaction and no state change.
+        """
+        username = normalize_person_identifier(username)
+        url = person_profile_url(username, "/")
+
+        if not confirm:
+            return {
+                "url": url,
+                "status": "preview",
+                "message": (
+                    "Would withdraw the pending connection request sent to "
+                    f"{username}. Pass confirm=True to proceed."
+                ),
+            }
+
+        profile = await self._read_main_profile(username)
+        page_text = profile.get("sections", {}).get("main_profile", "")
+        if not page_text:
+            return _connection_result(
+                url, "unavailable", "Could not read profile page."
+            )
+
+        signals = await self._read_action_signals(username)
+        state = connection.detect_connection_state(signals)
+        if state != "pending":
+            return _connection_result(
+                url,
+                "not_pending",
+                f"No pending outgoing request found for this profile (state: {state}).",
+                profile=page_text,
+            )
+
+        clicked = await self._click_pending_anchor()
+        if not clicked:
+            return _connection_result(
+                url,
+                "send_failed",
+                "Could not find or click the Pending control.",
+                profile=page_text,
+            )
+
+        if await self._dialog_is_open(timeout=5000):
+            confirmed = await self._click_dialog_primary_button()
+            if not confirmed:
+                await self._dismiss_dialog()
+                return _connection_result(
+                    url,
+                    "send_failed",
+                    "Withdraw confirmation dialog opened but the confirm click failed.",
+                    profile=page_text,
+                )
+        # If no dialog appeared, LinkedIn may have withdrawn directly without
+        # one; fall through to verification either way rather than assuming
+        # success from the first click alone.
+
+        verified_text = ""
+        verified_state: str | None = None
+        for attempt in range(2):
+            if attempt:
+                await asyncio.sleep(3.0)
+            verified = await self._read_main_profile(username)
+            verified_text = verified.get("sections", {}).get("main_profile", "")
+            verified_signals = await self._read_action_signals(username)
+            verified_state = connection.detect_connection_state(verified_signals)
+            if verified_state != "pending":
+                break
+
+        if verified_state == "pending":
+            return _connection_result(
+                url,
+                "send_failed",
+                "Clicked withdraw, but the profile still shows a pending request.",
+                profile=verified_text or page_text,
+            )
+
+        return _connection_result(
+            url,
+            "withdrawn",
+            "Connection request withdrawn.",
             profile=verified_text or page_text,
         )

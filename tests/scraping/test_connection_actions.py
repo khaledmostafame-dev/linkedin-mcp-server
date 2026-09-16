@@ -950,3 +950,356 @@ class TestInviteDialog:
         # primary button (index 1) to send.
         assert clicks == [0, 1]
         textarea_locator.fill.assert_awaited_once()
+
+
+class TestRespondToInvitation:
+    """Accept/ignore route through the same live-verified incoming-request
+    fingerprint connect_with_person uses, identified by profile URL."""
+
+    async def test_confirm_false_is_a_preview_with_no_browser_interaction(
+        self, mock_page
+    ):
+        actions = _actions(mock_page)  # unread(): must not read a profile
+
+        result = await actions.respond_to_invitation(
+            "testuser", action="accept", confirm=False
+        )
+
+        assert result["status"] == "preview"
+        assert "accept" in result["message"]
+        mock_page.evaluate.assert_not_called()
+
+    async def test_accept_clicks_index_zero_and_verifies_connected(self, mock_page):
+        pre = "Eric\n\n· 2.\n\nAachen\n\nAnnehmen\nIgnorieren\nMehr\nInfo\n"
+        post = "Eric\n\n· 1.\n\nAachen\n\nNachricht\nMehr\nInfo\n"
+        actions = _actions(mock_page, _reads(pre, post))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                side_effect=[_signals(incoming_row=True), _signals(compose=True)],
+            ),
+            patch.object(
+                actions,
+                "_click_incoming_accept",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_accept,
+            patch.object(
+                actions,
+                "_click_incoming_ignore",
+                new_callable=AsyncMock,
+            ) as mock_ignore,
+        ):
+            result = await actions.respond_to_invitation(
+                "testuser", action="accept", confirm=True
+            )
+
+        assert result["status"] == "accepted"
+        mock_accept.assert_awaited_once()
+        mock_ignore.assert_not_awaited()
+
+    async def test_ignore_clicks_index_one_and_verifies_state_left_incoming(
+        self, mock_page
+    ):
+        pre = "Eric\n\n· 2.\n\nAachen\n\nAnnehmen\nIgnorieren\nMehr\nInfo\n"
+        post = "Eric\n\n· 3rd\n\nAachen\n\nConnect\nMehr\nInfo\n"
+        actions = _actions(mock_page, _reads(pre, post))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                side_effect=[_signals(incoming_row=True), _signals(invite=True)],
+            ),
+            patch.object(
+                actions,
+                "_click_incoming_ignore",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_ignore,
+            patch.object(
+                actions,
+                "_click_incoming_accept",
+                new_callable=AsyncMock,
+            ) as mock_accept,
+        ):
+            result = await actions.respond_to_invitation(
+                "testuser", action="ignore", confirm=True
+            )
+
+        assert result["status"] == "ignored"
+        mock_ignore.assert_awaited_once()
+        mock_accept.assert_not_awaited()
+
+    async def test_not_incoming_takes_no_action(self, mock_page):
+        text = "Jane\n\n· 3rd\n\nEngineer\n\nConnect\nMore\nAbout\n"
+        actions = _actions(mock_page, _reads(text))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                return_value=_signals(invite=True),
+            ),
+            patch.object(
+                actions, "_click_incoming_accept", new_callable=AsyncMock
+            ) as mock_accept,
+        ):
+            result = await actions.respond_to_invitation(
+                "testuser", action="accept", confirm=True
+            )
+
+        assert result["status"] == "not_incoming"
+        mock_accept.assert_not_awaited()
+
+    async def test_click_failure_reports_send_failed(self, mock_page):
+        pre = "Eric\n\n· 2.\n\nAachen\n\nAnnehmen\nIgnorieren\nMehr\nInfo\n"
+        actions = _actions(mock_page, _reads(pre))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                return_value=_signals(incoming_row=True),
+            ),
+            patch.object(
+                actions,
+                "_click_incoming_ignore",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            result = await actions.respond_to_invitation(
+                "testuser", action="ignore", confirm=True
+            )
+
+        assert result["status"] == "send_failed"
+
+    async def test_accept_reports_send_failed_when_state_stays_incoming(
+        self, mock_page
+    ):
+        """Mutation guard: a click that lands but never moves the state off
+        incoming_request must not read as success."""
+        pre = "Eric\n\n· 2.\n\nAachen\n\nAnnehmen\nIgnorieren\nMehr\nInfo\n"
+        actions = _actions(mock_page, _reads(pre, pre, pre))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                return_value=_signals(incoming_row=True),
+            ),
+            patch.object(
+                actions,
+                "_click_incoming_accept",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "linkedin_mcp_server.scraping.connection_actions.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+        ):
+            result = await actions.respond_to_invitation(
+                "testuser", action="accept", confirm=True
+            )
+
+        assert result["status"] == "send_failed"
+
+
+class TestWithdrawInvitation:
+    """Withdraw is reached via the profile's Pending control, identified by
+    profile URL, then LinkedIn's own confirmation dialog."""
+
+    async def test_confirm_false_is_a_preview_with_no_browser_interaction(
+        self, mock_page
+    ):
+        actions = _actions(mock_page)  # unread(): must not read a profile
+
+        result = await actions.withdraw_invitation("testuser", confirm=False)
+
+        assert result["status"] == "preview"
+        mock_page.evaluate.assert_not_called()
+
+    async def test_pending_clicks_anchor_confirms_dialog_and_verifies(self, mock_page):
+        pre = "Jane\n\n· 3rd\n\nEngineer\n\nPending\nMore\nAbout\n"
+        post = "Jane\n\n· 3rd\n\nEngineer\n\nConnect\nMore\nAbout\n"
+        actions = _actions(mock_page, _reads(pre, post))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                side_effect=[_signals(labeled_anchor=True), _signals(invite=True)],
+            ),
+            patch.object(
+                actions,
+                "_click_pending_anchor",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_click,
+            patch.object(
+                actions, "_dialog_is_open", new_callable=AsyncMock, return_value=True
+            ),
+            patch.object(
+                actions,
+                "_click_dialog_primary_button",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_confirm,
+        ):
+            result = await actions.withdraw_invitation("testuser", confirm=True)
+
+        assert result["status"] == "withdrawn"
+        mock_click.assert_awaited_once()
+        mock_confirm.assert_awaited_once()
+
+    async def test_not_pending_takes_no_action(self, mock_page):
+        text = "Jane\n\n· 3rd\n\nEngineer\n\nConnect\nMore\nAbout\n"
+        actions = _actions(mock_page, _reads(text))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                return_value=_signals(invite=True),
+            ),
+            patch.object(
+                actions, "_click_pending_anchor", new_callable=AsyncMock
+            ) as mock_click,
+        ):
+            result = await actions.withdraw_invitation("testuser", confirm=True)
+
+        assert result["status"] == "not_pending"
+        mock_click.assert_not_awaited()
+
+    async def test_click_failure_reports_send_failed(self, mock_page):
+        pre = "Jane\n\n· 3rd\n\nEngineer\n\nPending\nMore\nAbout\n"
+        actions = _actions(mock_page, _reads(pre))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                return_value=_signals(labeled_anchor=True),
+            ),
+            patch.object(
+                actions,
+                "_click_pending_anchor",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            result = await actions.withdraw_invitation("testuser", confirm=True)
+
+        assert result["status"] == "send_failed"
+
+    async def test_dialog_confirm_failure_reports_send_failed_and_dismisses(
+        self, mock_page
+    ):
+        pre = "Jane\n\n· 3rd\n\nEngineer\n\nPending\nMore\nAbout\n"
+        actions = _actions(mock_page, _reads(pre))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                return_value=_signals(labeled_anchor=True),
+            ),
+            patch.object(
+                actions,
+                "_click_pending_anchor",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                actions, "_dialog_is_open", new_callable=AsyncMock, return_value=True
+            ),
+            patch.object(
+                actions,
+                "_click_dialog_primary_button",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch.object(
+                actions, "_dismiss_dialog", new_callable=AsyncMock
+            ) as mock_dismiss,
+        ):
+            result = await actions.withdraw_invitation("testuser", confirm=True)
+
+        assert result["status"] == "send_failed"
+        mock_dismiss.assert_awaited_once()
+
+    async def test_no_dialog_still_verifies_before_reporting_withdrawn(self, mock_page):
+        """Some LinkedIn variants may withdraw without a confirm dialog; the
+        outcome must come from verification, not from the click alone."""
+        pre = "Jane\n\n· 3rd\n\nEngineer\n\nPending\nMore\nAbout\n"
+        post = "Jane\n\n· 3rd\n\nEngineer\n\nConnect\nMore\nAbout\n"
+        actions = _actions(mock_page, _reads(pre, post))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                side_effect=[_signals(labeled_anchor=True), _signals(invite=True)],
+            ),
+            patch.object(
+                actions,
+                "_click_pending_anchor",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                actions, "_dialog_is_open", new_callable=AsyncMock, return_value=False
+            ),
+        ):
+            result = await actions.withdraw_invitation("testuser", confirm=True)
+
+        assert result["status"] == "withdrawn"
+
+    async def test_still_pending_after_click_reports_send_failed(self, mock_page):
+        pre = "Jane\n\n· 3rd\n\nEngineer\n\nPending\nMore\nAbout\n"
+        actions = _actions(mock_page, _reads(pre, pre, pre))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                return_value=_signals(labeled_anchor=True),
+            ),
+            patch.object(
+                actions,
+                "_click_pending_anchor",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                actions, "_dialog_is_open", new_callable=AsyncMock, return_value=True
+            ),
+            patch.object(
+                actions,
+                "_click_dialog_primary_button",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "linkedin_mcp_server.scraping.connection_actions.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+        ):
+            result = await actions.withdraw_invitation("testuser", confirm=True)
+
+        assert result["status"] == "send_failed"
