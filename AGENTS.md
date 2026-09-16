@@ -147,6 +147,8 @@ Optional additional keys:
 - `unknown_sections: [name, ...]`
 - `job_ids: [id, ...]` (search_jobs and get_saved_jobs)
 - `references["feed"]` (get_feed only) — every entry is `kind: "feed_post"`; non-post anchors (sidebar profiles, employer logos) are filtered. URLs may carry either `/feed/update/<urn>/` (DOM-anchor-derived) or `/posts/<slug>` (SDUI-derived) form; both are valid LinkedIn permalinks. Cap is 50 entries, matching `get_feed`'s `num_posts` ceiling.
+- `pages_fetched: int`, `stopped_reason: "max_pages"|"no_more_results"|"limit"|"error"`, `truncated: bool` (search_people, search_companies — both walk `&page=N` via the shared `scraping/entity_search.paginated_entity_search`) — `truncated` is true whenever more results may exist past what was returned (`stopped_reason` in `max_pages`/`limit`).
+- `stopped_reason: "scroll_cap"|"end_of_results"|"error"`, `truncated: bool` (search_posts) — content search has no `&page=`, so `stopped_reason` instead reports whether the last scroll spent its whole budget without the page settling.
 
 ## Tests
 
