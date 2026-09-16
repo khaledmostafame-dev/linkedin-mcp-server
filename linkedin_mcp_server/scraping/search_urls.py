@@ -187,6 +187,18 @@ def build_group_search_url(keywords: str) -> str:
     )
 
 
+def build_event_search_url(keywords: str) -> str:
+    """Build a LinkedIn event search URL.
+
+    Modeled on ``build_group_search_url``/``build_company_search_url``: one
+    parameter, no filters.
+    """
+    return (
+        "https://www.linkedin.com/search/results/events/"
+        f"?keywords={quote_plus(keywords)}"
+    )
+
+
 def build_content_search_url(
     keywords: str,
     date_posted: str | None = None,

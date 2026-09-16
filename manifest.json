@@ -156,6 +156,18 @@
       "description": "List members of a LinkedIn group from its /members/ page; the full list requires the authenticated account to be a member of the group"
     },
     {
+      "name": "search_events",
+      "description": "Search for LinkedIn events by keyword"
+    },
+    {
+      "name": "get_event_details",
+      "description": "Get the details page for a single LinkedIn event"
+    },
+    {
+      "name": "get_event_attendees",
+      "description": "List attendees of a LinkedIn event, with a bounded scroll budget"
+    },
+    {
       "name": "close_session",
       "description": "Properly close browser session and clean up resources"
     }

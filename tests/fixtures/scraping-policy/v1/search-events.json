@@ -1,0 +1,114 @@
+{
+  "call": {
+    "arguments": {
+      "keywords": "computing history",
+      "max_pages": 2
+    },
+    "method": "search_events"
+  },
+  "events": [
+    {
+      "call": "search_events",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "search_events",
+      "extra": {
+        "target_url": "https://www.linkedin.com/search/results/events/?keywords=computing+history",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "search_events",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/search/results/events/?keywords=computing+history",
+      "requested_url": "https://www.linkedin.com/search/results/events/?keywords=computing+history",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "search_events",
+      "description": "goto https://www.linkedin.com/search/results/events/?keywords=computing+history",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "search_events",
+      "extra": {
+        "target_url": "https://www.linkedin.com/search/results/events/?keywords=computing+history",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "search_events",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "search_events",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "search_events",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "search_events",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "search_events",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "arg": null,
+      "call": "search_events",
+      "kind": "wait_for_function",
+      "operation": "main_text_100",
+      "program_digest": "5a4a89d4de2a",
+      "timeout_ms": 10000
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "search_events",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 10,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "search_events",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "e8a0e21ac6f5"
+    }
+  ],
+  "result": {
+    "section_names": [
+      "search_results"
+    ],
+    "sections": {
+      "search_results": "Result content"
+    },
+    "url": "https://www.linkedin.com/search/results/events/?keywords=computing+history"
+  },
+  "scenario": "search_events__baseline",
+  "schema_version": 1
+}

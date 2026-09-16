@@ -49,10 +49,12 @@ from linkedin_mcp_server.core.exceptions import InvalidReferenceError
 
 __all__ = [
     "company_page_url",
+    "event_page_url",
     "group_page_url",
     "job_view_url",
     "messaging_thread_url",
     "normalize_company_identifier",
+    "normalize_event_id",
     "normalize_group_id",
     "normalize_job_id",
     "normalize_opaque_id",
@@ -133,6 +135,7 @@ _ORGANIZATION_ROUTES = {"company"}
 _JOB_ROUTE = ("jobs", "view")
 _THREAD_ROUTE = ("messaging", "thread")
 _GROUP_ROUTE = ("groups",)
+_EVENT_ROUTE = ("events",)
 
 # A LinkedIn job id is the number in /jobs/view/<id>. Everything that produces
 # one here extracts ``\d+``, and anything else navigates to a 404 that costs a
@@ -482,3 +485,21 @@ def normalize_group_id(value: str) -> str:
 def group_page_url(group_id: str, suffix: str = "") -> str:
     """Group URL for an already-normalized numeric id, escaped as one segment."""
     return f"https://www.linkedin.com/groups/{quote(group_id, safe='')}{suffix}"
+
+
+def normalize_event_id(value: str) -> str:
+    """The numeric id for a LinkedIn event, from the id or from a reference to it.
+
+    LinkedIn serves an event under both a bare id and a slugged path
+    (``/events/<slug>-<id>/``), the same shape as a job posting, so this
+    reuses the trailing-digits extraction ``normalize_job_id`` relies on
+    rather than requiring the caller to strip the slug themselves.
+    """
+    return normalize_opaque_id(
+        value, field="event_id", route=_EVENT_ROUTE, numeric=True
+    )
+
+
+def event_page_url(event_id: str, suffix: str = "") -> str:
+    """Event URL for an already-normalized numeric id, escaped as one segment."""
+    return f"https://www.linkedin.com/events/{quote(event_id, safe='')}{suffix}"

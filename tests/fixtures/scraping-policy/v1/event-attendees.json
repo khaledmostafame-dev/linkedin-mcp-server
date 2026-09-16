@@ -1,0 +1,114 @@
+{
+  "call": {
+    "arguments": {
+      "event_url": "1234567890",
+      "max_attendees": 25
+    },
+    "method": "get_event_attendees"
+  },
+  "events": [
+    {
+      "call": "get_event_attendees",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "get_event_attendees",
+      "extra": {
+        "target_url": "https://www.linkedin.com/events/1234567890/attendees/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "get_event_attendees",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/events/1234567890/attendees/",
+      "requested_url": "https://www.linkedin.com/events/1234567890/attendees/",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "get_event_attendees",
+      "description": "goto https://www.linkedin.com/events/1234567890/attendees/",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "get_event_attendees",
+      "extra": {
+        "target_url": "https://www.linkedin.com/events/1234567890/attendees/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "get_event_attendees",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "get_event_attendees",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "get_event_attendees",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "get_event_attendees",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "get_event_attendees",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "arg": null,
+      "call": "get_event_attendees",
+      "kind": "wait_for_function",
+      "operation": "company_people_ready",
+      "program_digest": "6615c14bd135",
+      "timeout_ms": 5000
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "get_event_attendees",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 3,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "get_event_attendees",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "e8a0e21ac6f5"
+    }
+  ],
+  "result": {
+    "section_names": [
+      "attendees"
+    ],
+    "sections": {
+      "attendees": "Result content"
+    },
+    "url": "https://www.linkedin.com/events/1234567890/attendees/"
+  },
+  "scenario": "get_event_attendees__baseline",
+  "schema_version": 1
+}

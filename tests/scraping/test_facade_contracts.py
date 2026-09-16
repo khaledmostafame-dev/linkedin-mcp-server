@@ -48,6 +48,8 @@ TOOL_DELEGATES = {
     "get_company_profile": "scrape_company",
     "get_conversation": "get_conversation",
     "get_feed": "extract_feed",
+    "get_event_attendees": "get_event_attendees",
+    "get_event_details": "get_event_details",
     "get_group_members": "get_group_members",
     "get_group_posts": "get_group_posts",
     "get_inbox": "get_inbox",
@@ -62,6 +64,7 @@ TOOL_DELEGATES = {
     "respond_to_invitation": "respond_to_invitation",
     "search_companies": "search_companies",
     "search_conversations": "search_conversations",
+    "search_events": "search_events",
     "search_groups": "search_groups",
     "search_jobs": "search_jobs",
     "search_people": "search_people",
@@ -101,6 +104,7 @@ async def test_constructor_export_and_dependency_use_the_same_facade(monkeypatch
         "_connection",
         "_content",
         "_conversations",
+        "_event",
         "_feed",
         "_group",
         "_jobs",
@@ -130,9 +134,9 @@ async def test_registered_tools_and_extractor_delegates_are_counted_separately()
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 28
+    assert len(tool_names) == 31
     assert tool_names == {*TOOL_DELEGATES, "close_session"}
-    assert len(TOOL_DELEGATES) == 27
+    assert len(TOOL_DELEGATES) == 30
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
 
@@ -508,7 +512,7 @@ def test_facade_methods_are_exactly_the_frozen_coroutine_surface():
     }
 
     assert actual == expected
-    assert len(TOOL_FACADE_METHODS) == 27
+    assert len(TOOL_FACADE_METHODS) == 30
     assert len(COMPATIBILITY_METHODS) == 2
 
 

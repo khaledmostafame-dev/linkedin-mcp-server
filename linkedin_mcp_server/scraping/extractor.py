@@ -17,6 +17,7 @@ from linkedin_mcp_server.scraping.contracts import (
     rate_limited_section_error as rate_limited_section_error,
 )
 from linkedin_mcp_server.scraping.conversations import ConversationReader
+from linkedin_mcp_server.scraping.events import EventScraper
 from linkedin_mcp_server.scraping.feed import FeedScraper
 from linkedin_mcp_server.scraping.group import GroupScraper
 from linkedin_mcp_server.scraping.job_pages import JobPageReader
@@ -72,6 +73,7 @@ class LinkedInExtractor:
         )
         self._network = NetworkScraper(session, navigator, capture)
         self._group = GroupScraper(session, navigator, capture)
+        self._event = EventScraper(capture)
 
     async def get_page_text(self) -> str:
         """Extract innerText from the main content area of the current page."""
@@ -337,3 +339,17 @@ class LinkedInExtractor:
     ) -> dict[str, Any]:
         """List members of a LinkedIn group from its /members/ page."""
         return await self._group.get_group_members(group_id, max_members, keywords)
+
+    async def search_events(self, keywords: str, max_pages: int = 3) -> dict[str, Any]:
+        """Search for LinkedIn events by keyword."""
+        return await self._event.search_events(keywords, max_pages)
+
+    async def get_event_details(self, event_url: str) -> dict[str, Any]:
+        """Get the details page for a single LinkedIn event."""
+        return await self._event.get_event_details(event_url)
+
+    async def get_event_attendees(
+        self, event_url: str, max_attendees: int = 50
+    ) -> dict[str, Any]:
+        """List attendees of a LinkedIn event."""
+        return await self._event.get_event_attendees(event_url, max_attendees)
