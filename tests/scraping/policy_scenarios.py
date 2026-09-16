@@ -865,6 +865,67 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     )
 
 
+async def _sales_navigator_scenario(method: str) -> dict[str, Any]:
+    """Happy-path Sales Navigator call: the account holds a seat."""
+    name = f"{method}__baseline"
+    recorder = TraceRecorder(name, _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder).script(
+        "evaluate:root_content", _root("Sales Navigator content")
+    )
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method):
+            if method == "sales_nav_search_leads":
+                arguments = {"keywords": "VP Engineering"}
+                result = await extractor.sales_nav_search_leads(**arguments)
+            elif method == "sales_nav_search_accounts":
+                arguments = {"keywords": "fintech"}
+                result = await extractor.sales_nav_search_accounts(**arguments)
+            elif method == "sales_nav_get_lists":
+                arguments = {"kind": "leads"}
+                result = await extractor.sales_nav_get_lists(**arguments)
+            elif method == "sales_nav_get_list":
+                arguments = {
+                    "list_url": "https://www.linkedin.com/sales/lists/people/12345"
+                }
+                result = await extractor.sales_nav_get_list(**arguments)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": method, "arguments": arguments},
+        _complete_mapping_result(result, section_names=list(result["sections"])),
+    )
+
+
+async def _sales_navigator_seat_unavailable_scenario() -> dict[str, Any]:
+    """Minimal early-refusal trace: LinkedIn redirects away from /sales/.
+
+    Detected by the landed URL (never text), per AGENTS.md's
+    locale-independence rule: this proves the redirect check runs *and* that
+    nothing else -- no scroll, no content extraction -- happens after it, by
+    leaving the ``evaluate:root_content`` script unscripted-with-values (see
+    ``_page()``); any code path that tried to consume it would fail here.
+    """
+    name = "sales_nav_search_leads__seat_unavailable"
+    recorder = TraceRecorder(name, _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.goto_landings.append("https://www.linkedin.com/premium/products/")
+    extractor = _extractor(page)
+    arguments = {"keywords": "VP Engineering"}
+    async with boundaries(recorder, clock):
+        with recorder.context("sales_nav_search_leads"):
+            result = await extractor.sales_nav_search_leads(**arguments)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": "sales_nav_search_leads", "arguments": arguments},
+        _complete_mapping_result(result, section_names=list(result["sections"])),
+    )
+
+
 async def _single_capture_error_scenario() -> dict[str, Any]:
     recorder = TraceRecorder("scrape_job__capture_error", _COMMON_ALLOWED)
     clock = FakeClock(recorder)
@@ -1027,6 +1088,10 @@ TOOL_FACADE_METHODS = {
     "get_my_profile",
     "get_saved_jobs",
     "get_sidebar_profiles",
+    "sales_nav_get_list",
+    "sales_nav_get_lists",
+    "sales_nav_search_accounts",
+    "sales_nav_search_leads",
     "scrape_company",
     "scrape_job",
     "scrape_person",
@@ -1112,6 +1177,21 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         "conversation.json": await _conversation_scenario("get_conversation"),
         "search-conversations.json": await _conversation_scenario(
             "search_conversations"
+        ),
+        "sales-nav-search-leads.json": await _sales_navigator_scenario(
+            "sales_nav_search_leads"
+        ),
+        "sales-nav-search-accounts.json": await _sales_navigator_scenario(
+            "sales_nav_search_accounts"
+        ),
+        "sales-nav-get-lists.json": await _sales_navigator_scenario(
+            "sales_nav_get_lists"
+        ),
+        "sales-nav-get-list.json": await _sales_navigator_scenario(
+            "sales_nav_get_list"
+        ),
+        "sales-nav-seat-unavailable.json": (
+            await _sales_navigator_seat_unavailable_scenario()
         ),
     }
     return traces

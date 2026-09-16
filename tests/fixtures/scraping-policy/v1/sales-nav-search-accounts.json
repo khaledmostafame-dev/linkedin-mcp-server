@@ -1,0 +1,99 @@
+{
+  "call": {
+    "arguments": {
+      "keywords": "fintech"
+    },
+    "method": "sales_nav_search_accounts"
+  },
+  "events": [
+    {
+      "call": "sales_nav_search_accounts",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "sales_nav_search_accounts",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/search/companies?keywords=fintech",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "sales_nav_search_accounts",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/sales/search/companies?keywords=fintech",
+      "requested_url": "https://www.linkedin.com/sales/search/companies?keywords=fintech",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "sales_nav_search_accounts",
+      "description": "goto https://www.linkedin.com/sales/search/companies?keywords=fintech",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "sales_nav_search_accounts",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/search/companies?keywords=fintech",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "sales_nav_search_accounts",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "sales_nav_search_accounts",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "sales_nav_search_accounts",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "sales_nav_search_accounts",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "sales_nav_search_accounts",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 5,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "sales_nav_search_accounts",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "e8a0e21ac6f5"
+    }
+  ],
+  "result": {
+    "pages_fetched": 1,
+    "section_names": [
+      "search_results"
+    ],
+    "sections": {
+      "search_results": "Sales Navigator content"
+    },
+    "stopped_reason": "max_pages",
+    "url": "https://www.linkedin.com/sales/search/companies?keywords=fintech"
+  },
+  "scenario": "sales_nav_search_accounts__baseline",
+  "schema_version": 1
+}
