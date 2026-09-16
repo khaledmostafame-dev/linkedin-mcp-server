@@ -23,8 +23,10 @@ from linkedin_mcp_server.scraping.jobs import JobScraper
 from linkedin_mcp_server.scraping.message_sender import MessageSender
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.person import PersonScraper
+from linkedin_mcp_server.scraping.post_actions import PostActions
 from linkedin_mcp_server.scraping.posts import PostSearch
 from linkedin_mcp_server.scraping.profile_page import ProfilePageReader
+from linkedin_mcp_server.scraping.reactions import ReactionsReader
 from linkedin_mcp_server.scraping.session import ScrapingSession
 from linkedin_mcp_server.scraping.text import (
     strip_conversation_chrome as strip_conversation_chrome,
@@ -68,6 +70,8 @@ class LinkedInExtractor:
         self._conversations = ConversationReader(
             session, navigator, content, profile_page
         )
+        self._reactions = ReactionsReader(session, navigator, content)
+        self._post_actions = PostActions(session, navigator)
 
     async def get_page_text(self) -> str:
         """Extract innerText from the main content area of the current page."""
@@ -255,4 +259,18 @@ class LinkedInExtractor:
             message,
             confirm_send=confirm_send,
             profile_urn=profile_urn,
+        )
+
+    async def get_post_reactions(
+        self, post_url: str, max_reactors: int = 50
+    ) -> dict[str, Any]:
+        """Open a post's reactions dialog and read the reactor list."""
+        return await self._reactions.get_post_reactions(post_url, max_reactors)
+
+    async def save_post(
+        self, post_url: str, *, confirm: bool, unsave: bool = False
+    ) -> dict[str, Any]:
+        """Save or unsave a post via its overflow menu's toggle."""
+        return await self._post_actions.save_post(
+            post_url, confirm=confirm, unsave=unsave
         )

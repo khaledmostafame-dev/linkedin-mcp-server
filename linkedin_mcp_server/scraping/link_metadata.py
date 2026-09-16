@@ -100,6 +100,8 @@ _SECTION_CONTEXTS = {
     "feed": "feed",
     "notifications": "notification",
     "saved_posts": "saved post",
+    "feed_hashtag": "hashtag feed",
+    "reactions": "reactor",
 }
 
 _DEFAULT_REFERENCE_CAP = 12
@@ -132,6 +134,10 @@ _REFERENCE_CAPS = {
     "notifications": 50,
     # Kept in sync with get_saved_posts' max_posts ceiling.
     "saved_posts": 50,
+    # Kept in sync with get_hashtag_feed's max_posts ceiling.
+    "feed_hashtag": 50,
+    # Kept in sync with get_post_reactions' max_reactors ceiling.
+    "reactions": 50,
 }
 
 # A label must carry at least one letter or digit in any script, so the class is

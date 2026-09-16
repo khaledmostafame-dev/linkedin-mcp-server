@@ -60,8 +60,11 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
 | `get_notifications` | List recent notifications (replies, reactions, mentions, connection requests) from the notifications page, with an optional "my_posts"/"mentions" filter |
+| `get_hashtag_feed` | Get recent posts from a LinkedIn hashtag feed (/feed/hashtag/\<tag\>/) |
 | `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) |
 | `get_saved_posts` | List posts saved by the authenticated user from /my-items/saved-posts/ |
+| `save_post` | Save or unsave a post via its overflow menu's toggle (requires confirmation; the toggle is identified structurally, not by label text) |
+| `get_post_reactions` | List who reacted to a post by opening its reactions dialog (structural probe; reaction type is not extracted) |
 | `close_session` | Close browser session and clean up resources |
 
 <br/>

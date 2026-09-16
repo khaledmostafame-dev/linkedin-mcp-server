@@ -39,6 +39,7 @@ PUBLIC_SIGNATURES = {
     "get_inbox": "(self, limit: 'int' = 20) -> 'dict[str, Any]'",
     "get_my_profile": "(self, sections: 'set[str] | None' = None, callbacks: 'ProgressCallback | None' = None, max_scrolls: 'int | None' = None) -> 'dict[str, Any]'",
     "get_page_text": "(self) -> 'str'",
+    "get_post_reactions": "(self, post_url: 'str', max_reactors: 'int' = 50) -> 'dict[str, Any]'",
     "get_saved_jobs": "(self, max_pages: 'int' = 3) -> 'dict[str, Any]'",
     "get_sidebar_profiles": "(self, username: 'str') -> 'dict[str, Any]'",
     "scrape_company": "(self, company_name: 'str', requested: 'set[str]', callbacks: 'ProgressCallback | None' = None) -> 'dict[str, Any]'",
@@ -48,6 +49,7 @@ PUBLIC_SIGNATURES = {
     "search_conversations": "(self, keywords: 'str', limit: 'int' = 20) -> 'dict[str, Any]'",
     "search_jobs": "(self, keywords: 'str', location: 'str | None' = None, max_pages: 'int' = 3, date_posted: 'str | None' = None, job_type: 'str | None' = None, experience_level: 'str | None' = None, work_type: 'str | None' = None, easy_apply: 'bool' = False, sort_by: 'str | None' = None, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'",
     "search_people": "(self, keywords: 'str', location: 'str | None' = None, network: 'list[str] | None' = None, current_company: 'str | None' = None) -> 'dict[str, Any]'",
+    "save_post": "(self, post_url: 'str', *, confirm: 'bool', unsave: 'bool' = False) -> 'dict[str, Any]'",
     "search_posts": "(self, keywords: 'str', date_posted: 'str | None' = None, max_pages: 'int' = 3) -> 'dict[str, Any]'",
     "send_message": "(self, linkedin_username: 'str', message: 'str', *, confirm_send: 'bool', profile_urn: 'str | None' = None) -> 'dict[str, Any]'",
 }
@@ -62,6 +64,7 @@ DELEGATES = {
     "get_inbox": ("_conversations", "get_inbox"),
     "get_my_profile": ("_person", "get_my_profile"),
     "get_page_text": ("_content", "get_page_text"),
+    "get_post_reactions": ("_reactions", "get_post_reactions"),
     "get_saved_jobs": ("_jobs", "get_saved_jobs"),
     "get_sidebar_profiles": ("_person", "get_sidebar_profiles"),
     "scrape_company": ("_company", "scrape_company"),
@@ -71,6 +74,7 @@ DELEGATES = {
     "search_conversations": ("_conversations", "search_conversations"),
     "search_jobs": ("_jobs", "search_jobs"),
     "search_people": ("_person", "search_people"),
+    "save_post": ("_post_actions", "save_post"),
     "search_posts": ("_posts", "search_posts"),
     "send_message": ("_message_sender", "send_message"),
 }
@@ -85,6 +89,7 @@ DELEGATE_CALLS = {
     "get_inbox": "self._conversations.get_inbox(limit)",
     "get_my_profile": "self._person.get_my_profile(sections, callbacks, max_scrolls)",
     "get_page_text": "self._content.get_page_text()",
+    "get_post_reactions": "self._reactions.get_post_reactions(post_url, max_reactors)",
     "get_saved_jobs": "self._jobs.get_saved_jobs(max_pages)",
     "get_sidebar_profiles": "self._person.get_sidebar_profiles(username)",
     "scrape_company": "self._company.scrape_company(company_name, requested, callbacks)",
@@ -94,6 +99,7 @@ DELEGATE_CALLS = {
     "search_conversations": "self._conversations.search_conversations(keywords, limit)",
     "search_jobs": "self._jobs.search_jobs(keywords, location, max_pages, date_posted, job_type, experience_level, work_type, easy_apply, sort_by, tool_timeout)",
     "search_people": "self._person.search_people(keywords, location=location, network=network, current_company=current_company)",
+    "save_post": "self._post_actions.save_post(post_url, confirm=confirm, unsave=unsave)",
     "search_posts": "self._posts.search_posts(keywords, date_posted=date_posted, max_pages=max_pages)",
     "send_message": "self._message_sender.send_message(linkedin_username, message, confirm_send=confirm_send, profile_urn=profile_urn)",
 }
@@ -108,7 +114,9 @@ FACADE_STATE = {
     "_jobs",
     "_message_sender",
     "_person",
+    "_post_actions",
     "_posts",
+    "_reactions",
 }
 
 PERMANENT_ALIASES = {

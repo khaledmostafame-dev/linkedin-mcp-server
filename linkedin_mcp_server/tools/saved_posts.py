@@ -108,3 +108,80 @@ def register_saved_posts_tools(
                 raise_tool_error(relogin_exc, "get_saved_posts")
         except Exception as e:
             raise_tool_error(e, "get_saved_posts")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Save Post",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"post", "saved", "actions", "write"},
+        exclude_args=["extractor"],
+    )
+    async def save_post(
+        post_url: str,
+        confirm: bool,
+        ctx: Context,
+        unsave: bool = False,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Save or unsave a LinkedIn post via its overflow menu's Save
+        toggle.
+
+        The overflow-menu opener and the save toggle inside it are found
+        structurally (an aria-expanded menu opener, then the single
+        aria-pressed control inside the resulting menu — see
+        scraping/post_actions.py), never by matching visible text. This
+        DOM probe is unverified against a live account — see AGENTS.md.
+        If either cannot be identified unambiguously, nothing is clicked
+        and status is "structural_signal_not_found".
+
+        confirm=False never changes LinkedIn state: it opens the overflow
+        menu (the only way to read the current save state) but returns
+        before the toggle itself is clicked, reporting what would happen.
+
+        Args:
+            post_url: A /feed/update/<urn>/ or /posts/<slug> permalink,
+                e.g. from references["feed"], references["posts"], or
+                references["saved_posts"].
+            confirm: Must be True to actually save/unsave.
+            ctx: FastMCP context for progress reporting
+            unsave: False (default) saves the post; True unsaves it. If
+                the post is already in the requested state, nothing is
+                clicked either way.
+
+        Returns:
+            Dict with url, status, message, saved, retry_safe. ``saved``
+            is the toggle's last-observed state (None when it could not
+            be read). ``retry_safe`` is False once a click has been
+            dispatched and its outcome could not be confirmed — status
+            "state_unconfirmed" — since a retry there may toggle the post
+            back rather than complete the original request.
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="save_post"
+            )
+            logger.info(
+                "%s post %s (confirm=%s)",
+                "Unsaving" if unsave else "Saving",
+                post_url,
+                confirm,
+            )
+
+            await ctx.report_progress(
+                progress=0, total=100, message="Opening the post's overflow menu"
+            )
+
+            result = await extractor.save_post(post_url, confirm=confirm, unsave=unsave)
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            return result
+
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "save_post")
+        except Exception as e:
+            raise_tool_error(e, "save_post")  # NoReturn

@@ -17,6 +17,7 @@ from patchright.async_api import Page
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from linkedin_mcp_server.callbacks import ProgressCallback
+from linkedin_mcp_server.core.exceptions import InvalidReferenceError
 from linkedin_mcp_server.scraping import capture as capture_module
 from linkedin_mcp_server.scraping import company as company_module
 from linkedin_mcp_server.scraping import feed as feed_module
@@ -832,6 +833,43 @@ async def _invalid_message_scenario(message: str, label: str) -> dict[str, Any]:
     )
 
 
+async def _post_action_early_refusal_scenario(method: str) -> dict[str, Any]:
+    """An invalid ``post_url`` refuses before any navigation.
+
+    Both ``get_post_reactions`` and ``save_post`` normalize their
+    ``post_url`` argument before touching the page (``normalize_post_url``
+    in ``identifiers.py``), so a value that cannot name a post raises
+    without ever navigating, clicking, or opening a dialog -- the one
+    path the DOM-interaction heuristics in ``reactions.py`` /
+    ``post_actions.py`` do not need live verification to prove, since no
+    browser interaction happens at all.
+    """
+    name = f"{method}__early_refusal"
+    recorder = TraceRecorder(name, _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    arguments: dict[str, Any]
+    async with boundaries(recorder, clock):
+        with recorder.context(method):
+            try:
+                if method == "get_post_reactions":
+                    arguments = {"post_url": "https://example.com/not-a-post"}
+                    await extractor.get_post_reactions(**arguments)
+                else:
+                    arguments = {
+                        "post_url": "https://example.com/not-a-post",
+                        "confirm": True,
+                    }
+                    await extractor.save_post(**arguments)
+            except InvalidReferenceError as e:
+                result = {"raised": "InvalidReferenceError", "message": str(e)}
+            else:
+                raise AssertionError(f"{method} did not refuse an invalid post_url")
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
 async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     name = f"{method}__baseline"
     recorder = TraceRecorder(name, _COMMON_ALLOWED)
@@ -1025,6 +1063,7 @@ TOOL_FACADE_METHODS = {
     "get_conversation",
     "get_inbox",
     "get_my_profile",
+    "get_post_reactions",
     "get_saved_jobs",
     "get_sidebar_profiles",
     "scrape_company",
@@ -1033,6 +1072,7 @@ TOOL_FACADE_METHODS = {
     "search_companies",
     "search_conversations",
     "search_jobs",
+    "save_post",
     "search_people",
     "search_posts",
     "send_message",
@@ -1095,6 +1135,12 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         "message-blank.json": await _invalid_message_scenario("   ", "blank"),
         "message-c0.json": await _invalid_message_scenario("line\nbreak", "c0"),
         "message-del.json": await _invalid_message_scenario("text\x7f", "del"),
+        "get-post-reactions-early-refusal.json": (
+            await _post_action_early_refusal_scenario("get_post_reactions")
+        ),
+        "save-post-early-refusal.json": (
+            await _post_action_early_refusal_scenario("save_post")
+        ),
         "connect.json": await _connect_scenario(),
         "get-my-profile.json": await _get_my_profile_scenario(),
         "sidebar-profiles.json": await _sidebar_scenario(),

@@ -48,6 +48,10 @@
         "coroutine": true,
         "signature": "(self) -> 'str'"
       },
+      "get_post_reactions": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', max_reactors: 'int' = 50) -> 'dict[str, Any]'"
+      },
       "get_saved_jobs": {
         "coroutine": true,
         "signature": "(self, max_pages: 'int' = 3) -> 'dict[str, Any]'"
@@ -55,6 +59,10 @@
       "get_sidebar_profiles": {
         "coroutine": true,
         "signature": "(self, username: 'str') -> 'dict[str, Any]'"
+      },
+      "save_post": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', *, confirm: 'bool', unsave: 'bool' = False) -> 'dict[str, Any]'"
       },
       "scrape_company": {
         "coroutine": true,
@@ -101,8 +109,10 @@
       "get_conversation",
       "get_inbox",
       "get_my_profile",
+      "get_post_reactions",
       "get_saved_jobs",
       "get_sidebar_profiles",
+      "save_post",
       "scrape_company",
       "scrape_job",
       "scrape_person",
@@ -298,6 +308,32 @@
           "type": "object"
         }
       },
+      "get_hashtag_feed": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "hashtag": {
+              "description": "The hashtag, with or without a leading '#' (e.g.\n\"womenintech\" or \"#womenintech\"). A full /feed/hashtag/ URL\nis accepted too and is reduced to the tag.",
+              "type": "string"
+            },
+            "max_posts": {
+              "default": 20,
+              "description": "Maximum number of posts to load (1-50, default 20).\nPosts load in batches as the page scrolls, so the actual\ncount may slightly exceed the target.",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "hashtag"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_inbox": {
         "input": {
           "additionalProperties": false,
@@ -444,6 +480,32 @@
           "type": "object"
         }
       },
+      "get_post_reactions": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "max_reactors": {
+              "default": 50,
+              "description": "Maximum number of reactors to load (1-50,\ndefault 50). Reactors load in batches as the dialog\nscrolls, so the actual count may slightly exceed the\ntarget.",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "post_url": {
+              "description": "A /feed/update/<urn>/ or /posts/<slug> permalink,\ne.g. from references[\"feed\"] or references[\"posts\"].",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_saved_jobs": {
         "input": {
           "additionalProperties": false,
@@ -493,6 +555,35 @@
           },
           "required": [
             "linkedin_username"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "save_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be True to actually save/unsave.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "A /feed/update/<urn>/ or /posts/<slug> permalink,\ne.g. from references[\"feed\"], references[\"posts\"], or\nreferences[\"saved_posts\"].",
+              "type": "string"
+            },
+            "unsave": {
+              "default": false,
+              "description": "False (default) saves the post; True unsaves it. If\nthe post is already in the requested state, nothing is\nclicked either way.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "post_url",
+            "confirm"
           ],
           "type": "object"
         },

@@ -49,12 +49,15 @@ from linkedin_mcp_server.core.exceptions import InvalidReferenceError
 
 __all__ = [
     "company_page_url",
+    "hashtag_feed_url",
     "job_view_url",
     "messaging_thread_url",
     "normalize_company_identifier",
+    "normalize_hashtag",
     "normalize_job_id",
     "normalize_opaque_id",
     "normalize_person_identifier",
+    "normalize_post_url",
     "normalize_thread_id",
     "person_profile_url",
 ]
@@ -445,6 +448,77 @@ def person_profile_url(identifier: str, suffix: str = "") -> str:
 def company_page_url(identifier: str, suffix: str = "") -> str:
     """Company page URL for an already-normalized slug, escaped as one segment."""
     return f"https://www.linkedin.com/company/{quote(identifier, safe='')}{suffix}"
+
+
+_HASHTAG_ROUTE = ("feed", "hashtag")
+
+
+def normalize_hashtag(value: str) -> str:
+    """The tag for a hashtag feed, from a /feed/hashtag/ link or the tag itself.
+
+    Idempotent, and raises the same way :func:`normalize_company_identifier`
+    does. A leading ``#`` is stripped, since that is how a caller reads a
+    hashtag off LinkedIn's own UI; LinkedIn's own ``/feed/hashtag/`` URL
+    never carries one.
+    """
+    value = value.strip()
+    if value.startswith("#"):
+        value = value[1:].strip()
+    if not value:
+        raise InvalidReferenceError(
+            'Missing hashtag (the /feed/hashtag/ tag, e.g. "womenintech").'
+        )
+
+    reference = _id_after_route(value, _HASHTAG_ROUTE, want="/feed/hashtag/ tag")
+    if reference is None:
+        reference = _identifier(value)
+    if reference is None:
+        raise InvalidReferenceError(
+            "That is not a LinkedIn hashtag. Pass the tag without '#', or a "
+            '/feed/hashtag/ URL, for example "womenintech".'
+        )
+    return reference
+
+
+def hashtag_feed_url(tag: str, suffix: str = "") -> str:
+    """Hashtag feed URL for an already-normalized tag, escaped as one segment."""
+    return f"https://www.linkedin.com/feed/hashtag/{quote(tag, safe='')}{suffix}"
+
+
+def normalize_post_url(value: str) -> str:
+    """An absolute, canonical LinkedIn post permalink.
+
+    Accepts either shape this server's own reference lists carry (see
+    AGENTS.md Tool Return Format): a relative or absolute
+    ``/feed/update/<urn>/`` (DOM-anchor-derived) or ``/posts/<slug>``
+    (SDUI-derived) url. Raises the same way
+    :func:`normalize_company_identifier` does.
+
+    ``_usable`` rather than ``_identifier`` judges the trailing segment:
+    an activity urn (``urn:li:activity:123...``) contains colons, which
+    ``_identifier``'s ``[\\w-]+`` pattern would reject.
+    """
+    value = value.strip()
+    if not value:
+        raise InvalidReferenceError(
+            "Missing post_url (a LinkedIn post permalink, e.g. from "
+            'references["feed"] or references["posts"]).'
+        )
+    segments = _linkedin_segments(value, want="post permalink")
+    if segments:
+        lowered = [segment.lower() for segment in segments]
+        if lowered[0] == "posts" and len(segments) >= 2:
+            slug = _usable(segments[1])
+            if slug is not None:
+                return f"https://www.linkedin.com/posts/{quote(slug, safe='')}/"
+        if lowered[:2] == ["feed", "update"] and len(segments) >= 3:
+            urn = _usable(segments[2])
+            if urn is not None:
+                return f"https://www.linkedin.com/feed/update/{quote(urn, safe='')}/"
+    raise InvalidReferenceError(
+        "That is not a LinkedIn post permalink. Pass a /feed/update/<urn>/ "
+        "or /posts/<slug> url exactly as a previous result returned it."
+    )
 
 
 def job_view_url(job_id: str, suffix: str = "") -> str:

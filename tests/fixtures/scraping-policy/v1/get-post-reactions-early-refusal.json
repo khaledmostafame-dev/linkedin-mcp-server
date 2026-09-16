@@ -1,0 +1,15 @@
+{
+  "call": {
+    "arguments": {
+      "post_url": "https://example.com/not-a-post"
+    },
+    "method": "get_post_reactions"
+  },
+  "events": [],
+  "result": {
+    "message": "That is not a LinkedIn post permalink. Pass a /feed/update/<urn>/ or /posts/<slug> url exactly as a previous result returned it.",
+    "raised": "InvalidReferenceError"
+  },
+  "scenario": "get_post_reactions__early_refusal",
+  "schema_version": 1
+}

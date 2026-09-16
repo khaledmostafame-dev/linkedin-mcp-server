@@ -1657,6 +1657,126 @@ class TestNotificationsTools:
             await mcp.call_tool("get_notifications", {"max_items": 51})
 
 
+class TestHashtagFeedTools:
+    async def test_get_hashtag_feed_success(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(text="Post 1\nPost 2", references=[])
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_hashtag_feed")
+        result = await tool_fn("womenintech", mock_context, extractor=mock_extractor)
+        assert result["url"] == "https://www.linkedin.com/feed/hashtag/womenintech/"
+        assert result["sections"]["feed_hashtag"] == "Post 1\nPost 2"
+        await_args = mock_extractor.extract_page.await_args
+        assert await_args is not None
+        assert await_args.kwargs["section_name"] == "feed_hashtag"
+        # max_posts defaults to 20 -> ceil(20/5) = 4 scrolls.
+        assert await_args.kwargs["max_scrolls"] == 4
+
+    async def test_get_hashtag_feed_normalizes_a_leading_hash_and_pasted_link(
+        self, mock_context
+    ):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(text="text", references=[])
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_hashtag_feed")
+        result = await tool_fn("#WomenInTech", mock_context, extractor=mock_extractor)
+        assert result["url"] == "https://www.linkedin.com/feed/hashtag/WomenInTech/"
+
+    async def test_get_hashtag_feed_refuses_an_unrelated_link(self, mock_context):
+        """A value that names a different page is refused before any
+        navigation — see the same refusal path get_company_posts uses."""
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(text="", references=[])
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_hashtag_feed")
+        with pytest.raises(Exception):
+            await tool_fn(
+                "https://www.linkedin.com/company/microsoft/",
+                mock_context,
+                extractor=mock_extractor,
+            )
+        mock_extractor.extract_page.assert_not_called()
+
+    async def test_get_hashtag_feed_surfaces_references(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(
+                text="Some hashtag post",
+                references=[
+                    {
+                        "kind": "feed_post",
+                        "url": "/posts/alice_hello-ugcPost-1-xx",
+                        "context": "feed_hashtag",
+                    }
+                ],
+            )
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_hashtag_feed")
+        result = await tool_fn("womenintech", mock_context, extractor=mock_extractor)
+        assert (
+            result["references"]["feed_hashtag"][0]["url"]
+            == "/posts/alice_hello-ugcPost-1-xx"
+        )
+
+    async def test_get_hashtag_feed_rate_limited_surfaces_section_error(
+        self, mock_context
+    ):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(text=RATE_LIMITED_SECTION_TEXT, references=[])
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_hashtag_feed")
+        result = await tool_fn("womenintech", mock_context, extractor=mock_extractor)
+        assert result["sections"] == {}
+        assert result["section_errors"]["feed_hashtag"]["error_type"] == "rate_limit"
+
+    async def test_get_hashtag_feed_rejects_excessive_max_posts(self, mock_context):
+        from fastmcp.exceptions import ValidationError
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        with pytest.raises(ValidationError, match="max_posts"):
+            await mcp.call_tool(
+                "get_hashtag_feed", {"hashtag": "womenintech", "max_posts": 51}
+            )
+
+
 class TestSavedPostsTools:
     async def test_get_saved_posts_success(self, mock_context):
         mock_extractor = MagicMock()
@@ -1789,6 +1909,173 @@ class TestSavedPostsTools:
 
         with pytest.raises(ValidationError, match="max_posts"):
             await mcp.call_tool("get_saved_posts", {"max_posts": 51})
+
+    async def test_save_post_success(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.save_post = AsyncMock(
+            return_value={
+                "url": "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+                "status": "saved",
+                "message": "Post saved.",
+                "saved": True,
+                "retry_safe": False,
+            }
+        )
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "save_post")
+        result = await tool_fn(
+            "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+            True,
+            mock_context,
+            extractor=mock_extractor,
+        )
+        assert result["status"] == "saved"
+        mock_extractor.save_post.assert_awaited_once_with(
+            "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+            confirm=True,
+            unsave=False,
+        )
+
+    async def test_save_post_forwards_unsave(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.save_post = AsyncMock(
+            return_value={
+                "url": "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+                "status": "unsaved",
+                "message": "Post unsaved.",
+                "saved": False,
+                "retry_safe": False,
+            }
+        )
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "save_post")
+        await tool_fn(
+            "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+            True,
+            mock_context,
+            unsave=True,
+            extractor=mock_extractor,
+        )
+        mock_extractor.save_post.assert_awaited_once_with(
+            "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+            confirm=True,
+            unsave=True,
+        )
+
+    async def test_save_post_requires_confirm_argument(self, mock_context):
+        from fastmcp.exceptions import ValidationError
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        with pytest.raises(ValidationError):
+            await mcp.call_tool(
+                "save_post",
+                {"post_url": "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/"},
+            )
+
+
+class TestPostReactionsTools:
+    async def test_get_post_reactions_success(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.get_post_reactions = AsyncMock(
+            return_value={
+                "url": "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+                "sections": {"reactions": "Bob Smith"},
+                "references": {
+                    "reactions": [
+                        {
+                            "kind": "person",
+                            "url": "/in/bob-smith/",
+                            "context": "reactor",
+                        }
+                    ]
+                },
+            }
+        )
+
+        from linkedin_mcp_server.tools.reactions import register_reaction_tools
+
+        mcp = FastMCP("test")
+        register_reaction_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_post_reactions")
+        result = await tool_fn(
+            "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+            mock_context,
+            extractor=mock_extractor,
+        )
+        assert result["sections"]["reactions"] == "Bob Smith"
+        assert result["references"]["reactions"][0]["url"] == "/in/bob-smith/"
+        mock_extractor.get_post_reactions.assert_awaited_once_with(
+            "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/", max_reactors=50
+        )
+
+    async def test_get_post_reactions_surfaces_structural_section_error(
+        self, mock_context
+    ):
+        mock_extractor = MagicMock()
+        mock_extractor.get_post_reactions = AsyncMock(
+            return_value={
+                "url": "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+                "sections": {},
+                "section_errors": {
+                    "reactions": {
+                        "error_type": "structural_signal_not_found",
+                        "error_message": "Could not identify the reactions "
+                        "dialog structurally.",
+                    }
+                },
+            }
+        )
+
+        from linkedin_mcp_server.tools.reactions import register_reaction_tools
+
+        mcp = FastMCP("test")
+        register_reaction_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_post_reactions")
+        result = await tool_fn(
+            "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+            mock_context,
+            extractor=mock_extractor,
+        )
+        assert result["sections"] == {}
+        assert (
+            result["section_errors"]["reactions"]["error_type"]
+            == "structural_signal_not_found"
+        )
+
+    async def test_get_post_reactions_rejects_excessive_max_reactors(
+        self, mock_context
+    ):
+        from fastmcp.exceptions import ValidationError
+
+        from linkedin_mcp_server.tools.reactions import register_reaction_tools
+
+        mcp = FastMCP("test")
+        register_reaction_tools(mcp)
+
+        with pytest.raises(ValidationError, match="max_reactors"):
+            await mcp.call_tool(
+                "get_post_reactions",
+                {
+                    "post_url": "https://www.linkedin.com/posts/alice_x-ugcPost-1-xx/",
+                    "max_reactors": 51,
+                },
+            )
 
 
 class TestPostTools:

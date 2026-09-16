@@ -74,8 +74,10 @@ def capture_plan_for_url(url: str, max_scrolls: int | None = None) -> CapturePla
     """Translate a generic compatibility URL into its historical capture policy."""
     path = urlparse(url).path
     mode = CaptureMode.STANDARD
-    if "/recent-activity/" in path or (
-        "/company/" in path and path.rstrip("/").endswith("/posts")
+    if (
+        "/recent-activity/" in path
+        or "/feed/hashtag/" in path
+        or ("/company/" in path and path.rstrip("/").endswith("/posts"))
     ):
         mode |= CaptureMode.ACTIVITY
     if "/search/results/" in url:
