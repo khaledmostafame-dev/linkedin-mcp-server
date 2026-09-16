@@ -3,7 +3,10 @@
 import re
 
 from linkedin_mcp_server.scraping.text import (
+    CONVERSATION_OPTIONS_EN,
     DETAIL_CAPTURE_EN_US,
+    JOB_SAVE_EN_US,
+    JOB_SEARCH_EN_US,
     strip_conversation_chrome,
     strip_linkedin_noise,
     truncate_linkedin_noise,
@@ -236,3 +239,55 @@ class TestStripConversationChrome:
 
     def test_empty_string(self):
         assert strip_conversation_chrome("") == ""
+
+
+class TestJobSearchResultCount:
+    def test_the_exact_count_under_the_heading(self):
+        assert JOB_SEARCH_EN_US.result_count(
+            "Python jobs\n28 results\nSenior policy engineer"
+        ) == (28, True)
+
+    def test_a_count_with_a_plus_is_a_lower_bound(self):
+        assert JOB_SEARCH_EN_US.result_count("1,000+ results\nGreater Paris") == (
+            1000,
+            False,
+        )
+
+    def test_a_single_result_is_counted(self):
+        assert JOB_SEARCH_EN_US.result_count("python in France\n1 result") == (
+            1,
+            True,
+        )
+
+    def test_a_count_below_the_first_three_lines_is_not_the_count(self):
+        assert (
+            JOB_SEARCH_EN_US.result_count("line one\nline two\nline three\n28 results")
+            is None
+        )
+
+    def test_a_count_inside_a_longer_line_is_not_the_count(self):
+        assert JOB_SEARCH_EN_US.result_count("Drove 28 results for clients") is None
+
+    def test_no_count_line_returns_none(self):
+        assert JOB_SEARCH_EN_US.result_count("Python jobs\nNo matching jobs") is None
+
+    def test_empty_text_returns_none(self):
+        assert JOB_SEARCH_EN_US.result_count("") is None
+
+
+class TestJobSaveLabels:
+    def test_en_us_table_holds_the_two_states(self):
+        assert JOB_SAVE_EN_US.saved == "Saved"
+        assert JOB_SAVE_EN_US.unsaved == "Save"
+
+
+class TestConversationOptionsLabels:
+    def test_en_table_holds_the_opener_and_four_toggle_labels(self):
+        assert (
+            CONVERSATION_OPTIONS_EN.menu_opener_prefix
+            == "Open the options list in your conversation with"
+        )
+        assert CONVERSATION_OPTIONS_EN.mark_read == "Mark as read"
+        assert CONVERSATION_OPTIONS_EN.mark_unread == "Mark as unread"
+        assert CONVERSATION_OPTIONS_EN.archive == "Archive"
+        assert CONVERSATION_OPTIONS_EN.unarchive == "Unarchive"

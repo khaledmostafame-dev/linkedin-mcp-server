@@ -1056,3 +1056,166 @@ class TestWaitForMainText:
             await reader._wait_for_main_text(log_context="Messaging inbox")
 
         assert "Messaging inbox content did not appear" in caplog.text
+
+
+def _menu_evaluate(*, open_result: bool = True, items: list[str] | None = None):
+    """A page.evaluate double for the options-menu open/read/click JS.
+
+    Dispatches on a marker substring unique to each script, mirroring the
+    real DOM shape without needing a browser: everything else (the
+    diagnostic body-text read `record_page_trace` makes on every navigation)
+    gets a harmless empty string.
+    """
+    items = items if items is not None else []
+
+    async def fake_evaluate(script, *args, **kwargs):
+        if "startsWith(prefix)" in script:
+            return open_result
+        if "items[0].click()" in script:
+            return True
+        if "querySelectorAll" in script and "filter(Boolean)" in script:
+            return items
+        return ""
+
+    return fake_evaluate
+
+
+class TestMarkConversationRead:
+    async def test_thread_unavailable_when_landed_elsewhere(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/"
+        reader = _reader(mock_page)
+
+        result = await reader.mark_conversation_read("2-abc", confirm=True)
+
+        assert result["status"] == "conversation_unavailable"
+        assert "read" not in result
+
+    async def test_action_unavailable_when_menu_does_not_open(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(side_effect=_menu_evaluate(open_result=False))
+        reader = _reader(mock_page)
+
+        result = await reader.mark_conversation_read("2-abc", confirm=True)
+
+        assert result["status"] == "action_unavailable"
+        assert "read" not in result
+
+    async def test_already_read_is_a_no_op(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(
+            side_effect=_menu_evaluate(items=["Mark as unread"])
+        )
+        reader = _reader(mock_page)
+
+        result = await reader.mark_conversation_read("2-abc", read=True, confirm=True)
+
+        assert result == {
+            "url": "https://www.linkedin.com/messaging/thread/2-abc/",
+            "thread_id": "2-abc",
+            "status": "ok",
+            "changed": False,
+            "read": True,
+        }
+
+    async def test_dry_run_previews_without_clicking(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(
+            side_effect=_menu_evaluate(items=["Mark as read"])
+        )
+        reader = _reader(mock_page)
+
+        result = await reader.mark_conversation_read("2-abc", read=True, confirm=False)
+
+        assert result["status"] == "preview"
+        assert "read" not in result
+
+    async def test_confirmed_click_marks_it_read(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(
+            side_effect=_menu_evaluate(items=["Mark as read"])
+        )
+        reader = _reader(mock_page)
+
+        result = await reader.mark_conversation_read("2-abc", read=True, confirm=True)
+
+        assert result["status"] == "ok"
+        assert result["changed"] is True
+        assert result["read"] is True
+
+    async def test_neither_label_present_fails_closed(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(side_effect=_menu_evaluate(items=["Report"]))
+        reader = _reader(mock_page)
+
+        result = await reader.mark_conversation_read("2-abc", read=True, confirm=True)
+
+        assert result["status"] == "action_unavailable"
+
+
+class TestArchiveConversation:
+    async def test_thread_unavailable_when_landed_elsewhere(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/"
+        reader = _reader(mock_page)
+
+        result = await reader.archive_conversation("2-abc", confirm=True)
+
+        assert result["status"] == "conversation_unavailable"
+        assert "archived" not in result
+
+    async def test_already_archived_is_a_no_op(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(side_effect=_menu_evaluate(items=["Unarchive"]))
+        reader = _reader(mock_page)
+
+        result = await reader.archive_conversation("2-abc", confirm=True)
+
+        assert result == {
+            "url": "https://www.linkedin.com/messaging/thread/2-abc/",
+            "thread_id": "2-abc",
+            "status": "ok",
+            "changed": False,
+            "archived": True,
+        }
+
+    async def test_confirmed_click_archives_it(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(side_effect=_menu_evaluate(items=["Archive"]))
+        reader = _reader(mock_page)
+
+        result = await reader.archive_conversation("2-abc", confirm=True)
+
+        assert result["status"] == "ok"
+        assert result["changed"] is True
+        assert result["archived"] is True
+
+    async def test_unarchive_direction_clicks_the_unarchive_label(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        fake = _menu_evaluate(items=["Unarchive"])
+        clicked_labels: list[str] = []
+
+        async def recording_evaluate(script, *args, **kwargs):
+            if "items[0].click()" in script and args:
+                clicked_labels.append(args[0])
+            return await fake(script, *args, **kwargs)
+
+        mock_page.evaluate = AsyncMock(side_effect=recording_evaluate)
+        reader = _reader(mock_page)
+
+        result = await reader.archive_conversation(
+            "2-abc", confirm=True, unarchive=True
+        )
+
+        assert result["status"] == "ok"
+        assert result["changed"] is True
+        assert result["archived"] is False
+        assert clicked_labels == ["Unarchive"]
+
+    async def test_dry_run_previews_without_clicking(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/messaging/thread/2-abc/"
+        mock_page.evaluate = AsyncMock(side_effect=_menu_evaluate(items=["Archive"]))
+        reader = _reader(mock_page)
+
+        result = await reader.archive_conversation("2-abc", confirm=False)
+
+        assert result["status"] == "preview"
+        assert "archived" not in result

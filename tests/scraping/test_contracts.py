@@ -13,6 +13,7 @@ from linkedin_mcp_server.scraping.contracts import (
     message_action_result,
     rate_limited_section_error,
     refuse_an_invalid_message,
+    refuse_an_invalid_reply,
 )
 
 
@@ -121,3 +122,32 @@ class TestRefuseAnInvalidMessage:
                 "Message must contain non-whitespace characters.",
             )
         ]
+
+
+class TestRefuseAnInvalidReply:
+    @pytest.mark.parametrize("message", ["line\nbreak", "before\tafter", "text\x7f"])
+    def test_every_c0_or_del_character_is_refused(self, message: str):
+        assert refuse_an_invalid_reply("2-abc", message) == message_action_result(
+            "https://www.linkedin.com/messaging/thread/2-abc/",
+            "invalid_message",
+            "Message must not contain control characters or line breaks.",
+        )
+
+    def test_whitespace_is_refused_before_normal_message_text(self):
+        assert refuse_an_invalid_reply("2-abc", "   ") == message_action_result(
+            "https://www.linkedin.com/messaging/thread/2-abc/",
+            "invalid_message",
+            "Message must contain non-whitespace characters.",
+        )
+
+    def test_safe_single_line_text_is_accepted(self):
+        assert refuse_an_invalid_reply("2-abc", "Hello!") is None
+
+    def test_a_conversation_url_is_normalized_to_its_thread_id(self):
+        assert refuse_an_invalid_reply(
+            "https://www.linkedin.com/messaging/thread/2-abc/", "   "
+        ) == message_action_result(
+            "https://www.linkedin.com/messaging/thread/2-abc/",
+            "invalid_message",
+            "Message must contain non-whitespace characters.",
+        )
