@@ -1652,6 +1652,7 @@ class TestToolTimeouts:
             "react_to_comment",
             "get_post_analytics",
             "get_profile_analytics",
+            "get_company_page_analytics",
             "close_session",
         )
 
@@ -1691,6 +1692,7 @@ class TestToolTimeouts:
             "react_to_comment",
             "get_post_analytics",
             "get_profile_analytics",
+            "get_company_page_analytics",
             "close_session",
         )
 

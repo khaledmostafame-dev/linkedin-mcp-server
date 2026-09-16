@@ -1,0 +1,14 @@
+{
+  "call": {
+    "arguments": {
+      "company": "analytical-engine/../../feed"
+    },
+    "method": "get_company_page_analytics"
+  },
+  "events": [],
+  "result": {
+    "refused": "That is not a LinkedIn company slug. Pass the part after /company/ in a company URL, for example \"microsoft\"."
+  },
+  "scenario": "get_company_page_analytics__refused",
+  "schema_version": 1
+}

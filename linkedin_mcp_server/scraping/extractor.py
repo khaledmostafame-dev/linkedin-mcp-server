@@ -321,3 +321,9 @@ class LinkedInExtractor:
     ) -> dict[str, Any]:
         """Read the signed-in member's profile and creator analytics dashboards."""
         return await self._analytics.get_profile_analytics(sections)
+
+    async def get_company_page_analytics(
+        self, company: str, sections: str | None = None
+    ) -> dict[str, Any]:
+        """Read the admin analytics of a company page the member administers."""
+        return await self._analytics.get_company_page_analytics(company, sections)

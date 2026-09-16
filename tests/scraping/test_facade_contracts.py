@@ -44,6 +44,7 @@ TOOL_DELEGATES = {
     "comment_on_post": "comment_on_post",
     "connect_with_person": "connect_with_person",
     "get_company_employees": "get_company_employees",
+    "get_company_page_analytics": "get_company_page_analytics",
     "get_company_posts": "extract_page",
     "get_company_profile": "scrape_company",
     "get_conversation": "get_conversation",
@@ -127,9 +128,9 @@ async def test_registered_tools_and_extractor_delegates_are_counted_separately()
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 25
+    assert len(tool_names) == 26
     assert tool_names == {*TOOL_DELEGATES, "close_session"}
-    assert len(TOOL_DELEGATES) == 24
+    assert len(TOOL_DELEGATES) == 25
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
 
@@ -505,7 +506,7 @@ def test_facade_methods_are_exactly_the_frozen_coroutine_surface():
     }
 
     assert actual == expected
-    assert len(TOOL_FACADE_METHODS) == 24
+    assert len(TOOL_FACADE_METHODS) == 25
     assert len(COMPATIBILITY_METHODS) == 2
 
 

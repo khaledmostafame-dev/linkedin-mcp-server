@@ -910,6 +910,12 @@ async def _analytics_refusal_scenario(method: str) -> dict[str, Any]:
                 elif method == "get_profile_analytics":
                     arguments = {"sections": "bogus"}
                     await extractor.get_profile_analytics(**arguments)
+                elif method == "get_company_page_analytics":
+                    arguments = {"company": "analytical-engine/../../feed"}
+                    await extractor.get_company_page_analytics(**arguments)
+                elif method == "get_company_page_analytics__sections":
+                    arguments = {"company": "analytical-engine", "sections": "bogus"}
+                    await extractor.get_company_page_analytics(**arguments)
                 else:
                     raise AssertionError(method)
             except InvalidReferenceError as error:
@@ -917,7 +923,9 @@ async def _analytics_refusal_scenario(method: str) -> dict[str, Any]:
             else:  # pragma: no cover - the refusal is the scenario
                 raise AssertionError("the call must be refused")
     page.assert_clean()
-    return recorder.trace({"method": method, "arguments": arguments}, result)
+    return recorder.trace(
+        {"method": method.split("__")[0], "arguments": arguments}, result
+    )
 
 
 async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
@@ -1111,6 +1119,7 @@ TOOL_FACADE_METHODS = {
     "extract_feed",
     "extract_page",
     "get_company_employees",
+    "get_company_page_analytics",
     "get_conversation",
     "get_inbox",
     "get_my_profile",
@@ -1219,6 +1228,12 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         ),
         "analytics-profile-refused.json": await _analytics_refusal_scenario(
             "get_profile_analytics"
+        ),
+        "analytics-company-refused.json": await _analytics_refusal_scenario(
+            "get_company_page_analytics"
+        ),
+        "analytics-company-sections-refused.json": await _analytics_refusal_scenario(
+            "get_company_page_analytics__sections"
         ),
         "inbox.json": await _conversation_scenario("get_inbox"),
         "conversation.json": await _conversation_scenario("get_conversation"),

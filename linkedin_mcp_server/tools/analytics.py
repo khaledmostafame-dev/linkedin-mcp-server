@@ -15,8 +15,14 @@ from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
 from linkedin_mcp_server.core.exceptions import AuthenticationError
 from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_error
 from linkedin_mcp_server.error_handler import raise_tool_error
-from linkedin_mcp_server.scraping.analytics import parse_profile_analytics_sections
-from linkedin_mcp_server.scraping.identifiers import normalize_post_urn
+from linkedin_mcp_server.scraping.analytics import (
+    parse_company_analytics_sections,
+    parse_profile_analytics_sections,
+)
+from linkedin_mcp_server.scraping.identifiers import (
+    normalize_company_identifier,
+    normalize_post_urn,
+)
 from linkedin_mcp_server.core.exceptions import InvalidReferenceError
 
 logger = logging.getLogger(__name__)
@@ -144,3 +150,74 @@ def register_analytics_tools(
                 raise_tool_error(relogin_exc, "get_profile_analytics")
         except Exception as e:
             raise_tool_error(e, "get_profile_analytics")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Get Company Page Analytics",
+        annotations={"readOnlyHint": True, "openWorldHint": True},
+        tags={"analytics", "company", "read"},
+        exclude_args=["extractor"],
+    )
+    async def get_company_page_analytics(
+        company: str,
+        ctx: Context,
+        sections: str | None = "visitors,followers,content",
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Read the admin analytics of a LinkedIn company page you administer.
+
+        One page navigation per section. Pages you do not administer are not
+        guessed at: LinkedIn sends non-admins back to the public page, and each
+        such section comes back as section_errors[<section>] with error_type
+        "not_authorized" and no text.
+
+        Args:
+            company: The page's /company/ slug, its numeric id, or a /company/
+                URL (admin URLs work too).
+            ctx: FastMCP context for progress reporting
+            sections: Comma-separated sections (default all three):
+                - visitors: page views and unique visitors, visitor demographics
+                  (/company/<page>/admin/analytics/visitors/)
+                - followers: total followers, new followers over time, follower
+                  demographics (/admin/analytics/followers/)
+                - content: impressions, reactions, comments, reposts, clicks and
+                  engagement of the page's posts (/admin/analytics/updates/)
+
+        Returns:
+            Dict with url, sections (name -> raw text), metrics (per section,
+            list of {label, value} counts read beside their labels, digits in
+            any script), named_metrics (English UI only; e.g.
+            followers.followers is the follower count and
+            followers.new_followers the growth), company_id when LinkedIn
+            showed the page's numeric id, unknown_sections, and section_errors.
+        """
+        try:
+            normalize_company_identifier(company)
+            requested, unknown = parse_company_analytics_sections(sections)
+            if not requested:
+                raise InvalidReferenceError(
+                    f"Unknown company analytics sections: {', '.join(unknown)}. "
+                    "Valid: visitors, followers, content."
+                )
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="get_company_page_analytics"
+            )
+            logger.info(
+                "Reading company page analytics for %s (sections=%s)",
+                company,
+                sections,
+            )
+            await ctx.report_progress(
+                progress=0, total=100, message="Loading company page analytics"
+            )
+            result = await extractor.get_company_page_analytics(company, sections)
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+            return result
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "get_company_page_analytics")
+        except Exception as e:
+            raise_tool_error(e, "get_company_page_analytics")  # NoReturn

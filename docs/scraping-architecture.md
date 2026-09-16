@@ -16,7 +16,7 @@ a page-owning collaborator.
 | Module | Canonical public owners | Source classification |
 | --- | --- | --- |
 | `__init__` | _(no public definitions)_ | `browser-free` |
-| `analytics` | `AnalyticsScraper`, `METRIC_LABELS`, `POST_ANALYTICS_SECTION`, `PROFILE_ANALYTICS_SECTIONS`, `build_metrics()`, `parse_count()`, `parse_profile_analytics_sections()`, `post_analytics_url()` | `page-owning` |
+| `analytics` | `AnalyticsScraper`, `COMPANY_ANALYTICS_SECTIONS`, `METRIC_LABELS`, `POST_ANALYTICS_SECTION`, `PROFILE_ANALYTICS_SECTIONS`, `build_metrics()`, `parse_company_analytics_sections()`, `parse_count()`, `parse_profile_analytics_sections()`, `post_analytics_url()` | `page-owning` |
 | `capture` | `CaptureMode`, `CapturePlan`, `RATE_LIMIT_RETRY_DELAY`, `SectionCapture`, `capture_plan_for_url()` | `page-owning` |
 | `comments` | `COMMENT_INTERRUPTED_WARNING`, `COMMENT_MAX_LENGTH`, `CommentReference`, `CommentScraper`, `CommentSort`, `CommentUrn`, `MAX_COMMENTS_LIMIT`, `build_comment_references()`, `comment_action_result()`, `comment_permalink()`, `normalize_comment_text()`, `normalize_comment_urn()`, `parse_comment_urn()`, `posted_at_from_id()`, `prepare_comment_reaction()`, `prepare_comment_write()` | `browser-free` |
 | `company` | `CompanyScraper` | `browser-free` |
@@ -81,6 +81,7 @@ a page-owning collaborator.
 - `extract_feed`
 - `extract_page`
 - `get_company_employees`
+- `get_company_page_analytics`
 - `get_conversation`
 - `get_inbox`
 - `get_my_profile`
