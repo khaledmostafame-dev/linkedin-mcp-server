@@ -184,6 +184,12 @@ class LinkedInExtractor:
             tool_timeout,
         )
 
+    async def save_job(
+        self, job_id: str, *, confirm: bool, unsave: bool = False
+    ) -> dict[str, Any]:
+        """Save or unsave a job posting for the authenticated LinkedIn account."""
+        return await self._jobs.save_job(job_id, confirm=confirm, unsave=unsave)
+
     async def get_saved_jobs(self, max_pages: int = 3) -> dict[str, Any]:
         """List the authenticated user's saved job postings."""
         return await self._jobs.get_saved_jobs(max_pages)
@@ -241,6 +247,30 @@ class LinkedInExtractor:
         """Search messages by keyword."""
         return await self._conversations.search_conversations(keywords, limit)
 
+    async def mark_conversation_read(
+        self,
+        conversation_url_or_thread_id: str,
+        *,
+        read: bool = True,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Mark a conversation thread read or unread via its options menu."""
+        return await self._conversations.mark_conversation_read(
+            conversation_url_or_thread_id, read=read, confirm=confirm
+        )
+
+    async def archive_conversation(
+        self,
+        conversation_url_or_thread_id: str,
+        *,
+        confirm: bool,
+        unarchive: bool = False,
+    ) -> dict[str, Any]:
+        """Archive or unarchive a conversation thread via its options menu."""
+        return await self._conversations.archive_conversation(
+            conversation_url_or_thread_id, confirm=confirm, unarchive=unarchive
+        )
+
     async def send_message(
         self,
         linkedin_username: str,
@@ -255,4 +285,16 @@ class LinkedInExtractor:
             message,
             confirm_send=confirm_send,
             profile_urn=profile_urn,
+        )
+
+    async def reply_to_conversation(
+        self,
+        conversation_url_or_thread_id: str,
+        message: str,
+        *,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Send a reply into an existing messaging thread, by thread id."""
+        return await self._message_sender.reply_to_conversation(
+            conversation_url_or_thread_id, message, confirm=confirm
         )

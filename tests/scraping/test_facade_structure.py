@@ -41,6 +41,9 @@ PUBLIC_SIGNATURES = {
     "get_page_text": "(self) -> 'str'",
     "get_saved_jobs": "(self, max_pages: 'int' = 3) -> 'dict[str, Any]'",
     "get_sidebar_profiles": "(self, username: 'str') -> 'dict[str, Any]'",
+    "mark_conversation_read": "(self, conversation_url_or_thread_id: 'str', *, read: 'bool' = True, confirm: 'bool') -> 'dict[str, Any]'",
+    "archive_conversation": "(self, conversation_url_or_thread_id: 'str', *, confirm: 'bool', unarchive: 'bool' = False) -> 'dict[str, Any]'",
+    "reply_to_conversation": "(self, conversation_url_or_thread_id: 'str', message: 'str', *, confirm: 'bool') -> 'dict[str, Any]'",
     "scrape_company": "(self, company_name: 'str', requested: 'set[str]', callbacks: 'ProgressCallback | None' = None) -> 'dict[str, Any]'",
     "scrape_job": "(self, job_id: 'str') -> 'dict[str, Any]'",
     "scrape_person": "(self, username: 'str', requested: 'set[str]', callbacks: 'ProgressCallback | None' = None, max_scrolls: 'int | None' = None, *, main_profile_already_loaded: 'bool' = False, allow_self_alias: 'bool' = False) -> 'dict[str, Any]'",
@@ -49,6 +52,7 @@ PUBLIC_SIGNATURES = {
     "search_jobs": "(self, keywords: 'str', location: 'str | None' = None, max_pages: 'int' = 3, date_posted: 'str | None' = None, job_type: 'str | None' = None, experience_level: 'str | None' = None, work_type: 'str | None' = None, easy_apply: 'bool' = False, sort_by: 'str | None' = None, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'",
     "search_people": "(self, keywords: 'str', location: 'str | None' = None, network: 'list[str] | None' = None, current_company: 'str | None' = None) -> 'dict[str, Any]'",
     "search_posts": "(self, keywords: 'str', date_posted: 'str | None' = None, max_pages: 'int' = 3) -> 'dict[str, Any]'",
+    "save_job": "(self, job_id: 'str', *, confirm: 'bool', unsave: 'bool' = False) -> 'dict[str, Any]'",
     "send_message": "(self, linkedin_username: 'str', message: 'str', *, confirm_send: 'bool', profile_urn: 'str | None' = None) -> 'dict[str, Any]'",
 }
 
@@ -64,6 +68,9 @@ DELEGATES = {
     "get_page_text": ("_content", "get_page_text"),
     "get_saved_jobs": ("_jobs", "get_saved_jobs"),
     "get_sidebar_profiles": ("_person", "get_sidebar_profiles"),
+    "mark_conversation_read": ("_conversations", "mark_conversation_read"),
+    "archive_conversation": ("_conversations", "archive_conversation"),
+    "reply_to_conversation": ("_message_sender", "reply_to_conversation"),
     "scrape_company": ("_company", "scrape_company"),
     "scrape_job": ("_jobs", "scrape_job"),
     "scrape_person": ("_person", "scrape_person"),
@@ -72,6 +79,7 @@ DELEGATES = {
     "search_jobs": ("_jobs", "search_jobs"),
     "search_people": ("_person", "search_people"),
     "search_posts": ("_posts", "search_posts"),
+    "save_job": ("_jobs", "save_job"),
     "send_message": ("_message_sender", "send_message"),
 }
 
@@ -87,6 +95,9 @@ DELEGATE_CALLS = {
     "get_page_text": "self._content.get_page_text()",
     "get_saved_jobs": "self._jobs.get_saved_jobs(max_pages)",
     "get_sidebar_profiles": "self._person.get_sidebar_profiles(username)",
+    "mark_conversation_read": "self._conversations.mark_conversation_read(conversation_url_or_thread_id, read=read, confirm=confirm)",
+    "archive_conversation": "self._conversations.archive_conversation(conversation_url_or_thread_id, confirm=confirm, unarchive=unarchive)",
+    "reply_to_conversation": "self._message_sender.reply_to_conversation(conversation_url_or_thread_id, message, confirm=confirm)",
     "scrape_company": "self._company.scrape_company(company_name, requested, callbacks)",
     "scrape_job": "self._jobs.scrape_job(job_id)",
     "scrape_person": "self._person.scrape_person(username, requested, callbacks, max_scrolls, main_profile_already_loaded=main_profile_already_loaded, allow_self_alias=allow_self_alias)",
@@ -95,6 +106,7 @@ DELEGATE_CALLS = {
     "search_jobs": "self._jobs.search_jobs(keywords, location, max_pages, date_posted, job_type, experience_level, work_type, easy_apply, sort_by, tool_timeout)",
     "search_people": "self._person.search_people(keywords, location=location, network=network, current_company=current_company)",
     "search_posts": "self._posts.search_posts(keywords, date_posted=date_posted, max_pages=max_pages)",
+    "save_job": "self._jobs.save_job(job_id, confirm=confirm, unsave=unsave)",
     "send_message": "self._message_sender.send_message(linkedin_username, message, confirm_send=confirm_send, profile_urn=profile_urn)",
 }
 

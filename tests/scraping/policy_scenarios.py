@@ -984,6 +984,70 @@ async def _conversation_scenario(method: str) -> dict[str, Any]:
     )
 
 
+async def _reply_invalid_scenario() -> dict[str, Any]:
+    """The browser-free refusal path: no navigation, no scripting needed."""
+    recorder = TraceRecorder("reply_to_conversation__invalid_blank", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("reply_to_conversation", "message"):
+            result = await extractor.reply_to_conversation("2-abc", "   ", confirm=True)
+    page.assert_clean()
+    return recorder.trace(
+        {
+            "method": "reply_to_conversation",
+            "arguments": {
+                "conversation_url_or_thread_id": "2-abc",
+                "message_case": "blank",
+                "confirm": True,
+            },
+        },
+        result,
+    )
+
+
+async def _conversation_option_unavailable_scenario(method: str) -> dict[str, Any]:
+    """LinkedIn landed somewhere other than the requested thread route.
+
+    The route check runs on `page.url` alone (no evaluate), so this is the
+    cheapest representative failure path for both toggle tools.
+    """
+    recorder = TraceRecorder(f"{method}__thread_unavailable", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.goto_landings.append("https://www.linkedin.com/messaging/")
+    extractor = _extractor(page)
+    arguments = {"conversation_url_or_thread_id": "2-abc", "confirm": True}
+    async with boundaries(recorder, clock):
+        with recorder.context(method):
+            if method == "mark_conversation_read":
+                result = await extractor.mark_conversation_read("2-abc", confirm=True)
+            elif method == "archive_conversation":
+                result = await extractor.archive_conversation("2-abc", confirm=True)
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
+async def _save_job_already_saved_scenario() -> dict[str, Any]:
+    recorder = TraceRecorder("save_job__already_saved", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.script("evaluate:browser_locale", "en-US")
+    page.script("evaluate:job_save_state", "saved")
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("save_job"):
+            result = await extractor.save_job("123", confirm=True)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": "save_job", "arguments": {"job_id": "123", "confirm": True}},
+        result,
+    )
+
+
 async def _facade_contract_trace() -> dict[str, Any]:
     global _TOOL_SCHEMAS
 
@@ -1018,6 +1082,7 @@ async def _facade_contract_trace() -> dict[str, Any]:
 
 
 TOOL_FACADE_METHODS = {
+    "archive_conversation",
     "connect_with_person",
     "extract_feed",
     "extract_page",
@@ -1027,6 +1092,9 @@ TOOL_FACADE_METHODS = {
     "get_my_profile",
     "get_saved_jobs",
     "get_sidebar_profiles",
+    "mark_conversation_read",
+    "reply_to_conversation",
+    "save_job",
     "scrape_company",
     "scrape_job",
     "scrape_person",
@@ -1113,6 +1181,14 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         "search-conversations.json": await _conversation_scenario(
             "search_conversations"
         ),
+        "reply-invalid.json": await _reply_invalid_scenario(),
+        "mark-conversation-read-unavailable.json": (
+            await _conversation_option_unavailable_scenario("mark_conversation_read")
+        ),
+        "archive-conversation-unavailable.json": (
+            await _conversation_option_unavailable_scenario("archive_conversation")
+        ),
+        "save-job-already-saved.json": await _save_job_already_saved_scenario(),
     }
     return traces
 
