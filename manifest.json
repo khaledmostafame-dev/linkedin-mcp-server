@@ -122,6 +122,10 @@
     {
       "name": "close_session",
       "description": "Properly close browser session and clean up resources"
+    },
+    {
+      "name": "get_pacing_status",
+      "description": "Show LinkedIn pacing counters, when the next read and write are allowed, any cooldown, and the effective limits, without contacting LinkedIn"
     }
   ],
   "user_config": {
