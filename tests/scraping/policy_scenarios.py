@@ -27,7 +27,10 @@ from linkedin_mcp_server.scraping import person as person_module
 from linkedin_mcp_server.scraping import session as session_module
 from linkedin_mcp_server.scraping import LinkedInExtractor
 from linkedin_mcp_server.scraping.fields import COMPANY_SECTIONS, PERSON_SECTIONS
-from linkedin_mcp_server.scraping.post_content import build_post_request
+from linkedin_mcp_server.scraping.post_content import (
+    build_post_edit,
+    build_post_request,
+)
 from linkedin_mcp_server.server import create_mcp_server
 
 from .support.policy_trace import (
@@ -1011,6 +1014,12 @@ async def _posting_composer_unavailable_scenario(method: str) -> dict[str, Any]:
             elif method == "get_scheduled_posts":
                 arguments = {}
                 result = await extractor.get_scheduled_posts()
+            elif method == "edit_scheduled_post":
+                edit = build_post_edit("Synthetic replacement")
+                arguments = {"identifier": "sched-0123456789abcdef", "confirm": True}
+                result = await extractor.edit_scheduled_post(
+                    "sched-0123456789abcdef", edit, confirm=True
+                )
             elif method == "delete_scheduled_post":
                 arguments = {"identifier": "sched-0123456789abcdef", "confirm": True}
                 result = await extractor.delete_scheduled_post(
@@ -1020,6 +1029,37 @@ async def _posting_composer_unavailable_scenario(method: str) -> dict[str, Any]:
                 raise AssertionError(method)
     page.assert_clean()
     return recorder.trace({"method": method, "arguments": arguments}, result)
+
+
+async def _own_post_unresolved_member_scenario(method: str) -> dict[str, Any]:
+    """Own-post writes resolve the logged-in member before touching the post.
+
+    Here /in/me/ never resolves to a member path, so authorship cannot be
+    proven and the call is refused before the post page is even opened.
+    """
+    recorder = TraceRecorder(f"{method}__member_unresolved", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    page.goto_landings.append("https://www.linkedin.com/in/me/")
+    extractor = _extractor(page)
+    post_url = "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
+    async with boundaries(recorder, clock):
+        with recorder.context(method, "posting"):
+            if method == "delete_post":
+                result = await extractor.delete_post(post_url, confirm=True)
+            elif method == "edit_post":
+                result = await extractor.edit_post(
+                    post_url,
+                    build_post_edit("Synthetic replacement", allow_schedule=False),
+                    confirm=True,
+                )
+            else:
+                raise AssertionError(method)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": method, "arguments": {"post_url": post_url, "confirm": True}},
+        result,
+    )
 
 
 async def _facade_contract_trace() -> dict[str, Any]:
@@ -1058,7 +1098,10 @@ async def _facade_contract_trace() -> dict[str, Any]:
 TOOL_FACADE_METHODS = {
     "connect_with_person",
     "create_post",
+    "delete_post",
     "delete_scheduled_post",
+    "edit_post",
+    "edit_scheduled_post",
     "extract_feed",
     "extract_page",
     "get_company_employees",
@@ -1162,6 +1205,15 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         ),
         "post-scheduled-delete-composer-unavailable.json": (
             await _posting_composer_unavailable_scenario("delete_scheduled_post")
+        ),
+        "post-scheduled-edit-composer-unavailable.json": (
+            await _posting_composer_unavailable_scenario("edit_scheduled_post")
+        ),
+        "post-delete-member-unresolved.json": (
+            await _own_post_unresolved_member_scenario("delete_post")
+        ),
+        "post-edit-member-unresolved.json": (
+            await _own_post_unresolved_member_scenario("edit_post")
         ),
     }
     return traces

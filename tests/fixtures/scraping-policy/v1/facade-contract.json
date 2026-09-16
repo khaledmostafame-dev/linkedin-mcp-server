@@ -24,9 +24,21 @@
         "coroutine": true,
         "signature": "(self, request: 'PostRequest') -> 'dict[str, Any]'"
       },
+      "delete_post": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
       "delete_scheduled_post": {
         "coroutine": true,
         "signature": "(self, identifier: 'str', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "edit_post": {
+        "coroutine": true,
+        "signature": "(self, post_url: 'str', edit: 'PostEdit', *, confirm: 'bool') -> 'dict[str, Any]'"
+      },
+      "edit_scheduled_post": {
+        "coroutine": true,
+        "signature": "(self, identifier: 'str', edit: 'PostEdit', *, confirm: 'bool') -> 'dict[str, Any]'"
       },
       "extract_feed": {
         "coroutine": true,
@@ -108,7 +120,10 @@
     "tool_methods": [
       "connect_with_person",
       "create_post",
+      "delete_post",
       "delete_scheduled_post",
+      "edit_post",
+      "edit_scheduled_post",
       "extract_feed",
       "extract_page",
       "get_company_employees",
@@ -318,6 +333,18 @@
               "default": null,
               "description": "Optional list of images."
             },
+            "post_as": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional company page to post as, which this account\nmust administer: https://www.linkedin.com/company/<slug>/,\nits numeric id, or urn:li:organization:<id>. Only the author\noption carrying that page's identity is selected, and it must\nread back as selected; otherwise nothing is posted. Page posts\nare public, so visibility must stay \"anyone\"."
+            },
             "schedule_at": {
               "anyOf": [
                 {
@@ -355,6 +382,30 @@
           "type": "object"
         }
       },
+      "delete_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False verifies and previews; True deletes.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post's permalink (/feed/update/urn:li:activity:<id>/\nor a /posts/...-activity-<id>-... link).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "delete_scheduled_post": {
         "input": {
           "additionalProperties": false,
@@ -366,6 +417,83 @@
             "identifier": {
               "description": "An identifier returned by get_scheduled_posts.",
               "type": "string"
+            }
+          },
+          "required": [
+            "identifier",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "edit_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False verifies and previews; True saves the edit.",
+              "type": "boolean"
+            },
+            "post_url": {
+              "description": "The post's permalink.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Replacement text.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "post_url",
+            "text",
+            "confirm"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "edit_scheduled_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "False previews; True saves the edit.",
+              "type": "boolean"
+            },
+            "identifier": {
+              "description": "An identifier returned by get_scheduled_posts.",
+              "type": "string"
+            },
+            "schedule_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional new ISO 8601 date-time with an explicit offset."
+            },
+            "text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional replacement text."
             }
           },
           "required": [

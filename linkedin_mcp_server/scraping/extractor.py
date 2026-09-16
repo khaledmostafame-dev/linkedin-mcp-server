@@ -24,7 +24,7 @@ from linkedin_mcp_server.scraping.message_sender import MessageSender
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.person import PersonScraper
 from linkedin_mcp_server.scraping.post_composer import PostComposer
-from linkedin_mcp_server.scraping.post_content import PostRequest
+from linkedin_mcp_server.scraping.post_content import PostEdit, PostRequest
 from linkedin_mcp_server.scraping.posts import PostSearch
 from linkedin_mcp_server.scraping.profile_page import ProfilePageReader
 from linkedin_mcp_server.scraping.session import ScrapingSession
@@ -275,3 +275,21 @@ class LinkedInExtractor:
         return await self._post_composer.delete_scheduled_post(
             identifier, confirm=confirm
         )
+
+    async def edit_scheduled_post(
+        self, identifier: str, edit: PostEdit, *, confirm: bool
+    ) -> dict[str, Any]:
+        """Change a scheduled post's text, schedule, or both."""
+        return await self._post_composer.edit_scheduled_post(
+            identifier, edit, confirm=confirm
+        )
+
+    async def delete_post(self, post_url: str, *, confirm: bool) -> dict[str, Any]:
+        """Delete one of the logged-in member's own published posts."""
+        return await self._post_composer.delete_post(post_url, confirm=confirm)
+
+    async def edit_post(
+        self, post_url: str, edit: PostEdit, *, confirm: bool
+    ) -> dict[str, Any]:
+        """Replace the text of one of the logged-in member's own posts."""
+        return await self._post_composer.edit_post(post_url, edit, confirm=confirm)

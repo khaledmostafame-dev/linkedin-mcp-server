@@ -96,6 +96,7 @@ class PostRequest:
     images: tuple[PostAttachment, ...] = ()
     document: PostAttachment | None = None
     document_title: str | None = None
+    post_as: MentionTarget | None = None
 
     @property
     def rendered_text(self) -> str:
@@ -152,6 +153,9 @@ def identity_key_from_url(value: str) -> MentionTarget | None:
     slug = slug.casefold()
     if parts[0] == "in":
         return MentionTarget("person", f"person:/in/{slug}/", value)
+    if slug.isdigit():
+        # /company/12345/ names the same page as urn:li:organization:12345.
+        return MentionTarget("company", f"company:urn:{slug}", value)
     return MentionTarget("company", f"company:/company/{slug}/", value)
 
 
@@ -262,11 +266,17 @@ def build_post_request(
     document_title: str | None = None,
     now: datetime | None = None,
     attachments_pending: bool = False,
+    post_as: str | None = None,
 ) -> PostRequest:
     """Validate everything about a post that can be checked without a browser."""
     if visibility not in VISIBILITIES:
         raise PostValidationError(
             f"visibility must be one of {', '.join(VISIBILITIES)}."
+        )
+    actor = parse_post_as(post_as) if post_as is not None else None
+    if actor is not None and visibility != "anyone":
+        raise PostValidationError(
+            'A company page post is public; visibility must be "anyone".'
         )
     segments = parse_post_text(text)
     rendered = render_segments(segments)
@@ -296,7 +306,104 @@ def build_post_request(
         images=images,
         document=document,
         document_title=" ".join((document_title or "").split()) or None,
+        post_as=actor,
     )
+
+
+def parse_post_as(value: str) -> MentionTarget:
+    """A company page to post as: its URL, numeric id or organization URN."""
+    reference = value.strip() if isinstance(value, str) else ""
+    if reference.isdigit():
+        return MentionTarget("company", f"company:urn:{reference}", reference)
+    try:
+        target = parse_mention_target(reference)
+    except PostValidationError:
+        target = None
+    if target is None or target.kind != "company":
+        raise PostValidationError(
+            "post_as must name a company page: https://www.linkedin.com/company/"
+            "<slug>/, its numeric id, or urn:li:organization:<id>."
+        )
+    return target
+
+
+@dataclass(frozen=True)
+class PostEdit:
+    """A validated edit: new text, a new schedule, or both."""
+
+    segments: tuple[Segment, ...] | None
+    schedule_at: datetime | None = None
+
+    @property
+    def rendered_text(self) -> str | None:
+        return render_segments(self.segments) if self.segments is not None else None
+
+    @property
+    def mentions(self) -> tuple[MentionSegment, ...]:
+        return tuple(s for s in self.segments or () if isinstance(s, MentionSegment))
+
+
+def build_post_edit(
+    text: str | None,
+    *,
+    schedule_at: str | None = None,
+    allow_schedule: bool = True,
+    now: datetime | None = None,
+) -> PostEdit:
+    """Validate an edit to an existing post without a browser."""
+    if text is None and schedule_at is None:
+        raise PostValidationError("Pass text, schedule_at, or both.")
+    if schedule_at is not None and not allow_schedule:
+        raise PostValidationError("A published post cannot be rescheduled.")
+    segments = None
+    if text is not None:
+        segments = parse_post_text(text)
+        rendered = render_segments(segments)
+        if not rendered.strip():
+            raise PostValidationError("Edited text must not be blank.")
+        if utf16_length(rendered) > LINKEDIN_POST_CHARACTER_LIMIT:
+            raise PostValidationError(
+                f"Post text is {utf16_length(rendered)} characters; LinkedIn "
+                f"allows {LINKEDIN_POST_CHARACTER_LIMIT}."
+            )
+    instant = parse_schedule_at(schedule_at, now=now) if schedule_at else None
+    return PostEdit(segments=segments, schedule_at=instant)
+
+
+_POST_URN_RE = re.compile(r"^urn:li:(activity|share|ugcPost):(\d{5,25})$")
+_ACTIVITY_SLUG_RE = re.compile(r"-activity-(\d{5,25})-")
+
+
+def parse_post_url(value: str) -> str:
+    """Normalize a LinkedIn post permalink to its /feed/update/<urn>/ form."""
+    try:
+        parsed = urlparse(value.strip()) if isinstance(value, str) else None
+    except ValueError:
+        parsed = None
+    host = (parsed.hostname or "").lower().rstrip(".") if parsed else ""
+    if (
+        parsed is None
+        or parsed.scheme != "https"
+        or not _LINKEDIN_HOST_RE.match(host)
+        or parsed.username
+        or parsed.password
+    ):
+        raise PostValidationError(
+            "post_url must be an https://www.linkedin.com post permalink."
+        )
+    parts = [unquote(part) for part in parsed.path.split("/") if part]
+    urn = None
+    if len(parts) >= 3 and parts[:2] == ["feed", "update"]:
+        urn = parts[2]
+    elif len(parts) >= 2 and parts[0] == "posts":
+        match = _ACTIVITY_SLUG_RE.search(parts[1] + "-")
+        urn = f"urn:li:activity:{match.group(1)}" if match else None
+    if urn is None or not _POST_URN_RE.match(urn):
+        raise PostValidationError(
+            "post_url must be a post permalink such as "
+            "https://www.linkedin.com/feed/update/urn:li:activity:<id>/."
+        )
+    return f"https://www.linkedin.com/feed/update/{urn}/"
 
 
 def post_preview(request: PostRequest) -> dict[str, Any]:
@@ -330,6 +437,15 @@ def post_preview(request: PostRequest) -> dict[str, Any]:
             else None
         ),
         "schedule": schedule_summary(request.schedule_at),
+        "post_as": (
+            {
+                "kind": "company",
+                "target": request.post_as.reference,
+                "resolved_against_linkedin": False,
+            }
+            if request.post_as is not None
+            else None
+        ),
     }
     return preview
 

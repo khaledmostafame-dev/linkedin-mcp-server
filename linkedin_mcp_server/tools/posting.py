@@ -24,7 +24,9 @@ from linkedin_mcp_server.error_handler import raise_tool_error
 from linkedin_mcp_server.post_media import media_staging, stage_post_attachments
 from linkedin_mcp_server.scraping.post_content import (
     PostValidationError,
+    build_post_edit,
     build_post_request,
+    parse_post_url,
     post_preview,
 )
 
@@ -87,6 +89,7 @@ def register_posting_tools(
         schedule_at: str | None = None,
         media: Annotated[list[MediaInput] | None, Field(max_length=20)] = None,
         document: DocumentInput | None = None,
+        post_as: str | None = None,
         extractor: Any | None = None,
     ) -> dict[str, Any]:
         """
@@ -121,6 +124,12 @@ def register_posting_tools(
                 timezone.
             media: Optional list of images.
             document: Optional document with a required title.
+            post_as: Optional company page to post as, which this account
+                must administer: https://www.linkedin.com/company/<slug>/,
+                its numeric id, or urn:li:organization:<id>. Only the author
+                option carrying that page's identity is selected, and it must
+                read back as selected; otherwise nothing is posted. Page posts
+                are public, so visibility must stay "anyone".
 
         Returns:
             Dict with url, status ("preview", "published", "scheduled", or a
@@ -138,6 +147,7 @@ def register_posting_tools(
                 visibility=visibility,
                 schedule_at=schedule_at,
                 attachments_pending=bool(media or document),
+                post_as=post_as,
             )
             with media_staging() as staging:
                 images, staged_document, title = await stage_post_attachments(
@@ -152,6 +162,7 @@ def register_posting_tools(
                     images=images,
                     document=staged_document,
                     document_title=title,
+                    post_as=post_as,
                 )
                 if not confirm:
                     return post_preview(request)
@@ -285,3 +296,169 @@ def register_posting_tools(
                 raise_tool_error(relogin_exc, "delete_scheduled_post")
         except Exception as e:
             raise_tool_error(e, "delete_scheduled_post")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Edit Scheduled Post",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"posting", "write"},
+        exclude_args=["extractor"],
+    )
+    async def edit_scheduled_post(
+        identifier: str,
+        confirm: bool,
+        ctx: Context,
+        text: str | None = None,
+        schedule_at: str | None = None,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Change a scheduled LinkedIn post's text, its scheduled time, or both.
+
+        The identifier is re-resolved against the live scheduled list, and the
+        edit composer must open the matching post before anything is changed.
+        New text replaces the old entirely and may use the same
+        @[Name](URL or URN) mention syntax as create_post. With confirm False
+        the entry is resolved and the planned change shown; nothing is edited.
+
+        Args:
+            identifier: An identifier returned by get_scheduled_posts.
+            confirm: False previews; True saves the edit.
+            ctx: FastMCP context for progress reporting
+            text: Optional replacement text.
+            schedule_at: Optional new ISO 8601 date-time with an explicit offset.
+
+        Returns:
+            Dict with url, status ("preview", "edited", or a refusal such as
+            "entry_not_found" or "edit_mismatch"), message, retry_safe, changes
+            and the refreshed scheduled list after a save. An edited entry gets
+            a new identifier; use the returned list.
+        """
+        try:
+            edit = build_post_edit(text, schedule_at=schedule_at)
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="edit_scheduled_post"
+            )
+            await ctx.report_progress(
+                progress=0, total=100, message="Opening scheduled posts"
+            )
+            result = await extractor.edit_scheduled_post(
+                identifier, edit, confirm=confirm
+            )
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+            return result
+        except PostValidationError as e:
+            raise ToolError(str(e)) from e
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "edit_scheduled_post")
+        except Exception as e:
+            raise_tool_error(e, "edit_scheduled_post")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Delete Post",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"posting", "write"},
+        exclude_args=["extractor"],
+    )
+    async def delete_post(
+        post_url: str,
+        confirm: bool,
+        ctx: Context,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Delete one of the authenticated member's own published LinkedIn posts.
+
+        Authorship is verified before anything happens: the post's author link
+        must be the logged-in member's own profile, and the post's control menu
+        must offer the owner-only edit and delete actions. Any other post is
+        refused, including posts published as a company page. With confirm
+        False authorship is verified and nothing is deleted. LinkedIn cannot
+        recover a deleted post.
+
+        Args:
+            post_url: The post's permalink (/feed/update/urn:li:activity:<id>/
+                or a /posts/...-activity-<id>-... link).
+            confirm: False verifies and previews; True deletes.
+            ctx: FastMCP context for progress reporting
+
+        Returns:
+            Dict with url, status ("preview", "deleted", or a refusal such as
+            "not_own_post"), message, retry_safe and the post's text.
+        """
+        try:
+            normalized = parse_post_url(post_url)
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="delete_post"
+            )
+            await ctx.report_progress(progress=0, total=100, message="Opening post")
+            result = await extractor.delete_post(normalized, confirm=confirm)
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+            return result
+        except PostValidationError as e:
+            raise ToolError(str(e)) from e
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "delete_post")
+        except Exception as e:
+            raise_tool_error(e, "delete_post")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Edit Post",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"posting", "write"},
+        exclude_args=["extractor"],
+    )
+    async def edit_post(
+        post_url: str,
+        text: str,
+        confirm: bool,
+        ctx: Context,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Replace the text of one of the authenticated member's own published posts.
+
+        Authorship is verified exactly as delete_post does, before anything is
+        changed. The new text replaces the old entirely and may use the
+        @[Name](URL or URN) mention syntax; attachments are left as they are.
+        LinkedIn re-evaluates a post's distribution when it is edited, so
+        editing a post that is performing well can cost it reach. With confirm
+        False authorship is verified and nothing is edited.
+
+        Args:
+            post_url: The post's permalink.
+            text: Replacement text.
+            confirm: False verifies and previews; True saves the edit.
+            ctx: FastMCP context for progress reporting
+
+        Returns:
+            Dict with url, status ("preview", "edited", or a refusal such as
+            "not_own_post"), message and retry_safe.
+        """
+        try:
+            normalized = parse_post_url(post_url)
+            edit = build_post_edit(text, allow_schedule=False)
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="edit_post"
+            )
+            await ctx.report_progress(progress=0, total=100, message="Opening post")
+            result = await extractor.edit_post(normalized, edit, confirm=confirm)
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+            return result
+        except PostValidationError as e:
+            raise ToolError(str(e)) from e
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "edit_post")
+        except Exception as e:
+            raise_tool_error(e, "edit_post")  # NoReturn

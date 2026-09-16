@@ -27,8 +27,10 @@ from linkedin_mcp_server.scraping.post_composer import (
 )
 from linkedin_mcp_server.scraping.post_content import (
     MentionSegment,
+    build_post_edit,
     build_post_request,
     parse_mention_target,
+    parse_post_as,
 )
 
 TARGET_URL = "https://www.linkedin.com/in/sample-person/"
@@ -399,3 +401,221 @@ class TestPostLinkCapture:
         )
 
         assert urn == "urn:li:activity:2"
+
+
+class TestPostAs:
+    def _setup(
+        self, before: list[dict[str, Any]], after: list[dict[str, Any]]
+    ) -> tuple[PostComposer, MagicMock, MagicMock]:
+        composer, page = _composer()
+        author_button = MagicMock()
+        author_button.wait_for = AsyncMock()
+        author_button.click = AsyncMock()
+        author_button.evaluate = AsyncMock(return_value={"hrefs": [], "urns": []})
+        dialog = MagicMock()
+        dialog.locator.return_value.first = author_button
+        _stub(composer, "_composer_dialog", MagicMock(return_value=dialog))
+        radios = MagicMock()
+        radios.first.wait_for = AsyncMock()
+        radios.evaluate_all = AsyncMock(side_effect=[before, after])
+        option = MagicMock()
+        option.click = AsyncMock()
+        radios.nth.return_value = option
+        other = MagicMock()
+        other.first.wait_for = AsyncMock()
+        other.first.click = AsyncMock()
+        other.last.click = AsyncMock()
+        settings = MagicMock()
+        settings.locator.side_effect = lambda selector: (
+            radios if selector == composer_module._ACTOR_RADIO_SELECTOR else other
+        )
+        page.locator.return_value.filter.return_value = settings
+        page.locator.return_value.count = AsyncMock(return_value=0)
+        _stub(
+            composer, "_editor", MagicMock(return_value=MagicMock(wait_for=AsyncMock()))
+        )
+        return composer, radios, option
+
+    def _radio(self, urn: str, checked: bool = False) -> dict[str, Any]:
+        return {"visible": True, "checked": checked, "hrefs": [], "urns": [urn]}
+
+    async def test_only_the_page_carrying_the_identity_is_selected(self):
+        before = [
+            self._radio("urn:li:fsd_profile:ACoAAself", checked=True),
+            self._radio("urn:li:organization:999"),
+            self._radio("urn:li:organization:12345"),
+        ]
+        after = [
+            self._radio("urn:li:fsd_profile:ACoAAself"),
+            self._radio("urn:li:organization:999"),
+            self._radio("urn:li:organization:12345", checked=True),
+        ]
+        composer, radios, option = self._setup(before, after)
+
+        actor = await composer._apply_actor(parse_post_as("12345"))
+
+        radios.nth.assert_called_once_with(2)
+        option.click.assert_awaited_once()
+        assert actor["verified_by"] == "selected_option"
+
+    async def test_options_without_identity_fail_closed(self):
+        before = [{"visible": True, "checked": False, "hrefs": [], "urns": []}]
+        composer, _radios, option = self._setup(before, [])
+
+        with pytest.raises(_Abort) as raised:
+            await composer._apply_actor(parse_post_as("12345"))
+
+        assert raised.value.status == "actor_unresolved"
+        option.click.assert_not_awaited()
+
+    async def test_a_selection_that_does_not_stick_is_refused(self):
+        before = [self._radio("urn:li:organization:12345")]
+        after = [self._radio("urn:li:organization:12345", checked=False)]
+        composer, _radios, _option = self._setup(before, after)
+
+        with pytest.raises(_Abort) as raised:
+            await composer._apply_actor(parse_post_as("12345"))
+
+        assert raised.value.status == "actor_unresolved"
+
+    async def test_create_post_as_a_page_skips_member_visibility(self):
+        composer, page = _composer()
+        editor = MagicMock(wait_for=AsyncMock())
+        _stub(composer, "_open_composer", AsyncMock(return_value=editor))
+        _stub(composer, "_editor_state", AsyncMock(return_value={"text": ""}))
+        actor = _stub(
+            composer,
+            "_apply_actor",
+            AsyncMock(side_effect=_Abort("actor_unresolved", "no match")),
+        )
+        visibility = _stub(composer, "_apply_visibility", AsyncMock())
+        _stub(composer, "_dismiss_composer", AsyncMock())
+
+        result = await composer.create_post(
+            build_post_request("Hello", post_as="12345", now=NOW)
+        )
+
+        assert result["status"] == "actor_unresolved"
+        actor.assert_awaited_once()
+        visibility.assert_not_awaited()
+        page.keyboard.type.assert_not_awaited()
+
+
+POST_URL = "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
+
+
+class TestOwnPosts:
+    def _setup(self, actor_href: str | None) -> tuple[PostComposer, MagicMock]:
+        composer, page = _composer()
+
+        async def navigate(url: str) -> None:
+            page.url = (
+                "https://www.linkedin.com/in/sample-person/"
+                if url.endswith("/in/me/")
+                else url
+            )
+
+        setattr(
+            composer._navigator, "_navigate_to_page", AsyncMock(side_effect=navigate)
+        )
+        setattr(composer._session, "check_rate_limit", AsyncMock())
+        page.wait_for_selector = AsyncMock()
+        page.evaluate = AsyncMock(
+            return_value={
+                "actorHref": actor_href,
+                "controlCount": 2,
+                "domUrn": True,
+                "text": "Synthetic post",
+            }
+        )
+        menu_item = MagicMock()
+        menu_item.click = AsyncMock()
+        menu_item.wait_for = AsyncMock()
+        page.locator.return_value.filter.return_value.first = menu_item
+        self.menu_item = menu_item
+        return composer, page
+
+    async def test_another_members_post_is_refused_before_opening_its_menu(self):
+        composer, _page = self._setup("/in/someone-else/")
+
+        result = await composer.delete_post(POST_URL, confirm=True)
+
+        assert result["status"] == "not_own_post"
+        self.menu_item.click.assert_not_awaited()
+
+    async def test_missing_owner_actions_are_refused(self):
+        composer, page = self._setup("/in/sample-person/")
+        self.menu_item.wait_for = AsyncMock(side_effect=PlaywrightTimeoutError("no"))
+
+        result = await composer.delete_post(POST_URL, confirm=True)
+
+        assert result["status"] == "not_own_post"
+        page.keyboard.press.assert_awaited_with("Escape")
+
+    async def test_preview_verifies_authorship_and_deletes_nothing(self):
+        composer, page = self._setup("/in/Sample-Person/")
+
+        result = await composer.delete_post(POST_URL, confirm=False)
+
+        assert result["status"] == "preview"
+        assert result["post_text"] == "Synthetic post"
+        # One click opens the control menu; the delete item is never clicked.
+        assert self.menu_item.click.await_count == 1
+        page.keyboard.press.assert_awaited_with("Escape")
+
+    async def test_edit_preview_never_opens_the_editor(self):
+        composer, _page = self._setup("/in/sample-person/")
+
+        result = await composer.edit_post(
+            POST_URL, build_post_edit("New text", allow_schedule=False), confirm=False
+        )
+
+        assert result["status"] == "preview"
+        assert result["new_text"] == "New text"
+        assert self.menu_item.click.await_count == 1
+
+
+class TestEditScheduledPost:
+    async def test_preview_resolves_and_changes_nothing(self):
+        composer, page = _composer()
+        _stub(composer, "_open_scheduled_list", AsyncMock(return_value=None))
+        dismiss = _stub(composer, "_dismiss_composer", AsyncMock())
+        text = "Scheduled synthetic post body"
+        page.evaluate = AsyncMock(return_value=[text])
+
+        result = await composer.edit_scheduled_post(
+            scheduled_identifier(text), build_post_edit("New body"), confirm=False
+        )
+
+        assert result["status"] == "preview"
+        assert result["changes"]["text"] == "New body"
+        assert page.evaluate.await_count == 1
+        dismiss.assert_awaited_once()
+
+    async def test_an_editor_holding_another_post_is_abandoned(self):
+        composer, page = _composer()
+        _stub(composer, "_open_scheduled_list", AsyncMock(return_value=None))
+        _stub(composer, "_dismiss_composer", AsyncMock())
+        text = "Scheduled synthetic post body"
+        page.evaluate = AsyncMock(side_effect=[[text], True])
+        clicker = MagicMock(click=AsyncMock())
+        page.locator.return_value = clicker
+        clicker.filter.return_value.first = clicker
+        editor = MagicMock(wait_for=AsyncMock())
+        _stub(composer, "_editor", MagicMock(return_value=editor))
+        _stub(
+            composer,
+            "_editor_state",
+            AsyncMock(return_value={"text": "A different post", "entities": []}),
+        )
+        abandon = _stub(composer, "_abandon_edit", AsyncMock())
+        replace = _stub(composer, "_replace_editor_text", AsyncMock())
+
+        result = await composer.edit_scheduled_post(
+            scheduled_identifier(text), build_post_edit("New body"), confirm=True
+        )
+
+        assert result["status"] == "edit_mismatch"
+        assert result["retry_safe"] is True
+        replace.assert_not_awaited()
+        abandon.assert_awaited_once()

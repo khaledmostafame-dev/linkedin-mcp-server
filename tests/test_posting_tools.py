@@ -41,7 +41,13 @@ async def test_write_and_read_annotations_follow_the_shared_contract():
     register_posting_tools(mcp)
     tools = {tool.name: tool for tool in await mcp.list_tools()}
 
-    for name in ("create_post", "delete_scheduled_post"):
+    for name in (
+        "create_post",
+        "delete_scheduled_post",
+        "edit_scheduled_post",
+        "delete_post",
+        "edit_post",
+    ):
         annotations = tools[name].annotations
         assert annotations is not None
         assert annotations.destructiveHint is True
@@ -142,3 +148,58 @@ async def test_scheduled_post_tools_delegate(mock_context):
     extractor.delete_scheduled_post.assert_awaited_once_with(
         "sched-0123456789abcdef", confirm=False
     )
+
+
+async def test_post_as_preview_names_the_requested_page(mock_context):
+    create_post = await _tool("create_post")
+
+    result = await create_post(
+        "Hello", False, mock_context, post_as="https://www.linkedin.com/company/12345/"
+    )
+
+    assert result["post_as"]["kind"] == "company"
+    assert result["post_as"]["resolved_against_linkedin"] is False
+
+
+async def test_own_post_tools_normalize_the_permalink(mock_context):
+    extractor = MagicMock()
+    extractor.delete_post = AsyncMock(return_value={"status": "preview"})
+    extractor.edit_post = AsyncMock(return_value={"status": "preview"})
+    slug_url = "https://www.linkedin.com/posts/sample_topic-activity-1234567890-AbCd"
+    permalink = "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
+
+    await (await _tool("delete_post"))(
+        slug_url, False, mock_context, extractor=extractor
+    )
+    await (await _tool("edit_post"))(
+        slug_url, "New text", False, mock_context, extractor=extractor
+    )
+
+    extractor.delete_post.assert_awaited_once_with(permalink, confirm=False)
+    call = extractor.edit_post.await_args
+    assert call is not None
+    assert call.args[0] == permalink
+    assert call.args[1].rendered_text == "New text"
+
+
+async def test_invalid_edits_are_refused_without_a_browser(mock_context):
+    with patch(
+        "linkedin_mcp_server.tools.posting.get_ready_extractor", new=AsyncMock()
+    ) as ready:
+        with pytest.raises(ToolError, match="post_url"):
+            await (await _tool("delete_post"))(
+                "https://www.linkedin.com/in/sample-person/", True, mock_context
+            )
+        with pytest.raises(ToolError, match="Pass text"):
+            await (await _tool("edit_scheduled_post"))(
+                "sched-0123456789abcdef", True, mock_context
+            )
+    ready.assert_not_awaited()
+
+
+async def test_edit_post_warns_about_distribution():
+    mcp = FastMCP("test")
+    register_posting_tools(mcp)
+    tool = await mcp.get_tool("edit_post")
+    assert tool is not None
+    assert "re-evaluates a post's distribution" in (tool.description or "")

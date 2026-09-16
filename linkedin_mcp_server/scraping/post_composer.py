@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 import hashlib
 import logging
 import random
@@ -39,6 +39,7 @@ from linkedin_mcp_server.scraping.post_content import (
     MentionSegment,
     MentionTarget,
     PostAttachment,
+    PostEdit,
     PostRequest,
     TextSegment,
     date_matches,
@@ -82,6 +83,29 @@ def _icon_button(*icons: str, role: str = "button") -> str:
 _SCHEDULE_BUTTON_SELECTOR = _icon_button("clock-medium")
 _VIEW_ALL_SCHEDULED_SELECTOR = _icon_button("arrow-right-small")
 _MENU_DELETE_SELECTOR = _icon_button("trash-medium", role='[role="button"]')
+_MENU_EDIT_SELECTOR = _icon_button("edit-medium", role='[role="button"]')
+# Post settings (upstream PR 835): the author row is ``#ACTOR`` and the
+# "Posting as" list is a radio group. Ids and roles, not labels.
+_SETTINGS_HEADER_SELECTOR = "#share-to-linkedin-modal__header"
+_ACTOR_ROW_SELECTOR = "#ACTOR"
+_ACTOR_RADIO_SELECTOR = '[role="radiogroup"] [role="radio"]'
+# A post's own control menu: an overflow-icon button. Its menu items are
+# div[role=button] (upstream PR 696) or menuitems carrying icon test hooks.
+_OVERFLOW_BUTTON_SELECTOR = (
+    'button:has(svg[data-test-icon*="overflow"]), button:has(use[href*="overflow"])'
+)
+_OWNER_DELETE_ITEM_SELECTOR = ", ".join(
+    [
+        _icon_button("trash-medium", role='[role="button"]'),
+        _icon_button("trash-medium", role='[role="menuitem"]'),
+    ]
+)
+_OWNER_EDIT_ITEM_SELECTOR = ", ".join(
+    [
+        _icon_button("edit-medium", role='[role="button"]'),
+        _icon_button("edit-medium", role='[role="menuitem"]'),
+    ]
+)
 # Not yet measured against a live account; each is a table of candidate icon
 # hook names so a live check only has to extend a tuple. A miss fails closed.
 _IMAGE_BUTTON_SELECTOR = _icon_button("image-medium", "photo-medium")
@@ -148,6 +172,8 @@ _OPTION_EVIDENCE_JS = (
     }"""
 )
 
+_ELEMENT_EVIDENCE_JS = "(element) => {" + _EVIDENCE_JS + "return evidence(element); }"
+
 _OPTION_MARK_JS = (
     "(options, arg) => {"
     + _EVIDENCE_JS
@@ -180,6 +206,18 @@ _EDITOR_STATE_JS = (
                 ...evidence(node),
             })),
         };
+    }"""
+)
+
+_RADIO_EVIDENCE_JS = (
+    "(radios) => {"
+    + _EVIDENCE_JS
+    + """
+        return radios.map(radio => ({
+            visible: visible(radio),
+            checked: (radio.getAttribute('aria-checked') || '').toLowerCase() === 'true',
+            ...evidence(radio),
+        }));
     }"""
 )
 
@@ -222,6 +260,35 @@ _SHADOW_WALK_JS = r"""
         );
     };
 """
+
+# The post a /feed/update/<urn>/ page shows: the first visible profile or
+# company link in <main> is its actor (header precedes body and comments), and
+# the first overflow button is its own control menu. Returned raw.
+_POST_OWNERSHIP_JS = (
+    "(urn) => {"
+    + _SHADOW_WALK_JS
+    + """
+        const main = roots.map(root => root.querySelector('main')).find(Boolean);
+        if (!main) return null;
+        const actor = Array.from(main.querySelectorAll('a[href*="/in/"], a[href*="/company/"]'))
+            .find(visible);
+        const controls = Array.from(main.querySelectorAll('button')).filter(button =>
+            visible(button) &&
+            Array.from(button.querySelectorAll('svg, use')).some(node =>
+                (node.getAttribute('data-test-icon') || node.getAttribute('href') || '')
+                    .includes('overflow')));
+        const text = main.innerText || '';
+        const domUrn = Array.from(main.querySelectorAll('*')).some(node =>
+            Array.from(node.attributes || []).some(a => a.value.includes(urn))
+        );
+        return {
+            actorHref: actor ? actor.getAttribute('href') : null,
+            controlCount: controls.length,
+            domUrn,
+            text: text.slice(0, 2000),
+        };
+    }"""
+)
 
 _POST_LINKS_JS = (
     "() => {"
@@ -488,6 +555,113 @@ class PostComposer:
                 "The post settings did not return to the composer.",
             ) from error
 
+    # --- author (post as a company page) -----------------------------------
+
+    async def _apply_actor(self, target: MentionTarget) -> dict[str, Any]:
+        """Switch the composer's author to the page the target identifies.
+
+        Ported from upstream PR 835, which matched the author by its visible
+        name. Names are neither unique nor locale-proof, so here the one radio
+        option whose link or URN names the target is selected, it must read
+        back as checked, and the composer's author control must not contradict
+        it afterwards. Anything less fails closed.
+        """
+        dialog = self._composer_dialog()
+        author_button = dialog.locator(_UNLABELLED_BUTTON_SELECTOR).first
+        try:
+            await author_button.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
+            current = evidence_keys(await author_button.evaluate(_ELEMENT_EVIDENCE_JS))
+            if evidence_matches(current, target):
+                return {"target": target.reference, "verified_by": "author_control"}
+            await author_button.click(timeout=_STEP_TIMEOUT_MS)
+            settings = self._page.locator(_DIALOG_SELECTOR).filter(
+                has=self._page.locator(_SETTINGS_HEADER_SELECTOR)
+            )
+            actor_row = settings.locator(_ACTOR_ROW_SELECTOR).first
+            await actor_row.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
+            await actor_row.click(timeout=_STEP_TIMEOUT_MS)
+            radios = settings.locator(_ACTOR_RADIO_SELECTOR)
+            await radios.first.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
+        except Exception as error:
+            raise _Abort(
+                "actor_unavailable",
+                "LinkedIn did not offer an author switch in the composer; this "
+                "account may not administer any page. Nothing was posted.",
+            ) from error
+        options = await radios.evaluate_all(_RADIO_EVIDENCE_JS)
+        options = options if isinstance(options, list) else []
+        matched = [
+            index
+            for index, item in enumerate(options)
+            if isinstance(item, dict)
+            and item.get("visible")
+            and evidence_matches(evidence_keys(item), target)
+        ]
+        if len(matched) != 1:
+            carried = any(
+                evidence_keys(item) for item in options if isinstance(item, dict)
+            )
+            raise _Abort(
+                "actor_unresolved",
+                f"Could not verify an author option for {target.reference}: "
+                + (
+                    "no option carried that page's identity (try its numeric id "
+                    "or URL form)."
+                    if carried and not matched
+                    else "the options carried no page link or URN to verify."
+                    if not matched
+                    else "more than one option matched."
+                )
+                + " Nothing was posted.",
+            )
+        option = radios.nth(matched[0])
+        await option.click(timeout=_STEP_TIMEOUT_MS)
+        await self._pause()
+        after = await radios.evaluate_all(_RADIO_EVIDENCE_JS)
+        checked = [
+            item
+            for item in (after if isinstance(after, list) else [])
+            if isinstance(item, dict) and item.get("checked")
+        ]
+        if len(checked) != 1 or not evidence_matches(evidence_keys(checked[0]), target):
+            raise _Abort(
+                "actor_unresolved",
+                f"The author option for {target.reference} did not become the one "
+                "selected. Nothing was posted.",
+            )
+        try:
+            # Save (the "Posting as" list), then Done (post settings): each is
+            # the dialog's last enabled button (upstream PR 835).
+            for _ in range(2):
+                await settings.locator(
+                    'button:not([disabled]):not([aria-disabled="true"]):visible'
+                ).last.click(timeout=_STEP_TIMEOUT_MS)
+                await self._pause(0.3, 0.6)
+                if (
+                    await self._page.locator(
+                        f"{_SETTINGS_HEADER_SELECTOR}:visible"
+                    ).count()
+                    == 0
+                ):
+                    break
+            await self._editor().wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
+        except Exception as error:
+            raise _Abort(
+                "actor_unavailable",
+                "The post settings did not return to the composer.",
+            ) from error
+        shown = evidence_keys(await author_button.evaluate(_ELEMENT_EVIDENCE_JS))
+        if shown and not evidence_matches(shown, target):
+            raise _Abort(
+                "actor_mismatch",
+                "The composer's author control names a different author. Nothing "
+                "was posted.",
+            )
+        return {
+            "target": target.reference,
+            "verified_by": "author_control" if shown else "selected_option",
+        }
+
     # --- attachments --------------------------------------------------------
 
     async def _set_files(self, button: Any, paths: list[str], accept_hint: str) -> None:
@@ -633,9 +807,16 @@ class PostComposer:
 
     # --- schedule -----------------------------------------------------------
 
-    async def _apply_schedule(self, request: PostRequest) -> dict[str, Any]:
-        instant = request.schedule_at
-        assert instant is not None
+    async def _apply_schedule(
+        self, instant: datetime, *, edit_mode: bool = False
+    ) -> dict[str, Any]:
+        """Drive the schedule dialog to the instant, in the browser's timezone.
+
+        In edit mode the dialog prefills the post's *current* schedule, not
+        today, so the today-window proof of the date order is withheld
+        (upstream PR 695), and its confirm action is the last *enabled*
+        button because Next stays disabled until something changed.
+        """
         local = await self._page.evaluate(
             _BROWSER_LOCAL_TIME_JS, int(instant.timestamp() * 1000)
         )
@@ -668,6 +849,8 @@ class PostComposer:
         try:
             today = date(local["todayYear"], local["todayMonth"], local["todayDay"])
         except (KeyError, TypeError, ValueError):
+            today = None
+        if edit_mode:
             today = None
         date_value, order = format_schedule_date(
             local["year"],
@@ -710,7 +893,12 @@ class PostComposer:
             has=self._page.locator(_SCHEDULE_DATE_SELECTOR)
         )
         try:
-            await schedule_dialog.locator("button:visible").last.click(
+            confirm_selector = (
+                'button:not([disabled]):not([aria-disabled="true"]):visible'
+                if edit_mode
+                else "button:visible"
+            )
+            await schedule_dialog.locator(confirm_selector).last.click(
                 timeout=_STEP_TIMEOUT_MS
             )
             await date_input.wait_for(state="hidden", timeout=_STEP_TIMEOUT_MS)
@@ -843,10 +1031,12 @@ class PostComposer:
             await editor.focus()
             await self._page.keyboard.press("ControlOrMeta+End")
 
-    async def _type_segments(self, editor: Any, request: PostRequest) -> _Typed:
+    async def _type_segments(
+        self, editor: Any, request: PostRequest | PostEdit
+    ) -> _Typed:
         typed = _Typed(expected=[], mentions=[])
         await editor.click(timeout=_STEP_TIMEOUT_MS)
-        for segment in request.segments:
+        for segment in request.segments or ():
             if isinstance(segment, TextSegment):
                 await self._type_plain(segment.text)
                 typed.expected.append(segment.text)
@@ -931,8 +1121,14 @@ class PostComposer:
         schedule: dict[str, Any] | None = None
         typed = _Typed(expected=[], mentions=[])
         links_before: dict[str, list[str]] = {"all": [], "announced": []}
+        actor: dict[str, Any] | None = None
         try:
-            await self._apply_visibility(request.visibility)
+            if request.post_as is not None:
+                # A page post is public; LinkedIn offers no member visibility
+                # choice for it, so the visibility step is skipped.
+                actor = await self._apply_actor(request.post_as)
+            else:
+                await self._apply_visibility(request.visibility)
             if request.document is not None:
                 await self._attach_document(
                     request.document, request.document_title or ""
@@ -940,7 +1136,7 @@ class PostComposer:
             elif request.images:
                 await self._attach_images(request.images)
             if request.schedule_at is not None:
-                schedule = await self._apply_schedule(request)
+                schedule = await self._apply_schedule(request.schedule_at)
             typed_anything = True
             typed = await self._type_segments(editor, request)
 
@@ -1016,6 +1212,7 @@ class PostComposer:
                 retry_safe=False,
                 schedule=schedule,
                 mentions=typed.mentions,
+                post_as=actor,
                 scheduled_entry=entries[0] if len(entries) == 1 else None,
                 scheduled_posts=listing.get("scheduled_posts"),
             )
@@ -1032,6 +1229,7 @@ class PostComposer:
             post_urn=urn,
             post_url=f"https://www.linkedin.com/feed/update/{urn}/" if urn else None,
             mentions=typed.mentions,
+            post_as=actor,
         )
 
     # --- scheduled posts ----------------------------------------------------
@@ -1129,6 +1327,399 @@ class PostComposer:
                 for entry in entries
             ],
         }
+
+    async def _abandon_edit(self) -> None:
+        """Leave an edit composer unsaved by navigating away.
+
+        A dirty composer's dismiss raises a discard prompt whose buttons only
+        differ by label text; an SPA route change tears the modal down and the
+        post keeps its stored state (verified live upstream, PR 695).
+        """
+        try:
+            await self._page.goto(FEED_URL, wait_until="domcontentloaded")
+        except Exception:
+            logger.debug("Leaving the edit composer failed", exc_info=True)
+
+    async def _replace_editor_text(self, editor: Any, edit: PostEdit) -> _Typed:
+        await editor.click(timeout=_STEP_TIMEOUT_MS)
+        await self._page.keyboard.press("ControlOrMeta+a")
+        await self._page.keyboard.press("Delete")
+        await asyncio.sleep(0.3)
+        cleared = await self._editor_state(editor)
+        if collapse_whitespace(str(cleared.get("text") or "")) or cleared.get(
+            "entities"
+        ):
+            raise _Abort("composer_changed", "The existing text could not be cleared.")
+        return await self._type_segments(editor, edit)
+
+    async def _save_edit(self, editor: Any) -> None:
+        """Click the edit composer's save action and wait for it to close.
+
+        In edit mode LinkedIn appends a labelled Back button, so the primary is
+        the last visible button without an aria-label (upstream PR 695).
+        """
+        primary = (
+            self._composer_dialog()
+            .locator(f"{_UNLABELLED_BUTTON_SELECTOR}:visible")
+            .last
+        )
+        if not await primary.is_enabled():
+            raise _Abort("edit_unavailable", "The save action stayed disabled.")
+        await primary.click(timeout=_STEP_TIMEOUT_MS)
+        await editor.wait_for(state="hidden", timeout=_PUBLISH_TIMEOUT_MS)
+
+    async def edit_scheduled_post(
+        self, identifier: str, edit: PostEdit, *, confirm: bool
+    ) -> dict[str, Any]:
+        """Change a scheduled post's text, schedule, or both (upstream PR 695)."""
+        if not isinstance(identifier, str) or not _SCHEDULED_ID_RE.match(identifier):
+            return post_result(
+                FEED_URL,
+                "invalid_identifier",
+                "identifier must be one returned by get_scheduled_posts "
+                "(sched-<16 hex digits>).",
+            )
+        failure = await self._open_scheduled_list()
+        if failure is not None:
+            return failure
+        entries = await self._read_scheduled_entries()
+        matches = [e for e in entries if e["identifier"] == identifier]
+        if len(matches) != 1:
+            await self._dismiss_composer(clear=False)
+            return post_result(
+                self._page.url,
+                "entry_not_found" if not matches else "entry_ambiguous",
+                "No scheduled post has that identifier; re-read get_scheduled_posts."
+                if not matches
+                else "More than one scheduled post has that identifier.",
+            )
+        entry = matches[0]
+        changes = {
+            "text": edit.rendered_text,
+            "schedule": schedule_summary(edit.schedule_at),
+        }
+        if not confirm:
+            await self._dismiss_composer(clear=False)
+            return post_result(
+                self._page.url,
+                "preview",
+                "Nothing was changed. Call again with confirm=true to apply the edit.",
+                identifier=identifier,
+                entry=entry["text"],
+                changes=changes,
+            )
+        token = secrets.token_hex(8)
+        marked = await self._page.evaluate(
+            _SCHEDULED_ENTRY_MARK_JS,
+            {"index": entry["index"], "text": entry["text"], "token": token},
+        )
+        if marked is not True:
+            await self._dismiss_composer(clear=False)
+            return post_result(
+                self._page.url,
+                "entry_moved",
+                "The scheduled list changed while the entry was being resolved; "
+                "nothing was changed.",
+            )
+        submitted = False
+        schedule: dict[str, Any] | None = None
+        typed = _Typed(expected=[], mentions=[])
+        try:
+            try:
+                await self._page.locator(f'[data-linkedin-mcp-entry="{token}"]').click(
+                    timeout=_STEP_TIMEOUT_MS
+                )
+                await (
+                    self._page.locator(_MENU_EDIT_SELECTOR)
+                    .filter(visible=True)
+                    .first.click(timeout=_STEP_TIMEOUT_MS)
+                )
+                editor = self._editor()
+                await editor.wait_for(state="visible", timeout=_OPEN_TIMEOUT_MS)
+            except Exception as error:
+                raise _Abort(
+                    "edit_unavailable",
+                    "The scheduled post's menu did not open its edit composer.",
+                ) from error
+            current = collapse_whitespace(
+                str((await self._editor_state(editor)).get("text") or "")
+            )
+            if not current or current not in collapse_whitespace(entry["text"]):
+                raise _Abort(
+                    "edit_mismatch",
+                    "The edit composer opened a post that does not match the "
+                    "identified entry; nothing was changed.",
+                )
+            if edit.schedule_at is not None:
+                schedule = await self._apply_schedule(edit.schedule_at, edit_mode=True)
+            if edit.segments is not None:
+                typed = await self._replace_editor_text(editor, edit)
+            submitted = True
+            await self._save_edit(editor)
+        except _Abort as abort:
+            await self._abandon_edit()
+            if submitted:
+                return post_result(
+                    self._page.url,
+                    "edit_unconfirmed",
+                    abort.message,
+                    retry_safe=False,
+                )
+            return post_result(self._page.url, abort.status, abort.message)
+        except Exception:
+            await self._abandon_edit()
+            if not submitted:
+                raise
+            return post_result(
+                self._page.url,
+                "edit_unconfirmed",
+                "The edit may have been saved when an error occurred. Re-read "
+                "get_scheduled_posts before retrying.",
+                retry_safe=False,
+            )
+        await self._dismiss_composer(clear=False)
+        listing = await self.get_scheduled_posts()
+        entries_after = listing.get("scheduled_posts") or []
+        snippet = collapse_whitespace("".join(typed.expected))[:60]
+        updated = [
+            item
+            for item in entries_after
+            if snippet and snippet in collapse_whitespace(item.get("text", ""))
+        ]
+        return post_result(
+            FEED_URL,
+            "edited",
+            "Scheduled post updated."
+            if not snippet or len(updated) == 1
+            else "LinkedIn closed the editor, but the scheduled list does not show "
+            "exactly one entry with the new text. Re-read get_scheduled_posts.",
+            retry_safe=False,
+            changes=changes,
+            schedule=schedule,
+            mentions=typed.mentions,
+            scheduled_entry=updated[0] if len(updated) == 1 else None,
+            scheduled_posts=entries_after,
+        )
+
+    # --- own published posts -----------------------------------------------
+
+    async def _own_member_path(self) -> str | None:
+        await self._navigator._navigate_to_page("https://www.linkedin.com/in/me/")
+        target = identity_key_from_url(self._page.url)
+        if target is None or target.kind != "person" or target.key.endswith("/me/"):
+            return None
+        return target.key
+
+    async def _open_own_post_menu(self, post_url: str) -> dict[str, Any]:
+        """Load an own post and open its control menu; raise _Abort otherwise.
+
+        Authorship needs two structural signals, both required: the post's
+        actor link is the logged-in member's own profile (resolved through the
+        /in/me/ redirect), and its control menu offers the owner-only edit and
+        delete actions (icon test hooks, not labels).
+        """
+        own = await self._own_member_path()
+        if own is None:
+            raise _Abort(
+                "author_unverified", "The logged-in member's profile was not resolved."
+            )
+        urn = post_url.rstrip("/").rsplit("/", 1)[-1]
+        await self._navigator._navigate_to_page(post_url)
+        await self._session.check_rate_limit()
+        if urn not in self._page.url:
+            raise _Abort("post_unavailable", "LinkedIn did not open that post's page.")
+        try:
+            await self._page.wait_for_selector("main", timeout=_OPEN_TIMEOUT_MS)
+        except PlaywrightTimeoutError:
+            logger.debug("Post page main did not appear")
+        ownership = await self._page.evaluate(_POST_OWNERSHIP_JS, urn)
+        if not isinstance(ownership, dict):
+            raise _Abort("post_unavailable", "The post page could not be read.")
+        actor = identity_key_from_url(str(ownership.get("actorHref") or ""))
+        if actor is None or actor.key != own:
+            raise _Abort(
+                "not_own_post",
+                "The post's author is not the logged-in member; nothing was changed.",
+            )
+        if not ownership.get("controlCount"):
+            raise _Abort(
+                "post_unavailable", "The post page did not show that post's controls."
+            )
+        try:
+            await (
+                self._page.locator(f"main {_OVERFLOW_BUTTON_SELECTOR}")
+                .filter(visible=True)
+                .first.click(timeout=_STEP_TIMEOUT_MS)
+            )
+            await (
+                self._page.locator(_OWNER_DELETE_ITEM_SELECTOR)
+                .filter(visible=True)
+                .first.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
+            )
+            await (
+                self._page.locator(_OWNER_EDIT_ITEM_SELECTOR)
+                .filter(visible=True)
+                .first.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
+            )
+        except Exception as error:
+            await self._close_menu()
+            raise _Abort(
+                "not_own_post",
+                "The post's control menu does not offer owner actions; nothing "
+                "was changed.",
+            ) from error
+        return {**ownership, "ownKey": own}
+
+    async def _close_menu(self) -> None:
+        try:
+            await self._page.keyboard.press("Escape")
+        except Exception:
+            logger.debug("Closing the post menu failed", exc_info=True)
+
+    async def delete_post(self, post_url: str, *, confirm: bool) -> dict[str, Any]:
+        """Delete one of the logged-in member's own published posts."""
+        try:
+            ownership = await self._open_own_post_menu(post_url)
+        except _Abort as abort:
+            return post_result(self._page.url, abort.status, abort.message)
+        preview_text = str(ownership.get("text") or "")[:500]
+        if not confirm:
+            await self._close_menu()
+            return post_result(
+                post_url,
+                "preview",
+                "Authorship verified; nothing was deleted. Call again with "
+                "confirm=true to delete this post. LinkedIn cannot recover it.",
+                post_text=preview_text,
+            )
+        try:
+            await (
+                self._page.locator(_OWNER_DELETE_ITEM_SELECTOR)
+                .filter(visible=True)
+                .first.click(timeout=_STEP_TIMEOUT_MS)
+            )
+            confirm_dialog = (
+                self._page.locator(f"{_DIALOG_SELECTOR}, [role='alertdialog']")
+                .filter(visible=True)
+                .last
+            )
+            await confirm_dialog.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
+            await confirm_dialog.locator("button:visible").last.click(
+                timeout=_STEP_TIMEOUT_MS
+            )
+        except Exception:
+            logger.debug("Post delete confirmation failed", exc_info=True)
+            return post_result(
+                post_url,
+                "delete_unconfirmed",
+                "LinkedIn's delete confirmation could not be completed. Check the "
+                "post before retrying.",
+                retry_safe=False,
+            )
+        await asyncio.sleep(1.5)
+        await self._navigator._navigate_to_page(post_url)
+        urn = post_url.rstrip("/").rsplit("/", 1)[-1]
+        after = await self._page.evaluate(_POST_OWNERSHIP_JS, urn)
+        after_actor = (
+            identity_key_from_url(str(after.get("actorHref") or ""))
+            if isinstance(after, dict)
+            else None
+        )
+        # Gone means the page no longer shows this member's post with its
+        # controls. Anything ambiguous reads as "still there": the answer
+        # then asks for a check instead of claiming a deletion.
+        still_there = not isinstance(after, dict) or bool(
+            after.get("controlCount")
+            and after_actor is not None
+            and after_actor.key == ownership.get("ownKey")
+        )
+        if still_there:
+            return post_result(
+                post_url,
+                "delete_unconfirmed",
+                "The post still loads with its controls after deleting. Check it "
+                "before retrying.",
+                retry_safe=False,
+            )
+        return post_result(
+            post_url,
+            "deleted",
+            "Post deleted.",
+            retry_safe=False,
+            post_text=preview_text,
+        )
+
+    async def edit_post(
+        self, post_url: str, edit: PostEdit, *, confirm: bool
+    ) -> dict[str, Any]:
+        """Replace the text of one of the logged-in member's own posts."""
+        try:
+            ownership = await self._open_own_post_menu(post_url)
+        except _Abort as abort:
+            return post_result(self._page.url, abort.status, abort.message)
+        if not confirm:
+            await self._close_menu()
+            return post_result(
+                post_url,
+                "preview",
+                "Authorship verified; nothing was changed. Call again with "
+                "confirm=true to replace the text.",
+                post_text=str(ownership.get("text") or "")[:500],
+                new_text=edit.rendered_text,
+            )
+        submitted = False
+        typed = _Typed(expected=[], mentions=[])
+        try:
+            try:
+                await (
+                    self._page.locator(_OWNER_EDIT_ITEM_SELECTOR)
+                    .filter(visible=True)
+                    .first.click(timeout=_STEP_TIMEOUT_MS)
+                )
+                editor = self._editor()
+                await editor.wait_for(state="visible", timeout=_OPEN_TIMEOUT_MS)
+            except Exception as error:
+                raise _Abort(
+                    "edit_unavailable", "LinkedIn did not open the post's editor."
+                ) from error
+            if await self._page.locator(f"{_EDITOR_SELECTOR}:visible").count() != 1:
+                raise _Abort("edit_unavailable", "More than one editor is open.")
+            typed = await self._replace_editor_text(editor, edit)
+            submitted = True
+            await self._save_edit(editor)
+        except _Abort as abort:
+            await self._abandon_edit()
+            if submitted:
+                return post_result(
+                    post_url, "edit_unconfirmed", abort.message, retry_safe=False
+                )
+            return post_result(post_url, abort.status, abort.message)
+        except Exception:
+            await self._abandon_edit()
+            if not submitted:
+                raise
+            return post_result(
+                post_url,
+                "edit_unconfirmed",
+                "The edit may have been saved when an error occurred. Check the "
+                "post before retrying.",
+                retry_safe=False,
+            )
+        await self._navigator._navigate_to_page(post_url)
+        urn = post_url.rstrip("/").rsplit("/", 1)[-1]
+        after = await self._page.evaluate(_POST_OWNERSHIP_JS, urn)
+        shown = collapse_whitespace(str((after or {}).get("text") or ""))
+        expected = collapse_whitespace("".join(typed.expected))
+        return post_result(
+            post_url,
+            "edited" if expected[:200] in shown else "edit_unconfirmed",
+            "Post updated."
+            if expected[:200] in shown
+            else "The editor closed, but the post page does not show the new text "
+            "yet. Check the post before retrying.",
+            retry_safe=False,
+            mentions=typed.mentions,
+        )
 
     async def delete_scheduled_post(
         self, identifier: str, *, confirm: bool

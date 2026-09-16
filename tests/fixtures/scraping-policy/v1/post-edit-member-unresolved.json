@@ -1,0 +1,75 @@
+{
+  "call": {
+    "arguments": {
+      "confirm": true,
+      "post_url": "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
+    },
+    "method": "edit_post"
+  },
+  "events": [
+    {
+      "call": "edit_post",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add",
+      "section": "posting"
+    },
+    {
+      "call": "edit_post",
+      "extra": {
+        "target_url": "https://www.linkedin.com/in/me/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto",
+      "section": "posting"
+    },
+    {
+      "call": "edit_post",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/in/me/",
+      "requested_url": "https://www.linkedin.com/in/me/",
+      "section": "posting",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "edit_post",
+      "description": "goto https://www.linkedin.com/in/me/",
+      "kind": "boundary.stabilize",
+      "result": null,
+      "section": "posting"
+    },
+    {
+      "call": "edit_post",
+      "extra": {
+        "target_url": "https://www.linkedin.com/in/me/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto",
+      "section": "posting"
+    },
+    {
+      "call": "edit_post",
+      "kind": "boundary.auth_quick",
+      "result": null,
+      "section": "posting"
+    },
+    {
+      "call": "edit_post",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove",
+      "section": "posting"
+    }
+  ],
+  "result": {
+    "message": "The logged-in member's profile was not resolved.",
+    "retry_safe": true,
+    "status": "author_unverified",
+    "url": "https://www.linkedin.com/in/me/"
+  },
+  "scenario": "edit_post__member_unresolved",
+  "schema_version": 1
+}

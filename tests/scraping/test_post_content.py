@@ -12,13 +12,16 @@ from linkedin_mcp_server.scraping.post_content import (
     PostAttachment,
     PostValidationError,
     TextSegment,
+    build_post_edit,
     build_post_request,
     date_matches,
     format_schedule_date,
     format_schedule_time,
     identity_key_from_url,
     identity_key_from_urn,
+    parse_post_as,
     parse_post_text,
+    parse_post_url,
     parse_schedule_at,
     post_preview,
     resolve_date_order,
@@ -203,3 +206,76 @@ class TestScheduleDialogFormatting:
         assert time_matches("2:05 PM", 14, 5)
         assert not time_matches("2:05 AM", 14, 5)
         assert time_matches("14:05", 14, 5)
+
+
+class TestPostAsAndEdits:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "https://www.linkedin.com/company/12345/",
+            "12345",
+            "urn:li:organization:12345",
+            "urn:li:fsd_company:12345",
+        ],
+    )
+    def test_numeric_page_forms_are_one_identity(self, value):
+        assert parse_post_as(value).key == "company:urn:12345"
+
+    def test_vanity_page_url_is_accepted(self):
+        target = parse_post_as("https://www.linkedin.com/company/example-co/")
+        assert target.key == "company:/company/example-co/"
+
+    @pytest.mark.parametrize(
+        "value", ["https://www.linkedin.com/in/sample-person/", "Example Co", ""]
+    )
+    def test_a_member_or_a_bare_name_is_not_a_page(self, value):
+        with pytest.raises(PostValidationError, match="company page"):
+            parse_post_as(value)
+
+    def test_page_posts_must_be_public_and_preview_names_the_actor(self):
+        with pytest.raises(PostValidationError, match="public"):
+            build_post_request("x", visibility="connections", post_as="12345", now=NOW)
+        preview = post_preview(build_post_request("x", post_as="12345", now=NOW))
+        assert preview["post_as"] == {
+            "kind": "company",
+            "target": "12345",
+            "resolved_against_linkedin": False,
+        }
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/",
+            "https://www.linkedin.com/posts/sample-person_topic-activity-1234567890-AbCd",
+        ],
+    )
+    def test_post_urls_normalize_to_the_update_permalink(self, value):
+        assert parse_post_url(value) == (
+            "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
+        )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "http://www.linkedin.com/feed/update/urn:li:activity:1234567890/",
+            "https://evil.example/feed/update/urn:li:activity:1234567890/",
+            "https://www.linkedin.com/in/sample-person/",
+            "https://www.linkedin.com/feed/update/urn:li:fsd_profile:ACoAA/",
+        ],
+    )
+    def test_other_urls_are_not_posts(self, value):
+        with pytest.raises(PostValidationError, match="post_url"):
+            parse_post_url(value)
+
+    def test_an_edit_needs_a_change_and_published_posts_keep_their_time(self):
+        with pytest.raises(PostValidationError, match="Pass text"):
+            build_post_edit(None)
+        with pytest.raises(PostValidationError, match="rescheduled"):
+            build_post_edit(
+                "x", schedule_at="2026-09-18T12:30:00Z", allow_schedule=False
+            )
+        edit = build_post_edit(
+            "Hi @[Sample Person](https://www.linkedin.com/in/sample-person/)"
+        )
+        assert edit.rendered_text == "Hi Sample Person"
+        assert len(edit.mentions) == 1
