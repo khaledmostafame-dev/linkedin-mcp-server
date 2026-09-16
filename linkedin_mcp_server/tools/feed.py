@@ -24,6 +24,21 @@ from linkedin_mcp_server.scraping.link_metadata import Reference
 
 logger = logging.getLogger(__name__)
 
+# LinkedIn's notifications page renders "All" / "My posts" / "Mentions" as
+# client-side tabs. The only observed mechanism for reaching a specific tab
+# by URL is a `filterType` query parameter carrying one of these tokens;
+# unverified against a live account, since this fork never signs in to
+# LinkedIn (see AGENTS.md Hard safety rules). "all" needs no parameter and
+# is the well-precedented path (see get_feed / get_inbox); the other two
+# should be treated as best-effort until confirmed live.
+_NOTIFICATION_FILTER_QUERY = {"my_posts": "MY_POSTS", "mentions": "MENTIONS"}
+
+
+def _notifications_url(filter_: str) -> str:
+    base = "https://www.linkedin.com/notifications/"
+    token = _NOTIFICATION_FILTER_QUERY.get(filter_)
+    return f"{base}?filterType={token}" if token else base
+
 
 def register_feed_tools(
     mcp: FastMCP, *, tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS
@@ -106,3 +121,92 @@ def register_feed_tools(
                 raise_tool_error(relogin_exc, "get_feed")
         except Exception as e:
             raise_tool_error(e, "get_feed")
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Get Notifications",
+        annotations={"readOnlyHint": True, "openWorldHint": True},
+        tags={"feed", "notifications", "scraping", "read"},
+        exclude_args=["extractor"],
+    )
+    async def get_notifications(
+        ctx: Context,
+        max_items: Annotated[int, Field(ge=1, le=50)] = 30,
+        filter: Annotated[str, Field(pattern="^(all|my_posts|mentions)$")] = "all",
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        List recent notifications from the LinkedIn notifications page.
+
+        Covers every notification type the page shows as raw text — replies
+        to your comments, reactions, mentions, connection requests/accepts,
+        endorsements, job alerts, and company news — plus references to the
+        actors and the posts/profiles/companies each notification refers to.
+
+        Args:
+            ctx: FastMCP context for progress reporting
+            max_items: Maximum number of notifications to load (1-50,
+                default 30). Items load in batches as the page scrolls, so
+                the actual count may slightly exceed the target.
+            filter: One of "all" (default), "my_posts" (activity on your own
+                posts), or "mentions". The non-default values are sent as
+                LinkedIn's `filterType` query parameter (`MY_POSTS` /
+                `MENTIONS`); this has not been confirmed against a live
+                account (this fork never signs in to LinkedIn) and may need
+                adjusting if LinkedIn's actual parameter differs — treat
+                anything other than "all" as best-effort until verified.
+
+        Returns:
+            Dict with url, sections (notifications -> raw text), and
+            optional references["notifications"] and section_errors.
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="get_notifications"
+            )
+            logger.info(
+                "Fetching notifications (max_items=%d, filter=%s)",
+                max_items,
+                filter,
+            )
+
+            await ctx.report_progress(
+                progress=0, total=100, message="Loading notifications"
+            )
+
+            url = _notifications_url(filter)
+            # Notification cards load in batches similar to search results;
+            # one scroll per ~5 items mirrors search_posts' pacing.
+            scrolls = max(1, -(-max_items // 5))
+            extracted = await extractor.extract_page(
+                url, section_name="notifications", max_scrolls=scrolls
+            )
+
+            sections: dict[str, str] = {}
+            references: dict[str, list[Reference]] = {}
+            section_errors: dict[str, dict[str, Any]] = {}
+            if extracted.text and extracted.text != RATE_LIMITED_SECTION_TEXT:
+                sections["notifications"] = extracted.text
+                if extracted.references:
+                    references["notifications"] = extracted.references
+            elif extracted.text == RATE_LIMITED_SECTION_TEXT:
+                section_errors["notifications"] = rate_limited_section_error()
+            elif extracted.error:
+                section_errors["notifications"] = extracted.error
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            result: dict[str, Any] = {"url": url, "sections": sections}
+            if references:
+                result["references"] = references
+            if section_errors:
+                result["section_errors"] = section_errors
+            return result
+
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "get_notifications")
+        except Exception as e:
+            raise_tool_error(e, "get_notifications")  # NoReturn

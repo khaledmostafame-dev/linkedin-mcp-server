@@ -1651,6 +1651,246 @@ class TestFeedTools:
             await mcp.call_tool("get_feed", {"num_posts": 51})
 
 
+class TestNotificationsTools:
+    async def test_get_notifications_success(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(text="New reply\nNew reaction", references=[])
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_notifications")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert result["url"] == "https://www.linkedin.com/notifications/"
+        assert result["sections"]["notifications"] == "New reply\nNew reaction"
+        mock_extractor.extract_page.assert_awaited_once()
+        await_args = mock_extractor.extract_page.await_args
+        assert await_args is not None
+        assert await_args.args[0] == "https://www.linkedin.com/notifications/"
+        assert await_args.kwargs["section_name"] == "notifications"
+
+    async def test_get_notifications_applies_filter_query(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(text="Activity on your post", references=[])
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_notifications")
+        result = await tool_fn(
+            mock_context, filter="my_posts", extractor=mock_extractor
+        )
+        assert result["url"] == (
+            "https://www.linkedin.com/notifications/?filterType=MY_POSTS"
+        )
+
+    async def test_get_notifications_surfaces_references(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(
+                text="Ada Lovelace replied to your comment",
+                references=[
+                    {
+                        "kind": "person",
+                        "url": "/in/ada-lovelace/",
+                        "text": "Ada Lovelace",
+                    }
+                ],
+            )
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_notifications")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert result["references"]["notifications"][0]["url"] == "/in/ada-lovelace/"
+
+    async def test_get_notifications_rate_limited_surfaces_section_error(
+        self, mock_context
+    ):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(text=RATE_LIMITED_SECTION_TEXT, references=[])
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_notifications")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert result["sections"] == {}
+        assert result["section_errors"]["notifications"]["error_type"] == "rate_limit"
+
+    async def test_get_notifications_rejects_invalid_filter(self, mock_context):
+        from fastmcp.exceptions import ValidationError
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        with pytest.raises(ValidationError, match="filter"):
+            await mcp.call_tool("get_notifications", {"filter": "unread"})
+
+    async def test_get_notifications_rejects_excessive_max_items(self, mock_context):
+        from fastmcp.exceptions import ValidationError
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        with pytest.raises(ValidationError, match="max_items"):
+            await mcp.call_tool("get_notifications", {"max_items": 51})
+
+
+class TestSavedPostsTools:
+    async def test_get_saved_posts_success(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(
+                text="Saved post 1\nSaved post 2", references=[]
+            )
+        )
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_saved_posts")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert result["url"] == "https://www.linkedin.com/my-items/saved-posts/"
+        assert result["sections"]["saved_posts"] == "Saved post 1\nSaved post 2"
+        mock_extractor.extract_page.assert_awaited_once()
+        await_args = mock_extractor.extract_page.await_args
+        assert await_args is not None
+        assert await_args.kwargs["section_name"] == "saved_posts"
+        # max_posts defaults to 20 -> ceil(20/5) = 4 scrolls.
+        assert await_args.kwargs["max_scrolls"] == 4
+
+    async def test_get_saved_posts_scroll_budget_scales_with_max_posts(
+        self, mock_context
+    ):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(text="text", references=[])
+        )
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_saved_posts")
+        await tool_fn(mock_context, max_posts=1, extractor=mock_extractor)
+        await_args = mock_extractor.extract_page.await_args
+        assert await_args is not None
+        assert await_args.kwargs["max_scrolls"] == 1
+
+    async def test_get_saved_posts_rate_limited_surfaces_section_error(
+        self, mock_context
+    ):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(text=RATE_LIMITED_SECTION_TEXT, references=[])
+        )
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_saved_posts")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert result["sections"] == {}
+        assert result["section_errors"]["saved_posts"]["error_type"] == "rate_limit"
+
+    async def test_get_saved_posts_returns_section_errors(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(
+                text="",
+                references=[],
+                error={"issue_template_path": "/tmp/saved-posts-issue.md"},
+            )
+        )
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_saved_posts")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert result["sections"] == {}
+        assert result["section_errors"]["saved_posts"]["issue_template_path"] == (
+            "/tmp/saved-posts-issue.md"
+        )
+
+    async def test_get_saved_posts_surfaces_references(self, mock_context):
+        mock_extractor = MagicMock()
+        mock_extractor.extract_page = AsyncMock(
+            return_value=ExtractedSection(
+                text="Some saved post",
+                references=[
+                    {
+                        "kind": "feed_post",
+                        "url": "/posts/alice_hello-ugcPost-1-xx",
+                        "context": "saved post",
+                    }
+                ],
+            )
+        )
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_saved_posts")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert (
+            result["references"]["saved_posts"][0]["url"]
+            == "/posts/alice_hello-ugcPost-1-xx"
+        )
+
+    async def test_get_saved_posts_rejects_zero_max_posts(self, mock_context):
+        from fastmcp.exceptions import ValidationError
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        with pytest.raises(ValidationError, match="max_posts"):
+            await mcp.call_tool("get_saved_posts", {"max_posts": 0})
+
+    async def test_get_saved_posts_rejects_excessive_max_posts(self, mock_context):
+        from fastmcp.exceptions import ValidationError
+
+        from linkedin_mcp_server.tools.saved_posts import register_saved_posts_tools
+
+        mcp = FastMCP("test")
+        register_saved_posts_tools(mcp)
+
+        with pytest.raises(ValidationError, match="max_posts"):
+            await mcp.call_tool("get_saved_posts", {"max_posts": 51})
+
+
 class TestPostTools:
     async def test_search_posts_success(self, mock_context):
         expected = {

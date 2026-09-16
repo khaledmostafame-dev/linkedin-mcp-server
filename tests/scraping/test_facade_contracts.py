@@ -61,9 +61,11 @@ TOOL_DELEGATES = {
     "get_job_details": "scrape_job",
     "get_mutual_connections": "get_mutual_connections",
     "get_my_profile": "get_my_profile",
+    "get_notifications": "extract_page",
     "get_person_profile": "scrape_person",
     "get_post_comments": "get_post_comments",
     "get_saved_jobs": "get_saved_jobs",
+    "get_saved_posts": "extract_page",
     "get_scheduled_posts": "get_scheduled_posts",
     "get_sidebar_profiles": "get_sidebar_profiles",
     "list_connections": "list_connections",
@@ -143,9 +145,9 @@ async def test_registered_tools_and_extractor_delegates_are_counted_separately()
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 40
+    assert len(tool_names) == 42
     assert tool_names == {*TOOL_DELEGATES, "close_session", "get_pacing_status"}
-    assert len(TOOL_DELEGATES) == 38
+    assert len(TOOL_DELEGATES) == 40
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
     assert "get_pacing_status" not in TOOL_DELEGATES
