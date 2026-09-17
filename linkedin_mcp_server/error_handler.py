@@ -42,6 +42,7 @@ from linkedin_mcp_server.exceptions import (
     LinuxBrowserDependencyError,
     LinkedInMCPError,
     OwnerCannotAuthenticateError,
+    ProfileLockedError,
     SessionExpiredError,
 )
 from linkedin_mcp_server.session_state import PeerSessionInPlaceError
@@ -203,6 +204,13 @@ def raise_tool_error(exception: Exception, context: str = "") -> NoReturn:
     # would send users to the tracker for something working as intended.
     elif isinstance(exception, BrowserDowngradeError):
         logger.warning("Browser older than the profile%s: %s", ctx, exception)
+        raise ToolError(str(exception)) from exception
+
+    # Diagnostics-free for the same reason: a profile another browser still
+    # holds is state on the operator's machine, not a bug, and the message
+    # names the recovery.
+    elif isinstance(exception, ProfileLockedError):
+        logger.warning("Browser profile locked%s: %s", ctx, exception)
         raise ToolError(str(exception)) from exception
 
     elif isinstance(exception, SessionExpiredError):

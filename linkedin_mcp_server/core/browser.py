@@ -27,6 +27,8 @@ from linkedin_mcp_server.browser_downgrade import refuse_a_downgrade
 from linkedin_mcp_server.exceptions import (
     BrowserDowngradeError,
     BrowserShutdownUnconfirmedError,
+    ProfileLockedError,
+    ProfileRootRefusedError,
 )
 from linkedin_mcp_server.hidden_target import (
     attaching_to_other_targets,
@@ -51,6 +53,18 @@ T = TypeVar("T")
 _DEFAULT_USER_DATA_DIR = Path.home() / ".linkedin-mcp" / "profile"
 _PRIVATE_FILE_MODE = 0o600
 _CLEANUP_TIMEOUT_SECONDS = 10
+
+#: The source file Chromium's POSIX process singleton logs from. Playwright puts
+#: the browser's stderr into the launch error, and every refusal of a locked
+#: profile is logged from here. Matched on the file rather than the sentence:
+#: "The profile appears to be in use" is the localized ``IDS_PROFILE_IN_USE_POSIX``
+#: resource, while the file name in the log prefix is the same in every locale.
+_PROCESS_SINGLETON_SOURCE = "process_singleton_posix.cc"
+
+
+def chromium_refused_a_locked_profile(error: BaseException) -> bool:
+    """Whether a failed launch was Chromium refusing the profile's singleton lock."""
+    return _PROCESS_SINGLETON_SOURCE in str(error)
 
 
 async def await_deferring_cancels(coro: Coroutine[Any, Any, T]) -> tuple[T, bool]:
@@ -256,6 +270,26 @@ class BrowserManager:
         # and it says so with the path.
         return str(registry_path) if registry_path else None
 
+    def _clear_a_stale_profile_lock(self) -> None:
+        """Remove a ``SingletonLock`` left by a browser that cannot be running.
+
+        Here rather than in the container entrypoint because only this process
+        can prove it: the ownership marker, the profile lease and the derived
+        runtime profile are all decided in Python, and every launch, the login
+        and the cookie import included, comes through ``start()``. The rules and
+        the guard live in ``session_state.clear_stale_chromium_singleton``.
+
+        A root this server does not own is left alone rather than refused: the
+        launch itself deletes nothing, and Chromium's own refusal then surfaces
+        as :class:`ProfileLockedError`.
+        """
+        from linkedin_mcp_server.session_state import clear_stale_chromium_singleton
+
+        try:
+            clear_stale_chromium_singleton(Path(self.user_data_dir))
+        except ProfileRootRefusedError as refusal:
+            logger.debug("Not clearing a Chromium profile lock: %s", refusal)
+
     async def _start_contained_driver(self) -> Playwright:
         """Start one Patchright driver and contain what it is about to spawn.
 
@@ -380,6 +414,9 @@ class BrowserManager:
 
             secure_mkdir(Path(self.user_data_dir))
             harden_linkedin_tree(Path(self.user_data_dir))
+            # After the downgrade refusal, which must find the profile exactly
+            # as it was, and before the only launch that would trip over it.
+            self._clear_a_stale_profile_lock()
 
             context_options: dict[str, Any] = {
                 # Headed wherever a window can exist, in both public modes.
@@ -609,6 +646,11 @@ class BrowserManager:
                     "The browser failed to start and did not shut down cleanly, "
                     "so the profile is kept. Restart the server to recover."
                 ) from e
+            if isinstance(e, Exception) and chromium_refused_a_locked_profile(e):
+                # Ahead of the generic wrapping, which reported this as "Check
+                # your connection". The launch already cleared every lock it
+                # could prove stale, so the one left needs the operator.
+                raise ProfileLockedError(self.user_data_dir) from e
             if isinstance(e, Exception):
                 # A rejected proxy (bad scheme, SOCKS auth) fails at launch
                 # rather than on navigation. Reported as itself, with the

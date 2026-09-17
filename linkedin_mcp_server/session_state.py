@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import shutil
 import socket
+import sys
 from collections.abc import Callable, Iterator
 from typing import Any
 from uuid import uuid4
@@ -40,6 +41,12 @@ QUARANTINE_PREFIX = "invalid-state-"
 # and are ignored. A crash leaves the link behind, so presence alone proves
 # nothing — see ``profile_in_use_by``.
 _CHROMIUM_LOCK_NAME = "SingletonLock"
+
+#: Every name Chromium's POSIX process singleton writes into a profile, and the
+#: only names ``clear_stale_chromium_singleton`` will ever remove. They go
+#: together: a ``SingletonLock`` cleared beside a ``SingletonSocket`` still
+#: pointing at a dead socket leaves Chromium trying to connect to nobody.
+_CHROMIUM_SINGLETON_NAMES = (_CHROMIUM_LOCK_NAME, "SingletonSocket", "SingletonCookie")
 
 
 @dataclass
@@ -680,6 +687,131 @@ def profile_in_use_by(profile_dir: Path) -> Path | None:
     except OSError:
         return None
     return candidate
+
+
+def _pid_is_alive(pid: int) -> bool | None:
+    """Whether *pid* names a live process in this namespace, or None if unknown.
+
+    Unknown is never read as dead by the caller. Two inputs cannot be asked
+    at all: a non-positive pid, which ``kill`` reads as a process *group*, and
+    anything on Windows, where signal 0 is ``CTRL_C_EVENT`` and the call
+    delivers it instead of probing. Chromium writes no ``SingletonLock`` there,
+    so nothing is lost.
+    """
+    if pid <= 0 or sys.platform == "win32":
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Alive, owned by another user.
+    except OSError:
+        return None
+    return True
+
+
+def clear_stale_chromium_singleton(
+    profile_dir: Path, source_profile_dir: Path | None = None
+) -> str | None:
+    """Remove a Chromium singleton lock nobody can still hold, before a launch.
+
+    Chromium refuses a profile whose ``SingletonLock`` names another host
+    outright, and it never checks whether that host is still there. A
+    container recreated while its browser ran leaves exactly that behind: the
+    new container has a new hostname, so every launch fails with "the profile
+    appears to be in use by another Chromium process on another computer", and
+    nothing clears it until someone deletes the links by hand. Every redeploy
+    of a running container can reproduce it.
+
+    The lock is stale, and the three ``Singleton*`` links are removed, in two
+    cases only:
+
+    * It names **another host and this process holds the profile lease.**
+      Every server that opens this profile takes the lease first, so a lease we
+      hold proves no server of ours is on it, and a foreign pid cannot be
+      probed from here anyway. This trusts the lease to reach every process
+      that could open the profile, which holds on one kernel (the container
+      case) and not across a network filesystem that does not carry ``flock``.
+    * It names **this host and a pid that no longer exists** here, again only
+      with the lease held.
+
+    Everything else is kept: the lease not held, the pid alive or not
+    probeable, a target that is not ``<host>-<pid>``, a ``Singleton*`` entry
+    that is not a link. Kept is not a failure; Chromium then refuses the
+    launch, and ``core.browser`` reports that as a locked profile.
+
+    Returns the reason when a lock was removed, otherwise None.
+
+    Raises:
+        ProfileRootRefusedError: The configured source root is not ours.
+            Raised before the profile is looked at, so nothing is touched.
+    """
+    from linkedin_mcp_server.profile_lease import get_profile_lease
+
+    source = _owned(source_profile_dir)
+    profile_dir = canonical(profile_dir)
+    # Only a profile the source root covers: the source itself or a runtime
+    # profile derived from it. Any other directory was never judged by the
+    # guard above, and the lease below says nothing about it.
+    derived = (
+        profile_dir.name == "profile"
+        and profile_dir.parent.parent == runtime_profiles_root(source)
+    )
+    if profile_dir != source and not derived:
+        return None
+
+    try:
+        target = os.readlink(profile_dir / _CHROMIUM_LOCK_NAME)
+    except OSError:
+        return None  # Absent, or not a link: nothing attributable.
+    host, separator, pid_text = target.rpartition("-")
+    if not separator or not host:
+        return None
+
+    if not get_profile_lease(source).held:
+        logger.debug("Keeping the Chromium profile lock: the lease is not held")
+        return None
+
+    if host != socket.gethostname():
+        reason = f"written by another host ({host}) while this server holds the lease"
+    else:
+        try:
+            pid = int(pid_text)
+        except ValueError:
+            return None
+        if _pid_is_alive(pid) is not False:
+            return None
+        reason = f"its process ({pid}) no longer exists on this host"
+
+    removed: list[str] = []
+    for name in _CHROMIUM_SINGLETON_NAMES:
+        entry = profile_dir / name
+        # A link is removed, never followed: the socket and cookie targets live
+        # outside the profile. Anything that is not a link is not Chromium's.
+        if not entry.is_symlink():
+            continue
+        try:
+            entry.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            logger.warning(
+                "Could not remove the stale Chromium lock %s: %s",
+                name,
+                exc.strerror or type(exc).__name__,
+            )
+            continue
+        removed.append(name)
+
+    if not removed:
+        return None
+    logger.info(
+        "Removed a stale Chromium profile lock (%s): %s",
+        reason,
+        ", ".join(removed),
+    )
+    return reason
 
 
 @contextmanager

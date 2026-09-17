@@ -618,6 +618,7 @@ belongs behind something that provides it.
 - Make sure [Docker](https://www.docker.com/get-started/) is installed
 - Check if Docker is running: `docker ps`
 - *Permission errors on `~/.linkedin-mcp`*: an older rootful Docker run may have created the directory as root. Fix it with `sudo chown -R "$(id -u):$(id -g)" ~/.linkedin-mcp`.
+- *"The profile appears to be in use by another Chromium process ... on another computer"* after a redeploy: a container that is recreated or killed while its browser is running (a stack update, `docker compose up` with a new image, an auto-redeploy) leaves Chromium's `SingletonLock`, `SingletonSocket` and `SingletonCookie` links in the mounted profile, and the new container has a different hostname, so Chromium refuses the profile. The server now removes those three links by itself before launching the browser, but only when it can prove nobody is using them: the lock names another host while this server holds the profile lease, or it names this host and a process that no longer exists. Nothing else in the profile is touched, and the log says `Removed a stale Chromium profile lock`. If the lock cannot be proved stale, tool calls report that the browser profile is locked (older versions said "Network error. Check your connection"). Stop every server, container and browser using that profile, then delete the three `Singleton*` entries from the profile directory and retry.
 
 </details>
 
