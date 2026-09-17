@@ -20,6 +20,7 @@ from linkedin_mcp_server.scraping.post_composer import (
     _Abort,
     _OPTION_EVIDENCE_JS,
     _OPTION_MARK_JS,
+    _POST_MENU_MARK_JS,
     _Typed,
     evidence_keys,
     evidence_matches,
@@ -506,7 +507,9 @@ POST_URL = "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
 
 
 class TestOwnPosts:
-    def _setup(self, actor_href: str | None) -> tuple[PostComposer, MagicMock]:
+    def _setup(
+        self, actor_href: str | None, *, marked: bool = True
+    ) -> tuple[PostComposer, MagicMock]:
         composer, page = _composer()
 
         async def navigate(url: str) -> None:
@@ -521,18 +524,28 @@ class TestOwnPosts:
         )
         setattr(composer._session, "check_rate_limit", AsyncMock())
         page.wait_for_selector = AsyncMock()
-        page.evaluate = AsyncMock(
-            return_value={
-                "actorHref": actor_href,
-                "controlCount": 2,
-                "domUrn": True,
-                "text": "Synthetic post",
-            }
-        )
+        page.wait_for_function = AsyncMock()
+        ownership = {
+            "actorHref": actor_href,
+            "controlCount": 1,
+            "domUrn": True,
+            "text": "Synthetic post",
+        }
+
+        async def evaluate(script: str, *args: Any) -> Any:
+            if script == _POST_MENU_MARK_JS:
+                return marked
+            return ownership
+
+        page.evaluate = AsyncMock(side_effect=evaluate)
+        # page.locator(mark) is the opener; .locator(item) inside its panel.
+        opener = page.locator.return_value
+        opener.click = AsyncMock()
         menu_item = MagicMock()
         menu_item.click = AsyncMock()
         menu_item.wait_for = AsyncMock()
-        page.locator.return_value.filter.return_value.first = menu_item
+        opener.locator.return_value.filter.return_value.first = menu_item
+        self.opener = opener
         self.menu_item = menu_item
         return composer, page
 
@@ -542,7 +555,18 @@ class TestOwnPosts:
         result = await composer.delete_post(POST_URL, confirm=True)
 
         assert result["status"] == "not_own_post"
+        self.opener.click.assert_not_awaited()
         self.menu_item.click.assert_not_awaited()
+
+    async def test_an_unidentified_post_menu_is_never_clicked(self):
+        composer, page = self._setup("/in/sample-person/", marked=False)
+
+        result = await composer.delete_post(POST_URL, confirm=True)
+
+        assert result["status"] == "post_unavailable"
+        self.opener.click.assert_not_awaited()
+        self.menu_item.click.assert_not_awaited()
+        page.wait_for_function.assert_not_awaited()
 
     async def test_missing_owner_actions_are_refused(self):
         composer, page = self._setup("/in/sample-person/")
@@ -551,7 +575,18 @@ class TestOwnPosts:
         result = await composer.delete_post(POST_URL, confirm=True)
 
         assert result["status"] == "not_own_post"
+        self.menu_item.click.assert_not_awaited()
         page.keyboard.press.assert_awaited_with("Escape")
+
+    async def test_a_menu_that_never_opens_as_the_posts_is_refused(self):
+        composer, page = self._setup("/in/sample-person/")
+        page.wait_for_function = AsyncMock(side_effect=PlaywrightTimeoutError("no"))
+
+        result = await composer.delete_post(POST_URL, confirm=True)
+
+        assert result["status"] == "not_own_post"
+        self.menu_item.wait_for.assert_not_awaited()
+        self.menu_item.click.assert_not_awaited()
 
     async def test_preview_verifies_authorship_and_deletes_nothing(self):
         composer, page = self._setup("/in/Sample-Person/")
@@ -561,7 +596,8 @@ class TestOwnPosts:
         assert result["status"] == "preview"
         assert result["post_text"] == "Synthetic post"
         # One click opens the control menu; the delete item is never clicked.
-        assert self.menu_item.click.await_count == 1
+        assert self.opener.click.await_count == 1
+        self.menu_item.click.assert_not_awaited()
         page.keyboard.press.assert_awaited_with("Escape")
 
     async def test_edit_preview_never_opens_the_editor(self):
@@ -573,7 +609,8 @@ class TestOwnPosts:
 
         assert result["status"] == "preview"
         assert result["new_text"] == "New text"
-        assert self.menu_item.click.await_count == 1
+        assert self.opener.click.await_count == 1
+        self.menu_item.click.assert_not_awaited()
 
 
 class TestEditScheduledPost:

@@ -2,19 +2,22 @@
 
 The reactions dialog is opened by clicking the post's social-counts
 control (the clickable summary above the Like/Comment/Repost/Send action
-row) rather than by navigating to a distinct URL, so this module drives
-that click and the scroll-then-read inside the resulting dialog. Every
-step is fail-closed: if the control or the dialog cannot be identified
-unambiguously through structure alone, nothing further is clicked and a
-``section_errors`` entry is returned instead of guessing (per the
-AGENTS.md Scraping Rules — no text/label values are read anywhere here).
+row) rather than by navigating to a distinct URL: a signed-in post page
+carries no link to a reactor list, only that button. So this module
+drives that click and the scroll-then-read inside the resulting dialog.
+Every step is fail-closed: if the control or the dialog cannot be
+identified unambiguously through structure alone, nothing further is
+clicked and a ``section_errors`` entry is returned instead of guessing
+(per the AGENTS.md Scraping Rules — no text/label values are read
+anywhere here).
 
-The DOM assumptions below (see ``_FIND_SOCIAL_COUNTS_CONTROL_JS``) are
-**not** verified against a live account — this fork never signs in to
-LinkedIn (AGENTS.md Hard safety rules) — and must be confirmed live
-before this tool is trusted. Reaction *type* (Like/Celebrate/Support/…)
-is deliberately not extracted: no structural, non-text signal for it was
-identified, and omitting rather than guessing is what was asked for.
+The control probe (``_FIND_SOCIAL_COUNTS_CONTROL_JS``) matches the
+structure of a signed-in, English-UI post page captured on 2026-09-17.
+The dialog it opens was not part of that capture, so the dialog wait and
+the scroll-then-read are still unconfirmed live. Reaction *type*
+(Like/Celebrate/Support/…) is deliberately not extracted: no structural,
+non-text signal for it was identified, and omitting rather than guessing
+is what was asked for.
 """
 
 from __future__ import annotations
@@ -42,44 +45,31 @@ _DIALOG_SELECTOR = '[role="dialog"]'
 
 # Structural probe for the post's social-counts control.
 #
-# The action row (Like/Comment/Repost/Send) is found first, by its own
-# structural fingerprint (a container with >= 3 directly-nested
-# aria-labelled buttons — attribute *presence*, never the label value).
-# The social-counts summary that opens the reactions dialog renders as a
-# sibling immediately above that row, and — on every LinkedIn post layout
-# this heuristic was designed against on paper — holds exactly one
-# clickable element. Both counts are exact-match guards specifically so a
-# page that does not match this shape finds nothing and clicks nothing,
-# rather than clicking the nearest plausible button.
+# Measured on the live post page (2026-09-17): the reactions summary is a
+# ``button`` carrying LinkedIn's own ``data-reaction-details`` hook — an
+# attribute name, not text — and it is the only element in <main> that
+# carries it. Comments on the same page show their own reaction counts
+# without that hook. The action row does not help here: its controls sit
+# one per wrapper (span/div), so no container holds the Like/Comment/
+# Repost/Send buttons as direct children, which is why the earlier
+# "container with >= 3 labelled buttons" probe found nothing.
 #
-# UNVERIFIED against a live post (no LinkedIn login is available while
-# building this) — see the module docstring and this tool's
-# ``live_verification_needed`` entry.
+# Exact-count guard: clicks only when there is exactly one hook. A dialog
+# already on the page refuses too, because every later step reads the
+# first ``[role="dialog"]`` and could not tell it from the one this click
+# opens (the captured post page has none before interaction).
 _FIND_SOCIAL_COUNTS_CONTROL_JS = r"""
-(() => {
-  function findActionRow(main) {
-    const candidates = main.querySelectorAll('section, article, div, ul, li');
-    for (const el of candidates) {
-      const labeled = el.querySelectorAll(':scope > button[aria-label]');
-      if (labeled.length >= 3) return el;
-    }
-    return null;
-  }
+() => {
   const main = document.querySelector('main');
   if (!main) return false;
-  const actionRow = findActionRow(main);
-  if (!actionRow) return false;
-  let sibling = actionRow.previousElementSibling;
-  for (let hop = 0; sibling && hop < 3; hop += 1) {
-    const clickable = sibling.querySelectorAll('button, a[href]');
-    if (clickable.length === 1) {
-      clickable[0].click();
-      return true;
-    }
-    sibling = sibling.previousElementSibling;
-  }
-  return false;
-})
+  if (document.querySelector('[role="dialog"]')) return false;
+  const hooks = main.querySelectorAll('[data-reaction-details]');
+  if (hooks.length !== 1) return false;
+  const control = hooks[0].closest('button, [role="button"]');
+  if (!control || !main.contains(control)) return false;
+  control.click();
+  return true;
+}
 """
 
 # Bounded single-step scroll of whichever element inside the dialog is
