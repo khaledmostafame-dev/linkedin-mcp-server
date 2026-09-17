@@ -65,6 +65,42 @@
       "kind": "boundary.modal"
     },
     {
+      "call": "sales_nav_search_leads",
+      "kind": "sleep",
+      "reason": "sleep",
+      "seconds": 0.5
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "kind": "evaluate",
+      "operation": "app_shell_node_count",
+      "program_digest": "14565a2dbad8"
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "kind": "sleep",
+      "reason": "sleep",
+      "seconds": 0.5
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "kind": "evaluate",
+      "operation": "app_shell_node_count",
+      "program_digest": "14565a2dbad8"
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "kind": "locator.create",
+      "locator": "upsell_link",
+      "parent": null,
+      "selector": "a[href*=\"/premium\"]"
+    },
+    {
+      "call": "sales_nav_search_leads",
+      "kind": "locator.count",
+      "locator": "upsell_link"
+    },
+    {
       "actual_scrolls": 2,
       "call": "sales_nav_search_leads",
       "kind": "boundary.scroll_body",

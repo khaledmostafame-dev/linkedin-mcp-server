@@ -1014,13 +1014,26 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
 
 
 async def _sales_navigator_scenario(method: str) -> dict[str, Any]:
-    """Happy-path Sales Navigator call: the account holds a seat."""
+    """Happy-path Sales Navigator call: the account holds a seat.
+
+    The render-wait (``SalesNavigatorScraper._wait_for_app_render``, added
+    after live capture 2026-09-17 found a real seat landing on a bare,
+    unrendered app shell) polls the DOM node count and settles once it sees
+    the same at-or-above-floor value twice -- two identical scripted
+    ``app_shell_node_count`` samples reproduce that settle in exactly two
+    polls. The upsell-link locator is declared and scripted empty (no
+    upgrade prompt), since this is the seated happy path.
+    """
     name = f"{method}__baseline"
     recorder = TraceRecorder(name, _COMMON_ALLOWED)
     clock = FakeClock(recorder)
-    page = _page(recorder).script(
-        "evaluate:root_content", _root("Sales Navigator content")
+    page = (
+        _page(recorder)
+        .script("evaluate:root_content", _root("Sales Navigator content"))
+        .script("evaluate:app_shell_node_count", 500, 500)
     )
+    page.declare_locator('a[href*="/premium"]', "upsell_link")
+    page.script("upsell_link.count", 0)
     extractor = _extractor(page)
     arguments: dict[str, Any]
     async with boundaries(recorder, clock):

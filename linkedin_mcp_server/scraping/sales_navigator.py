@@ -58,6 +58,28 @@ _ACCOUNTS_LISTS_URL = "https://www.linkedin.com/sales/lists/company"
 _MAX_SEARCH_PAGES = 10
 _MAX_LIST_PAGES = 10
 
+# Live capture 2026-09-17 (`009-extractor-after-goto.json`, `/sales/search/
+# people?keywords=...`) landed on a page that stayed under `/sales/` (the
+# seat check passed) but held only 15 DOM nodes total: five empty SPA outlet
+# mounts (`hue-web-menu-outlet`, `hue-web-modal-outlet`,
+# `hue-web-tooltip-outlet`, `hue-web-typeahead-outlet`,
+# `artdeco-modal-outlet`) and their ancestors, none of them a result or any
+# other real content. That is the bare app shell captured before its JS
+# bundle has rendered anything, not a genuinely empty results page -- every
+# other captured page in this same session had 700+ DOM nodes once loaded.
+# Reading immediately, as this module used to, reports that as `empty_page`,
+# indistinguishable from a seat with zero real results. `_wait_for_app_render`
+# waits for the node count to grow past bare-shell size and settle before
+# any extraction happens; a page that never clears that bar is reported as
+# `sales_navigator_unavailable`, never `empty_page`.
+_APP_SHELL_MIN_NODES = 40
+_APP_SHELL_WAIT_ATTEMPTS = 10
+_APP_SHELL_WAIT_INTERVAL_SECONDS = 0.5
+# A locale-independent signal that the SPA rendered an upgrade prompt instead
+# of results -- LinkedIn's own upsell/premium flows all live under this path
+# segment regardless of UI language.
+_UPSELL_HREF_SELECTOR = 'a[href*="/premium"]'
+
 
 def _is_on_sales_navigator(url: str) -> bool:
     """True while the landed URL is still under LinkedIn's ``/sales/`` tree."""
@@ -100,6 +122,21 @@ def _list_kind_url(kind: str) -> str:
     raise ValueError(f"kind must be 'leads' or 'accounts', got {kind!r}")
 
 
+class _AppNotRendered(Exception):
+    """Internal marker: the Sales Navigator SPA never mounted real content.
+
+    Raised by ``_extract_current_page`` and caught by each public method so
+    every caller reports the same ``sales_navigator_unavailable`` shape as
+    the immediate-redirect case in ``_navigate_and_check_seat``, instead of
+    reading (and mis-scoring as empty) a page that was never given the
+    chance to render.
+    """
+
+    def __init__(self, landed_url: str):
+        super().__init__(landed_url)
+        self.landed_url = landed_url
+
+
 class SalesNavigatorScraper:
     """Own every read-only Sales Navigator workflow (leads, accounts, lists).
 
@@ -139,12 +176,65 @@ class SalesNavigatorScraper:
             "section_errors": {"search_results": _seat_unavailable_error()},
         }
 
+    async def _wait_for_app_render(self) -> bool:
+        """Bounded poll for the SPA shell to mount real content.
+
+        Polls the live DOM node count rather than any specific selector,
+        since the only capture available shows the bare shell has none of
+        its own (see the module-level comment on ``_APP_SHELL_MIN_NODES`).
+        "Settled" means two consecutive samples at or above the shell-size
+        floor, the same idea ``post_composer._open_scheduled_list`` uses for
+        its own dynamic dialog. Returns False when the count never reaches
+        the floor within the attempt budget.
+        """
+        previous: int | None = None
+        for _ in range(_APP_SHELL_WAIT_ATTEMPTS):
+            await self._session.delay(_APP_SHELL_WAIT_INTERVAL_SECONDS)
+            count = await self._session.page.evaluate(
+                "document.querySelectorAll('*').length"
+            )
+            if not isinstance(count, int):
+                continue
+            if count >= _APP_SHELL_MIN_NODES and count == previous:
+                return True
+            previous = count
+        return isinstance(previous, int) and previous >= _APP_SHELL_MIN_NODES
+
     async def _extract_current_page(
         self, section_name: str, *, max_scrolls: int = 5
     ) -> tuple[str, list[Reference]]:
-        """Scroll and extract innerText + references from the loaded page."""
+        """Scroll and extract innerText + references from the loaded page.
+
+        Raises ``_AppNotRendered`` -- never returns an ``empty_page``-shaped
+        result -- when the app shell never grows into real content, when a
+        client-side redirect carries the page off ``/sales/`` only after
+        that wait (the immediate seat check in ``_navigate_and_check_seat``
+        cannot see a redirect that fires later), or when the rendered page
+        shows an upsell/premium link instead of results.
+        """
         await self._session.check_rate_limit()
         await self._session.dismiss_modal()
+
+        rendered = await self._wait_for_app_render()
+        landed_url = self._session.page.url
+        if not _is_on_sales_navigator(landed_url):
+            logger.info(
+                "Sales Navigator redirected to %s after render; no seat",
+                landed_url,
+            )
+            raise _AppNotRendered(landed_url)
+        if not rendered:
+            logger.info(
+                "Sales Navigator app shell never rendered content on %s",
+                landed_url,
+            )
+            raise _AppNotRendered(landed_url)
+        if await self._session.page.locator(_UPSELL_HREF_SELECTOR).count() > 0:
+            logger.info(
+                "Sales Navigator showed an upsell/premium prompt on %s", landed_url
+            )
+            raise _AppNotRendered(landed_url)
+
         await self._session.scroll_body(pause_time=0.5, max_scrolls=max_scrolls)
 
         raw_result = await self._content._extract_root_content(["main"])
@@ -190,7 +280,12 @@ class SalesNavigatorScraper:
                     _build_search_url(base_url, keywords, filters, page=page_number)
                 )
 
-            text, refs = await self._extract_current_page(section_name)
+            try:
+                text, refs = await self._extract_current_page(section_name)
+            except _AppNotRendered:
+                section_errors[section_name] = _seat_unavailable_error()
+                stopped_reason = "app_not_rendered"
+                break
             if text == RATE_LIMITED_SECTION_TEXT:
                 section_errors[section_name] = rate_limited_section_error()
                 stopped_reason = "rate_limited"
@@ -272,7 +367,14 @@ class SalesNavigatorScraper:
         if early is not None:
             return early
 
-        text, refs = await self._extract_current_page("lists")
+        try:
+            text, refs = await self._extract_current_page("lists")
+        except _AppNotRendered as exc:
+            return {
+                "url": exc.landed_url,
+                "sections": {},
+                "section_errors": {"lists": _seat_unavailable_error()},
+            }
         sections: dict[str, str] = {}
         section_errors: dict[str, dict[str, Any]] = {}
         references: dict[str, list[Reference]] = {}
@@ -329,9 +431,14 @@ class SalesNavigatorScraper:
                 current_url = f"{url}{'&' if '?' in url else '?'}page={page_number}"
                 await self._navigator._navigate_to_page(current_url)
 
-            text, refs = await self._extract_current_page(
-                "list_members", max_scrolls=10
-            )
+            try:
+                text, refs = await self._extract_current_page(
+                    "list_members", max_scrolls=10
+                )
+            except _AppNotRendered:
+                section_errors["list_members"] = _seat_unavailable_error()
+                stopped_reason = "app_not_rendered"
+                break
             if text == RATE_LIMITED_SECTION_TEXT:
                 section_errors["list_members"] = rate_limited_section_error()
                 stopped_reason = "rate_limited"

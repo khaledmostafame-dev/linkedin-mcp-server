@@ -633,6 +633,7 @@ def semantic_program_id(program: str) -> str:
         ('main a[href*="/in/"]', "sidebar_expanded_profiles"),
         ("savedLabels.includes(text) ? 'saved' : 'unsaved'", "job_save_state"),
         ("expectedLabels", "job_save_click"),
+        ("querySelectorAll('*').length", "app_shell_node_count"),
     )
     for marker, operation in checks:
         if marker in compact:

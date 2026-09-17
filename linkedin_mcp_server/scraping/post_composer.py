@@ -72,17 +72,50 @@ _TEXT_INPUT_SELECTOR = 'input[type="text"], input:not([type])'
 
 
 def _icon_button(*icons: str, role: str = "button") -> str:
-    """A button carrying one of LinkedIn's icon test hooks (names, not text)."""
+    """An element carrying one of LinkedIn's icon test hooks (names, not text).
+
+    Live capture 2026-09-17 (`005-extractor-after-goto.json`, `/sharing/
+    compose`) found neither of the two variants below on the current
+    composer: no element anywhere on the page carries `data-test-icon`, and
+    there are no `<use>` elements at all. LinkedIn now renders each icon as
+    an inline `<svg id="icon-name">` -- the same capture lists `clock-medium`
+    and `arrow-right-small` by id among 90 such svgs -- so that is added as a
+    third variant rather than replacing the other two, in case an older
+    LinkedIn surface still uses them.
+    """
     parts: list[str] = []
     for icon in icons:
         parts.append(f'{role}:has(svg[data-test-icon="{icon}"])')
         parts.append(f'{role}:has(use[href="#{icon}"])')
+        parts.append(f'{role}:has(svg[id="{icon}"])')
     return ", ".join(parts)
 
 
-# Measured upstream (PRs 690, 692, 696).
-_SCHEDULE_BUTTON_SELECTOR = _icon_button("clock-medium")
-_VIEW_ALL_SCHEDULED_SELECTOR = _icon_button("arrow-right-small")
+# Measured upstream (PRs 690, 692, 696); the `data-test-icon`/`use[href]`
+# hooks they measured are gone on the current live composer (see
+# `_icon_button`'s docstring). The same capture also found the schedule
+# button's `clock-medium` icon wrapped not in a `<button>` but in an
+# `<a href="/sharing/compose" aria-haspopup="dialog" aria-expanded="false">`
+# (capture node 93/95) -- a real link, not a button element -- so both
+# selectors below now match either wrapper tag. `arrow-right-small` (the
+# "view all scheduled" arrow) is confirmed present on the page by id, but
+# only outside the schedule mini-dialog (an unrelated "see all" link at
+# node 1069/1071); that sub-dialog only exists after clicking the schedule
+# button, so its own markup is unverified -- a capture of the DOM
+# immediately after that click is the next evidence needed if this selector
+# still misses live.
+_SCHEDULE_BUTTON_SELECTOR = ", ".join(
+    [
+        _icon_button("clock-medium", role="button"),
+        _icon_button("clock-medium", role="a"),
+    ]
+)
+_VIEW_ALL_SCHEDULED_SELECTOR = ", ".join(
+    [
+        _icon_button("arrow-right-small", role="button"),
+        _icon_button("arrow-right-small", role="a"),
+    ]
+)
 _MENU_DELETE_SELECTOR = _icon_button("trash-medium", role='[role="button"]')
 _MENU_EDIT_SELECTOR = _icon_button("edit-medium", role='[role="button"]')
 # Post settings (upstream PR 835): the author row is ``#ACTOR`` and the
@@ -1439,7 +1472,13 @@ class PostComposer:
             return post_result(
                 self._page.url,
                 "list_unavailable",
-                "LinkedIn did not open the scheduled posts view.",
+                "LinkedIn did not open the scheduled posts view. This step is "
+                "unverified against a live account past the schedule button "
+                "itself: the mini date/time-picker dialog it opens, and its "
+                "'view all scheduled posts' arrow, only exist after that "
+                "click, so no capture of their markup exists yet. A DOM "
+                "capture taken right after clicking the schedule control "
+                "would confirm or fix this selector.",
             )
         # The modal renders its heading before its entries; settled means two
         # identical non-empty samples (upstream PR 692).
