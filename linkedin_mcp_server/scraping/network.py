@@ -69,15 +69,39 @@ _MAX_SCROLLS_CAP = 25
 
 # Read structurally (URL pattern, not label text) from the profile top card:
 # LinkedIn's "N mutual connections" control is a canned people-search anchor
-# carrying the facetConnectionOf URN facet. The member URN it requires is
-# not derivable from a public identifier, so the anchor has to be followed
-# rather than reconstructed.
+# carrying the shared-connections URN facet as a `connectionOf` query
+# parameter. Confirmed against a live profile capture (2026-09-17): this
+# selector previously matched `facetConnectionOf`, a name never observed on
+# a real profile -- both the top-card pill and its nested "N mutual
+# connections" text link carry `?connectionOf=...&network=...&origin=...`,
+# with no `facet` prefix, which is exactly why the anchor was never found
+# and every lookup fell through to `no_mutual_connections_link_found`. The
+# `=` anchors the match to the query string so an unrelated href merely
+# containing the substring "connectionOf" (there is none observed today,
+# but the anchor was already burned once by an unverified guess) can't
+# collide with it.
+#
+# The primary lookup stays scoped to the first `<main> section>`, which live
+# measurement confirms contains the top card; a document-wide fallback
+# covers a profile that renders the mutual-connections control outside that
+# scope (e.g. a portal/overlay), so `no_mutual_connections_link_found` is
+# reported only when the anchor is genuinely absent from the whole page, not
+# merely outside the primary scope. Both paths read the anchor's own href
+# and navigate to it verbatim -- never reconstructed from a guessed
+# `connectionOf` value encoding. Only the parameter's *name*, not its
+# value, was confirmed live: the capture this fix is based on records query
+# parameter names only, by design, so building a URL from a member URN
+# instead of following the rendered anchor would mean inventing an
+# unverified value shape -- exactly the kind of guess this module is meant
+# to avoid.
 _MUTUAL_CONNECTIONS_LINK_JS = r"""
 (() => {
+  const selector = 'a[href*="connectionOf="]';
   const main = document.querySelector('main');
-  if (!main) return null;
-  const scope = main.querySelector('section') || main;
-  const anchor = scope.querySelector('a[href*="facetConnectionOf"]');
+  const scoped = main
+    ? (main.querySelector('section') || main).querySelector(selector)
+    : null;
+  const anchor = scoped || document.querySelector(selector);
   return anchor ? anchor.getAttribute('href') : null;
 })
 """

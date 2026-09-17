@@ -2548,7 +2548,7 @@ class TestPostTools:
 class TestNetworkTools:
     async def test_get_mutual_connections_success(self, mock_context):
         expected = {
-            "url": "https://www.linkedin.com/search/results/people/?facetConnectionOf=%22X%22",
+            "url": "https://www.linkedin.com/search/results/people/?connectionOf=%22X%22",
             "sections": {"mutual_connections": "Jane Doe"},
             "stopped_reason": "end_of_results",
         }
