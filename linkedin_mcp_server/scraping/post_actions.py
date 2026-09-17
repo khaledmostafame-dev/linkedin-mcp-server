@@ -54,9 +54,9 @@ logger = logging.getLogger(__name__)
 #     carries ``aria-hidden`` while collapsed. That excludes the reactor
 #     facepile's "see more" control, the one other aria-expanded button
 #     above the action row, which has no sibling at all;
-#   * neither it nor its panel is, or holds, a comment (an element whose
-#     ``data-id``/``data-urn``/``data-entity-urn`` names a comment URN, the
-#     hook ``comments.py`` reads).
+#   * its panel holds no comment (an element whose ``data-id``/``data-urn``/
+#     ``data-entity-urn`` names a comment URN, the hook ``comments.py``
+#     reads), collapsed or open.
 # Exactly one such button, or nothing.
 #
 # The menu counts as open only when the opener reports
@@ -84,9 +84,7 @@ POST_MENU_JS = r"""
     if (openers.length !== 1) return null;
     const opener = openers[0];
     const panel = opener.nextElementSibling;
-    if (opener.closest(COMMENT_UNIT) || panel.querySelector(COMMENT_UNIT)) {
-      return null;
-    }
+    if (panel.querySelector(COMMENT_UNIT)) return null;
     const open = opener.getAttribute('aria-expanded') === 'true'
       && panel.getAttribute('aria-hidden') !== 'true'
       && panel.querySelector(MENU_ITEM) !== null;
