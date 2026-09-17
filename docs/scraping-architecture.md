@@ -28,7 +28,7 @@ a page-owning collaborator.
 | `entity_search` | `ENTITY_SEARCH_REFERENCE_CAP`, `MAX_ENTITY_SEARCH_PAGES`, `paginated_entity_search()` | `browser-free` |
 | `events` | `EventScraper` | `browser-free` |
 | `extractor` | `LinkedInExtractor` | `page-owning` |
-| `feed` | `FeedScraper` | `page-owning` |
+| `feed` | `FeedScraper`, `NOTIFICATIONS_URL` | `page-owning` |
 | `feed_payload` | `POST_SLUG_URL_RE`, `append_captured_post_permalinks()`, `build_feed_references()`, `is_feed_payload_response()`, `is_post_listing_page()`, `is_post_listing_response()` | `browser-free` |
 | `fields` | `COMPANY_SECTIONS`, `PERSON_SECTIONS`, `parse_company_sections()`, `parse_person_sections()` | `browser-free` |
 | `geo_resolver` | `GeoCandidate`, `GeoLocationResolver`, `GeoResolution`, `MAX_CANDIDATES` | `page-owning` |
@@ -42,7 +42,7 @@ a page-owning collaborator.
 | `navigation` | `PageNavigator`, `WaitUntil` | `page-owning` |
 | `network` | `ConnectionSort`, `InvitationDirection`, `NetworkScraper`, `follow_preview()`, `resolve_follow_target()` | `page-owning` |
 | `person` | `PersonScraper` | `page-owning` |
-| `post_actions` | `PostActions` | `page-owning` |
+| `post_actions` | `POST_MENU_JS`, `PostActions` | `page-owning` |
 | `post_composer` | `FEED_URL`, `PostComposer`, `SHARE_URL`, `collapse_whitespace()`, `evidence_keys()`, `evidence_matches()`, `post_result()`, `scheduled_identifier()` | `page-owning` |
 | `post_content` | `LINKEDIN_POST_CHARACTER_LIMIT`, `MentionKind`, `MentionSegment`, `MentionTarget`, `POLL_DURATIONS_DAYS`, `POLL_MAX_OPTIONS`, `POLL_MIN_OPTIONS`, `POLL_OPTION_LIMIT`, `POLL_QUESTION_LIMIT`, `PollSpec`, `PostAttachment`, `PostEdit`, `PostRequest`, `PostValidationError`, `SCHEDULE_MAX_AHEAD`, `SCHEDULE_MIN_LEAD`, `TextSegment`, `VISIBILITIES`, `Visibility`, `attachment_summary()`, `build_poll()`, `build_post_edit()`, `build_post_request()`, `date_matches()`, `format_schedule_date()`, `format_schedule_time()`, `identity_key_from_url()`, `identity_key_from_urn()`, `normalize_text()`, `parse_mention_target()`, `parse_post_as()`, `parse_post_text()`, `parse_post_url()`, `parse_schedule_at()`, `post_preview()`, `render_segments()`, `resolve_date_order()`, `schedule_summary()`, `time_matches()`, `utf16_length()` | `browser-free` |
 | `posts` | `PostSearch` | `browser-free` |
@@ -69,7 +69,7 @@ a page-owning collaborator.
 - `entity_search` -> `capture`, `contracts`, `job_policy`, `link_metadata`, `session`
 - `events` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `search_urls`
 - `extractor` -> `analytics`, `capture`, `comments`, `company`, `connection_actions`, `content`, `contracts`, `conversations`, `events`, `feed`, `group`, `job_pages`, `jobs`, `message_sender`, `navigation`, `network`, `person`, `post_actions`, `post_composer`, `post_content`, `posts`, `profile_page`, `reactions`, `sales_navigator`, `session`, `text`
-- `feed` -> `content`, `contracts`, `feed_payload`, `navigation`, `response_capture`, `session`, `text`
+- `feed` -> `content`, `contracts`, `feed_payload`, `link_metadata`, `navigation`, `response_capture`, `session`, `text`
 - `feed_payload` -> `link_metadata`
 - `fields` -> `capture`
 - `geo_resolver` -> `contracts`, `navigation`, `session`
@@ -84,7 +84,7 @@ a page-owning collaborator.
 - `network` -> `capture`, `contracts`, `identifiers`, `link_metadata`, `navigation`, `session`
 - `person` -> `capture`, `contracts`, `entity_search`, `fields`, `geo_resolver`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `search_urls`, `session`, `text`
 - `post_actions` -> `identifiers`, `navigation`, `session`
-- `post_composer` -> `navigation`, `post_content`, `session`
+- `post_composer` -> `navigation`, `post_actions`, `post_content`, `session`
 - `post_content` -> _(none)_
 - `posts` -> `capture`, `contracts`, `link_metadata`, `search_urls`
 - `profile_page` -> `session`
@@ -108,6 +108,7 @@ a page-owning collaborator.
 - `edit_post`
 - `edit_scheduled_post`
 - `extract_feed`
+- `extract_notifications`
 - `extract_page`
 - `follow`
 - `get_company_employees`
