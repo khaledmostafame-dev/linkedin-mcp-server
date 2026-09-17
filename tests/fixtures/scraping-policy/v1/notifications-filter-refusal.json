@@ -1,0 +1,97 @@
+{
+  "call": {
+    "arguments": {
+      "filter_": "bogus-filter",
+      "max_scrolls": 6
+    },
+    "method": "extract_notifications"
+  },
+  "events": [
+    {
+      "call": "extract_notifications",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add",
+      "section": "notifications"
+    },
+    {
+      "call": "extract_notifications",
+      "extra": {
+        "target_url": "https://www.linkedin.com/notifications/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto",
+      "section": "notifications"
+    },
+    {
+      "call": "extract_notifications",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/notifications/",
+      "requested_url": "https://www.linkedin.com/notifications/",
+      "section": "notifications",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "extract_notifications",
+      "description": "goto https://www.linkedin.com/notifications/",
+      "kind": "boundary.stabilize",
+      "result": null,
+      "section": "notifications"
+    },
+    {
+      "call": "extract_notifications",
+      "extra": {
+        "target_url": "https://www.linkedin.com/notifications/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto",
+      "section": "notifications"
+    },
+    {
+      "call": "extract_notifications",
+      "kind": "boundary.auth_quick",
+      "result": null,
+      "section": "notifications"
+    },
+    {
+      "call": "extract_notifications",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove",
+      "section": "notifications"
+    },
+    {
+      "call": "extract_notifications",
+      "kind": "boundary.rate_limit",
+      "section": "notifications"
+    },
+    {
+      "call": "extract_notifications",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "section": "notifications",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "extract_notifications",
+      "dismissed": false,
+      "kind": "boundary.modal",
+      "section": "notifications"
+    }
+  ],
+  "result": {
+    "error": {
+      "error_message": "Could not verify that the 'bogus-filter' notifications filter was applied: LinkedIn's filter pills carry no text this fork can read, so the pill for this filter cannot be identified with certainty, or the click did not verifiably change its selected state. Returning nothing rather than unfiltered content mislabeled as filtered.",
+      "error_type": "filter_unavailable"
+    },
+    "references": [],
+    "text": ""
+  },
+  "scenario": "extract_notifications__filter_unavailable",
+  "schema_version": 1
+}

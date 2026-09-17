@@ -1320,6 +1320,38 @@ async def _resolve_geo_location_blank_query_scenario() -> dict[str, Any]:
     )
 
 
+async def _notifications_filter_refusal_scenario() -> dict[str, Any]:
+    """Early refusal: an unrecognised filter never scrolls or extracts.
+
+    ``FeedScraper._select_notification_filter`` looks the requested filter
+    up in ``_NOTIFICATION_FILTER_PILL_INDEX`` before touching a single
+    locator; a value that is not ``"all"`` and not one of the known pills
+    (``my_posts``, ``mentions``) misses that mapping and returns ``False``
+    immediately. The page has already been navigated to (the method always
+    lands on the notifications URL first), but nothing past that point --
+    no pill lookup, no scroll, no content read -- ever runs. This pins that
+    zero-scroll refusal shape and keeps ``extract_notifications`` inside the
+    exhaustively-checked facade-method inventory (``TOOL_FACADE_METHODS``).
+    """
+    recorder = TraceRecorder(
+        "extract_notifications__filter_unavailable", _COMMON_ALLOWED
+    )
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("extract_notifications", "notifications"):
+            result = await extractor.extract_notifications("bogus-filter")
+    page.assert_clean()
+    return recorder.trace(
+        {
+            "method": "extract_notifications",
+            "arguments": {"filter_": "bogus-filter", "max_scrolls": 6},
+        },
+        {"text": result.text, "references": result.references, "error": result.error},
+    )
+
+
 _NETWORK_PROFILE = "ada-lovelace"
 _NETWORK_GROUP = "1234567"
 
@@ -1541,6 +1573,7 @@ TOOL_FACADE_METHODS = {
     "edit_post",
     "edit_scheduled_post",
     "extract_feed",
+    "extract_notifications",
     "extract_page",
     "follow",
     "get_company_employees",
@@ -1731,6 +1764,9 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         "group-members.json": await _network_capture_scenario("get_group_members"),
         "resolve-geo-location-blank.json": (
             await _resolve_geo_location_blank_query_scenario()
+        ),
+        "notifications-filter-refusal.json": (
+            await _notifications_filter_refusal_scenario()
         ),
         "sales-nav-search-leads.json": await _sales_navigator_scenario(
             "sales_nav_search_leads"
