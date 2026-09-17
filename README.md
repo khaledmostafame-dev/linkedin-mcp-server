@@ -75,8 +75,8 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `reply_to_comment` | Reply to one comment located by URN (requires `confirm`; verifies the reply box belongs to that comment, confirms the reply appeared; @mentions not supported) |
 | `comment_on_post` | Post a top-level comment on a post (requires `confirm`; confirms the comment appeared; @mentions not supported) |
 | `react_to_comment` | Like one comment located by URN (requires `confirm`; never removes an existing reaction) |
-| `create_post` | Publish or schedule a post with real @mentions (`@[Name](profile or company URL)`, verified by identity, fails closed), up to 20 images or one PDF/PPTX document carousel, visibility, posting as a company page you admin (`post_as`), and LinkedIn-native scheduling (requires `confirm`; `confirm=false` previews without a browser) |
-| `create_poll` | Publish or schedule a poll (question ≤140 chars, 2–4 options ≤30 chars, 1/3/7/14 days) with optional text, `post_as` and `schedule_at` (requires `confirm`; `confirm=false` previews without a browser) |
+| `create_post` | Publish or schedule a post with real @mentions (`@[Name](profile or company URL)`, verified by identity, fails closed), up to 20 images or one PDF/PPTX document carousel, visibility, posting as a company page you admin (`post_as`: EXPERIMENTAL — not fully tested, known not working (live check 2026-09-17: admin analytics routes returned not_authorized), disabled by default; see `ENABLE_COMPANY_PAGE_TOOLS`), and LinkedIn-native scheduling (requires `confirm`; `confirm=false` previews without a browser) |
+| `create_poll` | Publish or schedule a poll (question ≤140 chars, 2–4 options ≤30 chars, 1/3/7/14 days) with optional text, `post_as` (EXPERIMENTAL — not fully tested, known not working (live check 2026-09-17: admin analytics routes returned not_authorized), disabled by default) and `schedule_at` (requires `confirm`; `confirm=false` previews without a browser) |
 | `get_scheduled_posts` | List scheduled posts with identifiers |
 | `edit_scheduled_post` | Change a scheduled post's text and/or time by identifier (requires `confirm`) |
 | `delete_scheduled_post` | Delete a scheduled post by identifier (requires `confirm`) |
@@ -96,7 +96,7 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `get_event_attendees` | List attendees of a LinkedIn event, with a bounded scroll budget |
 | `get_post_analytics` | Analytics of one of your own posts (impressions, members reached, reactions, comments, reposts, saves, profile viewers, followers gained, demographics when shown); other people's posts return a `not_authorized` section error |
 | `get_profile_analytics` | Your own profile and creator dashboards as separate sections (profile_viewers, search_appearances, followers, post_impressions) |
-| `get_company_page_analytics` | Admin analytics of a company page you administer (visitors, followers with count and growth, content), one navigation per section; non-admin sections return a `not_authorized` section error |
+| `get_company_page_analytics` | **EXPERIMENTAL — not fully tested, known not working (live check 2026-09-17: admin analytics routes returned not_authorized), disabled by default.** Not registered unless `ENABLE_COMPANY_PAGE_TOOLS=true`. Admin analytics of a company page you administer (visitors, followers with count and growth, content), one navigation per section; non-admin sections return a `not_authorized` section error |
 | `sales_nav_search_leads` | Search Sales Navigator leads (people) by keyword and optional filters. Requires a Sales Navigator seat — see [Sales Navigator tools](#sales-navigator-tools) |
 | `sales_nav_search_accounts` | Search Sales Navigator accounts (companies) by keyword and optional filters. Requires a Sales Navigator seat |
 | `sales_nav_get_lists` | List the authenticated user's Sales Navigator lead or account lists. Requires a Sales Navigator seat |
@@ -912,6 +912,7 @@ uv run -m linkedin_mcp_server
 
 - `--log-level {DEBUG,INFO,WARNING,ERROR}` - Logging level (default: WARNING)
 - `--help` - Show help
+- `ENABLE_COMPANY_PAGE_TOOLS` (environment only) - **EXPERIMENTAL — not fully tested, known not working (live check 2026-09-17: admin analytics routes returned not_authorized), disabled by default.** `true` registers `get_company_page_analytics` and lets `create_post` / `create_poll` accept `post_as`; off, the tool is hidden and any `post_as` is refused before browser work (default: false)
 
 > **Note:** Most CLI options have environment variable equivalents. See `.env.example` for details.
 

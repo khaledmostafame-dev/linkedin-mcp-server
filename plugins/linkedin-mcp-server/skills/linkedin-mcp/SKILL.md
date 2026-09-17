@@ -56,15 +56,19 @@ instances, clear profiles, or replace the user's browser session.
 - Content: `get_feed`, `get_hashtag_feed`, `get_notifications`, `search_posts`,
   `get_saved_posts`, `get_post_reactions`, and `get_post_comments`; `save_post`
   (write).
-- Analytics (the signed-in member's own only): `get_post_analytics`,
-  `get_profile_analytics`, and `get_company_page_analytics` (pages they
-  administer).
+- Analytics (the signed-in member's own only): `get_post_analytics` and
+  `get_profile_analytics`. `get_company_page_analytics` is EXPERIMENTAL, not
+  fully tested and known not working (live check 2026-09-17: admin analytics
+  routes returned not_authorized); it is only registered when the server runs
+  with `ENABLE_COMPANY_PAGE_TOOLS=true`.
 - Messages: `get_inbox`, `get_conversation`, and `search_conversations`;
   `reply_to_conversation`, `mark_conversation_read`, and `archive_conversation`
   (writes).
 - Posting: `get_scheduled_posts` (read); `create_post`, `create_poll`,
   `edit_scheduled_post`, `delete_scheduled_post`, `edit_post` and
-  `delete_post` (writes).
+  `delete_post` (writes). Posting as a company page (`post_as`) is
+  EXPERIMENTAL and refused unless `ENABLE_COMPANY_PAGE_TOOLS=true`; do not
+  pass it otherwise.
 - Network: `list_connections`, `get_mutual_connections`, `get_invitations`,
   `search_groups`, `get_group_posts`, `get_group_members`, `search_events`,
   `get_event_details`, and `get_event_attendees` (reads);

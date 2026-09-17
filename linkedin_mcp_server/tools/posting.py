@@ -30,6 +30,10 @@ from linkedin_mcp_server.scraping.post_content import (
     parse_post_url,
     post_preview,
 )
+from linkedin_mcp_server.tools.company_pages import (
+    company_page_tools_enabled,
+    refuse_post_as_when_disabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +75,17 @@ class DocumentInput(MediaInput):
 
 
 def register_posting_tools(
-    mcp: FastMCP, *, tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS
+    mcp: FastMCP,
+    *,
+    tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS,
+    company_page_tools: bool | None = None,
 ) -> None:
-    """Register post publishing and scheduling tools with the MCP server."""
+    """Register post publishing and scheduling tools with the MCP server.
+
+    *company_page_tools* decides whether ``post_as`` is accepted; ``None``
+    reads ``ENABLE_COMPANY_PAGE_TOOLS`` (off by default, experimental).
+    """
+    post_as_enabled = company_page_tools_enabled(company_page_tools)
 
     @mcp.tool(
         timeout=tool_timeout,
@@ -125,12 +137,16 @@ def register_posting_tools(
                 timezone.
             media: Optional list of images.
             document: Optional document with a required title.
-            post_as: Optional company page to post as, which this account
-                must administer: https://www.linkedin.com/company/<slug>/,
-                its numeric id, or urn:li:organization:<id>. Only the author
-                option carrying that page's identity is selected, and it must
-                read back as selected; otherwise nothing is posted. Page posts
-                are public, so visibility must stay "anyone".
+            post_as: EXPERIMENTAL - not fully tested, known not working
+                (live check 2026-09-17: admin analytics routes returned
+                not_authorized), disabled by default; refused unless the
+                server runs with ENABLE_COMPANY_PAGE_TOOLS=true. Optional
+                company page to post as, which this account must administer:
+                https://www.linkedin.com/company/<slug>/, its numeric id, or
+                urn:li:organization:<id>. Only the author option carrying that
+                page's identity is selected, and it must read back as
+                selected; otherwise nothing is posted. Page posts are public,
+                so visibility must stay "anyone".
 
         Returns:
             Dict with url, status ("preview", "published", "scheduled", or a
@@ -141,6 +157,7 @@ def register_posting_tools(
             retrying then can publish twice.
         """
         try:
+            refuse_post_as_when_disabled(post_as, enabled=post_as_enabled)
             # Everything that can be refused without LinkedIn is refused
             # before any download, and the whole request before a browser.
             build_post_request(
@@ -504,7 +521,9 @@ def register_posting_tools(
             confirm: False returns a preview; True publishes or schedules.
             ctx: FastMCP context for progress reporting
             text: Optional post text shown above the poll.
-            post_as: Optional company page to post as (URL, numeric id or URN).
+            post_as: EXPERIMENTAL - not fully tested, known not working,
+                disabled by default (needs ENABLE_COMPANY_PAGE_TOOLS=true).
+                Optional company page to post as (URL, numeric id or URN).
             schedule_at: Optional ISO 8601 date-time with an explicit offset.
 
         Returns:
@@ -513,6 +532,7 @@ def register_posting_tools(
             is False once the post action may have been clicked.
         """
         try:
+            refuse_post_as_when_disabled(post_as, enabled=post_as_enabled)
             poll = build_poll(question, options, duration_days)
             request = build_post_request(
                 text,

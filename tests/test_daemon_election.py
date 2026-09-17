@@ -5101,7 +5101,10 @@ class TestRealOwner:
             # in a `register_*` call.
             assert "get_person_profile" in names
             assert "close_session" in names
-            assert len(names) == 61, sorted(names)
+            # 60: the experimental company-page tool stays unregistered, and an
+            # owner never receives ENABLE_COMPANY_PAGE_TOOLS.
+            assert "get_company_page_analytics" not in names
+            assert len(names) == 60, sorted(names)
         finally:
             _stop(result.get("pid"))
 

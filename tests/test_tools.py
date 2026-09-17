@@ -2914,7 +2914,6 @@ class TestToolTimeouts:
             "get_event_attendees",
             "get_post_analytics",
             "get_profile_analytics",
-            "get_company_page_analytics",
             "close_session",
             "get_pacing_status",
         )
@@ -2967,7 +2966,6 @@ class TestToolTimeouts:
             "get_event_attendees",
             "get_post_analytics",
             "get_profile_analytics",
-            "get_company_page_analytics",
             "close_session",
             "get_pacing_status",
         )
