@@ -127,11 +127,13 @@ def register_saved_posts_tools(
         Save or unsave a LinkedIn post via its overflow menu's Save
         toggle.
 
-        The overflow-menu opener and the save toggle inside it are found
-        structurally (an aria-expanded menu opener, then the single
-        aria-pressed control inside the resulting menu — see
-        scraping/post_actions.py), never by matching visible text. This
-        DOM probe is unverified against a live account — see AGENTS.md.
+        The overflow-menu opener and the save item inside it are found
+        structurally (the one aria-expanded opener with a collapsed panel
+        beside it above the post's action row, then the one menu item
+        holding a bookmark outline/fill icon hook — see
+        scraping/post_actions.py), never by matching visible text. The
+        opener matches a live post page; the open menu's item shape is
+        not yet confirmed live — see AGENTS.md.
         If either cannot be identified unambiguously, nothing is clicked
         and status is "structural_signal_not_found".
 

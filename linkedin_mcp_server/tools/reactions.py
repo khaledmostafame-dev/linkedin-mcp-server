@@ -45,12 +45,13 @@ def register_reaction_tools(
         dialog.
 
         The dialog is opened by clicking the post's social-counts summary
-        (a structural probe, not a text match — see
-        scraping/reactions.py), and the reactor list is read with bounded
-        scrolling inside it. Reaction type (Like/Celebrate/Support/...) is
-        not returned: no non-text structural signal for it was found, and
-        this tool omits rather than guesses one. This DOM probe is
-        unverified against a live account — see AGENTS.md.
+        (the single data-reaction-details control, a structural probe, not
+        a text match — see scraping/reactions.py), and the reactor list is
+        read with bounded scrolling inside it. Reaction type
+        (Like/Celebrate/Support/...) is not returned: no non-text
+        structural signal for it was found, and this tool omits rather
+        than guesses one. The control matches a live post page; the
+        dialog read is not yet confirmed live — see AGENTS.md.
 
         Args:
             post_url: A /feed/update/<urn>/ or /posts/<slug> permalink,
