@@ -194,6 +194,42 @@ class BrowserDowngradeError(LinkedInMCPError):
         )
 
 
+class ProfileLockedError(LinkedInMCPError):
+    """Chromium refused the profile because its singleton lock names an owner.
+
+    Its own class because the generic launch failure sends people the wrong way.
+    As a ``NetworkError`` it read "Check your connection", and that path also
+    treats a failed launch as a missing binary. It is not an
+    ``AuthenticationError`` either: that path rotates the profile away, and the
+    session inside is intact; only three links in front of it are in the way.
+
+    Raised only after the launch path has already cleared every lock it could
+    prove stale (``session_state.clear_stale_chromium_singleton``), so what
+    remains is a lock whose owner may be alive, or one this server could not
+    judge.
+    """
+
+    def __init__(self, profile_dir: object | None = None):
+        self.profile_dir = profile_dir
+        where = f"\nProfile: {profile_dir}" if profile_dir is not None else ""
+        super().__init__(
+            "Chromium refused to open the browser profile because another "
+            "browser process has it locked (SingletonLock). A browser that was "
+            "stopped without closing, such as a container recreated while its "
+            "browser was running, leaves this lock behind. Your saved session "
+            "was not changed."
+            f"{where}\n\n"
+            "To fix this:\n"
+            "  Make sure no other server, container or browser is using this "
+            "profile, then retry. A lock left by another host or by an exited "
+            "process is removed automatically once this server holds the "
+            "profile.\n"
+            "  If it persists, stop everything using the profile and delete "
+            "SingletonLock, SingletonSocket and SingletonCookie from the "
+            "profile directory."
+        )
+
+
 class VisualCPPRuntimeUnavailableError(LinkedInMCPError):
     """greenlet's extension would not load, and neither would the C++ runtime.
 

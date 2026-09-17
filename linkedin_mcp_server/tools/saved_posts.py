@@ -113,7 +113,9 @@ def register_saved_posts_tools(
         timeout=tool_timeout,
         title="Save Post",
         annotations={"destructiveHint": True, "openWorldHint": True},
-        tags={"post", "saved", "actions", "write"},
+        # "private": only this account sees a save, so pacing spends the
+        # private write bucket (`pacing.PRIVATE_TAG`).
+        tags={"post", "saved", "actions", "write", "private"},
         exclude_args=["extractor"],
     )
     async def save_post(

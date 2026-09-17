@@ -233,6 +233,7 @@ class PageNavigator:
                 extra={"target_url": url, "wait_until": wait_until},
             )
             try:
+                pacing_signals.report_contact()
                 response = await page.goto(url, wait_until=wait_until, timeout=30000)
                 await stabilize_navigation(f"goto {url}", logger)
                 await record_page_trace(
