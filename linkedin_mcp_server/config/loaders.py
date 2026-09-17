@@ -155,6 +155,7 @@ class EnvironmentKeys:
     EAGER_FULL_CHROMIUM = "EAGER_FULL_CHROMIUM"
     DAEMON_ENABLED = "DAEMON_ENABLED"
     INSTALLER_TEMP_DIR = "INSTALLER_TEMP_DIR"
+    ENABLE_COMPANY_PAGE_TOOLS = "ENABLE_COMPANY_PAGE_TOOLS"
     PACING_ENABLED = "PACING_ENABLED"
     PACING_MIN_INTERVAL_SECONDS = "PACING_MIN_INTERVAL_SECONDS"
     PACING_JITTER_SECONDS = "PACING_JITTER_SECONDS"
@@ -454,6 +455,23 @@ def load_from_env(config: AppConfig) -> AppConfig:
             config.server.daemon_enabled = False
         elif daemon_value in TRUTHY_VALUES:
             config.server.daemon_enabled = True
+
+    # Experimental company-page tools (off by default). An unrecognised value
+    # is refused rather than read as off: someone who typed it meant to change
+    # something, and a server that starts without saying so hides the typo.
+    if (
+        company_env := os.environ.get(EnvironmentKeys.ENABLE_COMPANY_PAGE_TOOLS)
+    ) is not None:
+        company_value = _normalize_env(company_env)
+        if company_value in FALSY_VALUES:
+            config.server.enable_company_page_tools = False
+        elif company_value in TRUTHY_VALUES:
+            config.server.enable_company_page_tools = True
+        elif company_value:
+            raise ConfigurationError(
+                f"Invalid ENABLE_COMPANY_PAGE_TOOLS: '{company_env}'. "
+                "Must be true or false."
+            )
 
     _load_pacing_from_env(config)
 

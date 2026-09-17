@@ -473,6 +473,13 @@ class ServerConfig:
     # keep scraping, and until then this stays something you opt into. Only
     # applies to stdio; an explicit HTTP bind is already a single server.
     daemon_enabled: bool = False
+    # EXPERIMENTAL, not fully tested and known not working: register
+    # get_company_page_analytics and accept create_post/create_poll `post_as`.
+    # A live check on 2026-09-17 had the admin analytics routes answer
+    # not_authorized, so both stay off unless an operator opts in. Environment
+    # only (ENABLE_COMPANY_PAGE_TOOLS), and not handed to a daemon owner, which
+    # therefore always runs with it off: the safe side of the switch.
+    enable_company_page_tools: bool = False
 
     def validate(self) -> None:
         """Validate server configuration values."""

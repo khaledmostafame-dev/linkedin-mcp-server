@@ -165,16 +165,34 @@ def test_permanent_facade_aliases_are_the_canonical_objects():
     assert strip_conversation_chrome is text.strip_conversation_chrome
 
 
+# Experimental and unregistered by default (ENABLE_COMPANY_PAGE_TOOLS). Its
+# extractor delegate stays in the facade, so it stays in TOOL_DELEGATES too.
+EXPERIMENTAL_COMPANY_PAGE_TOOLS = {"get_company_page_analytics"}
+
+
 async def test_registered_tools_and_extractor_delegates_are_counted_separately():
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert len(tool_names) == 61
-    assert tool_names == {*TOOL_DELEGATES, "close_session", "get_pacing_status"}
+    assert len(tool_names) == 60
+    assert tool_names == {
+        *(set(TOOL_DELEGATES) - EXPERIMENTAL_COMPANY_PAGE_TOOLS),
+        "close_session",
+        "get_pacing_status",
+    }
     assert len(TOOL_DELEGATES) == 59
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert "close_session" not in TOOL_DELEGATES
     assert "get_pacing_status" not in TOOL_DELEGATES
+
+
+async def test_company_page_switch_registers_the_experimental_tool(monkeypatch):
+    monkeypatch.setenv("ENABLE_COMPANY_PAGE_TOOLS", "true")
+
+    tool_names = {tool.name for tool in await create_mcp_server().list_tools()}
+
+    assert len(tool_names) == 61
+    assert tool_names == {*TOOL_DELEGATES, "close_session", "get_pacing_status"}
 
 
 async def test_company_posts_delegate_matches_registered_tool_consumer():

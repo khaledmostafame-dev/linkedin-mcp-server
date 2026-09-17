@@ -826,6 +826,32 @@ class TestLoaders:
         config = load_config([])
         assert config.server.daemon_enabled is False
 
+    def test_company_page_tools_are_off_by_default(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_COMPANY_PAGE_TOOLS", raising=False)
+        from linkedin_mcp_server.config import load_config
+
+        assert load_config([]).server.enable_company_page_tools is False
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [("false", False), ("true", True), ("0", False), ("1", True), ("", False)],
+    )
+    def test_load_from_env_enable_company_page_tools(
+        self, monkeypatch, value, expected
+    ):
+        monkeypatch.setenv("ENABLE_COMPANY_PAGE_TOOLS", value)
+        from linkedin_mcp_server.config.loaders import load_from_env
+
+        config = load_from_env(AppConfig())
+        assert config.server.enable_company_page_tools is expected
+
+    def test_an_unreadable_company_page_switch_is_refused(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_COMPANY_PAGE_TOOLS", "ture")
+        from linkedin_mcp_server.config.loaders import load_from_env
+
+        with pytest.raises(ConfigurationError, match="ENABLE_COMPANY_PAGE_TOOLS"):
+            load_from_env(AppConfig())
+
     def test_load_from_env_port(self, monkeypatch):
         monkeypatch.setenv("PORT", "9000")
         from linkedin_mcp_server.config.loaders import load_from_env

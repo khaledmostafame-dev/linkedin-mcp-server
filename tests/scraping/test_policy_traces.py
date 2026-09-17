@@ -160,7 +160,8 @@ async def test_tool_schema_trace_keeps_people_boundary_coercion_and_inventory():
         "tool_schemas"
     ]
 
-    assert len(schemas) == 61
+    assert len(schemas) == 60
+    assert "get_company_page_analytics" not in schemas
     network = schemas["search_people"]["input"]["properties"]["network"]
     assert network["anyOf"] == [
         {"items": {"type": "string"}, "type": "array"},

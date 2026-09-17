@@ -169,11 +169,11 @@
     },
     {
       "name": "create_post",
-      "description": "Publish or schedule a LinkedIn post with explicit confirmation: real @mentions resolved by profile/company URL or URN (fails closed when no suggestion matches), up to 20 images or one PDF/PPTX/DOCX document carousel with a title, visibility, posting as an administered company page, and LinkedIn-native scheduling; confirm=false returns a browser-free preview"
+      "description": "Publish or schedule a LinkedIn post with explicit confirmation: real @mentions resolved by profile/company URL or URN (fails closed when no suggestion matches), up to 20 images or one PDF/PPTX/DOCX document carousel with a title, visibility, posting as an administered company page (post_as: EXPERIMENTAL, not fully tested, disabled unless ENABLE_COMPANY_PAGE_TOOLS=true), and LinkedIn-native scheduling; confirm=false returns a browser-free preview"
     },
     {
       "name": "create_poll",
-      "description": "Publish or schedule a LinkedIn poll with explicit confirmation: question up to 140 characters, 2-4 distinct options up to 30 characters, 1/3/7/14-day duration, optional text with mentions, post_as and schedule_at; confirm=false returns a browser-free preview"
+      "description": "Publish or schedule a LinkedIn poll with explicit confirmation: question up to 140 characters, 2-4 distinct options up to 30 characters, 1/3/7/14-day duration, optional text with mentions, post_as (EXPERIMENTAL, disabled unless ENABLE_COMPANY_PAGE_TOOLS=true) and schedule_at; confirm=false returns a browser-free preview"
     },
     {
       "name": "get_scheduled_posts",
@@ -254,10 +254,6 @@
     {
       "name": "get_profile_analytics",
       "description": "Read the signed-in member's own profile and creator analytics dashboards: profile viewers, search appearances, followers and post impressions"
-    },
-    {
-      "name": "get_company_page_analytics",
-      "description": "Read the admin analytics of a LinkedIn company page the signed-in member administers: visitors, followers and follower growth, and content performance"
     },
     {
       "name": "sales_nav_search_leads",

@@ -49,7 +49,8 @@ async def _tool() -> FunctionTool:
     from linkedin_mcp_server.tools.analytics import register_analytics_tools
 
     mcp = FastMCP("test")
-    register_analytics_tools(mcp)
+    # Experimental and off by default; these tests cover the tool itself.
+    register_analytics_tools(mcp, company_page_tools=True)
     tool = await mcp.get_tool("get_company_page_analytics")
     assert isinstance(tool, FunctionTool)
     return tool
@@ -248,3 +249,28 @@ class TestLandingOnTheAdminPages:
         )
         assert list(result["sections"]) == ["visitors"]
         assert result["section_errors"]["followers"]["error_type"] == "not_authorized"
+
+
+class TestExperimentalSwitch:
+    async def test_the_tool_is_not_registered_by_default(self, monkeypatch):
+        from linkedin_mcp_server.tools.analytics import register_analytics_tools
+
+        monkeypatch.delenv("ENABLE_COMPANY_PAGE_TOOLS", raising=False)
+        mcp = FastMCP("test")
+        register_analytics_tools(mcp)
+
+        names = {tool.name for tool in await mcp.list_tools()}
+        assert "get_company_page_analytics" not in names
+        # The member's own analytics are unaffected by the switch.
+        assert {"get_post_analytics", "get_profile_analytics"} <= names
+
+    async def test_the_environment_switch_registers_it(self, monkeypatch):
+        from linkedin_mcp_server.tools.analytics import register_analytics_tools
+
+        monkeypatch.setenv("ENABLE_COMPANY_PAGE_TOOLS", "1")
+        mcp = FastMCP("test")
+        register_analytics_tools(mcp)
+
+        tool = await mcp.get_tool("get_company_page_analytics")
+        assert isinstance(tool, FunctionTool)
+        assert "EXPERIMENTAL" in (tool.description or "")

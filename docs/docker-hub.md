@@ -31,7 +31,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to LinkedIn. A
 - **Location Resolution**: Resolve a free-text place name to LinkedIn geo URN id candidates for people search
 - **Comments**: Read a post's comments and replies, comment on a post, reply to or like one comment (writes require explicit confirmation)
 - **Posting**: Publish or schedule posts and polls with @mentions, images or a document, list/edit/delete scheduled posts, and edit or delete your own published posts (writes require explicit confirmation)
-- **Analytics**: Read your own post, profile/creator and administered company page analytics
+- **Analytics**: Read your own post and profile/creator analytics (company page analytics is experimental, not fully tested and disabled by default)
 - **Network**: List your connections, mutual connections with a profile and pending invitations; withdraw or respond to invitations and follow/unfollow a person or company (writes require explicit confirmation)
 - **Groups**: Search groups and list a group's posts or members
 - **Events**: Search events, read an event's details and list its attendees
@@ -170,6 +170,8 @@ Use `$env:USERPROFILE\.linkedin-mcp` when constructing the host path outside JSO
 | `PROXY_BYPASS` | - | Comma-separated hosts to reach directly instead of through the proxy |
 | `LINKEDIN_EXPERIMENTAL_PERSIST_DERIVED_SESSION` | `false` | Experimental: keep the container's derived profile across restarts instead of rebuilding it on each start |
 | `LINKEDIN_TRACE_MODE` | `on_error` | Trace retention: `on_error` keeps artifacts only from failed runs, `always` keeps every run, `off` keeps none |
+| `LINKEDIN_TRACE_DOM` | `false` | Also write a structural DOM skeleton (`dom/NNN-<step>.json`) beside each trace screenshot: tags, roles, attribute names, `data-*` values and URL path shapes, never page text or `aria-label`/`title`/`alt`/`placeholder` values. For fixing selectors against LinkedIn's real markup. |
+| `ENABLE_COMPANY_PAGE_TOOLS` | `false` | **EXPERIMENTAL — not fully tested, known not working (live check 2026-09-17: admin analytics routes returned not_authorized), disabled by default.** `true` registers `get_company_page_analytics` and lets `create_post`/`create_poll` accept `post_as`; otherwise the tool is hidden and `post_as` is refused. |
 
 **Example with custom timeouts (macOS / Linux):**
 

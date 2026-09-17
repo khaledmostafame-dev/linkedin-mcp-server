@@ -28,9 +28,11 @@ def _in_two_days() -> str:
     return instant.isoformat()
 
 
-async def _tool(name: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
+async def _tool(
+    name: str, *, company_page_tools: bool | None = None
+) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
     mcp = FastMCP("test")
-    register_posting_tools(mcp)
+    register_posting_tools(mcp, company_page_tools=company_page_tools)
     tool = await mcp.get_tool(name)
     assert tool is not None
     return cast(FunctionTool, tool).fn
@@ -152,7 +154,7 @@ async def test_scheduled_post_tools_delegate(mock_context):
 
 
 async def test_post_as_preview_names_the_requested_page(mock_context):
-    create_post = await _tool("create_post")
+    create_post = await _tool("create_post", company_page_tools=True)
 
     result = await create_post(
         "Hello", False, mock_context, post_as="https://www.linkedin.com/company/12345/"
@@ -234,7 +236,7 @@ async def test_confirmed_poll_goes_to_the_poll_delegate(mock_context):
     extractor.create_poll = AsyncMock(
         return_value={"status": "published", "retry_safe": False}
     )
-    create_poll = await _tool("create_poll")
+    create_poll = await _tool("create_poll", company_page_tools=True)
 
     await create_poll(
         "Best format?",
@@ -262,3 +264,61 @@ async def test_poll_schema_carries_the_limits():
     assert properties["duration_days"]["enum"] == [1, 3, 7, 14]
     assert properties["options"]["minItems"] == 2
     assert properties["options"]["maxItems"] == 4
+
+
+_POST_AS_DISABLED = "posting as a company page is disabled"
+
+
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_post_as_is_refused_while_company_page_tools_are_off(
+    mock_context, confirm
+):
+    extractor = MagicMock()
+    extractor.create_post = AsyncMock(return_value={"status": "published"})
+    extractor.create_poll = AsyncMock(return_value={"status": "published"})
+    create_post = await _tool("create_post", company_page_tools=False)
+    create_poll = await _tool("create_poll", company_page_tools=False)
+
+    with patch(
+        "linkedin_mcp_server.tools.posting.get_ready_extractor", new=AsyncMock()
+    ) as ready:
+        with pytest.raises(ToolError, match=_POST_AS_DISABLED):
+            await create_post(
+                "Hello", confirm, mock_context, post_as="12345", extractor=extractor
+            )
+        with pytest.raises(ToolError, match="ENABLE_COMPANY_PAGE_TOOLS=true"):
+            await create_poll(
+                "Best format?",
+                ["Carousel", "Video"],
+                3,
+                confirm,
+                mock_context,
+                post_as="https://www.linkedin.com/company/12345/",
+                extractor=extractor,
+            )
+
+    ready.assert_not_awaited()
+    extractor.create_post.assert_not_awaited()
+    extractor.create_poll.assert_not_awaited()
+
+
+async def test_the_company_page_switch_defaults_to_off(mock_context, monkeypatch):
+    monkeypatch.delenv("ENABLE_COMPANY_PAGE_TOOLS", raising=False)
+    create_post = await _tool("create_post")
+
+    with pytest.raises(ToolError, match=_POST_AS_DISABLED):
+        await create_post("Hello", False, mock_context, post_as="12345")
+    # Without post_as the default server previews exactly as before.
+    result = await create_post("Hello", False, mock_context)
+    assert result["status"] == "preview"
+
+
+async def test_the_company_page_switch_is_read_from_the_environment(
+    mock_context, monkeypatch
+):
+    monkeypatch.setenv("ENABLE_COMPANY_PAGE_TOOLS", "true")
+    create_post = await _tool("create_post")
+
+    result = await create_post("Hello", False, mock_context, post_as="12345")
+
+    assert result["post_as"]["kind"] == "company"

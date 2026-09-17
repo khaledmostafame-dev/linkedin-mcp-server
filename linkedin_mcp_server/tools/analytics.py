@@ -24,14 +24,23 @@ from linkedin_mcp_server.scraping.identifiers import (
     normalize_post_urn,
 )
 from linkedin_mcp_server.core.exceptions import InvalidReferenceError
+from linkedin_mcp_server.tools.company_pages import company_page_tools_enabled
 
 logger = logging.getLogger(__name__)
 
 
 def register_analytics_tools(
-    mcp: FastMCP, *, tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS
+    mcp: FastMCP,
+    *,
+    tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS,
+    company_page_tools: bool | None = None,
 ) -> None:
-    """Register the member's own analytics tools with the MCP server."""
+    """Register the member's own analytics tools with the MCP server.
+
+    ``get_company_page_analytics`` is EXPERIMENTAL and registered only when
+    *company_page_tools* is true; ``None`` reads ``ENABLE_COMPANY_PAGE_TOOLS``
+    (off by default), so a client of the default server never sees it.
+    """
 
     @mcp.tool(
         timeout=tool_timeout,
@@ -151,6 +160,9 @@ def register_analytics_tools(
         except Exception as e:
             raise_tool_error(e, "get_profile_analytics")  # NoReturn
 
+    if not company_page_tools_enabled(company_page_tools):
+        return
+
     @mcp.tool(
         timeout=tool_timeout,
         title="Get Company Page Analytics",
@@ -166,6 +178,10 @@ def register_analytics_tools(
     ) -> dict[str, Any]:
         """
         Read the admin analytics of a LinkedIn company page you administer.
+
+        EXPERIMENTAL - not fully tested, known not working (live check
+        2026-09-17: admin analytics routes returned not_authorized), disabled
+        by default. Registered only with ENABLE_COMPANY_PAGE_TOOLS=true.
 
         One page navigation per section. Pages you do not administer are not
         guessed at: LinkedIn sends non-admins back to the public page, and each
