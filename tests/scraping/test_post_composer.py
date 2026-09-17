@@ -21,7 +21,12 @@ from linkedin_mcp_server.scraping.post_composer import (
     _OPTION_EVIDENCE_JS,
     _OPTION_MARK_JS,
     _POST_MENU_MARK_JS,
+    _POST_MENU_OPEN_JS,
+    _POST_OWNERSHIP_JS,
+    _POST_RENDERED_JS,
     _Typed,
+    author_keys,
+    authorship,
     evidence_keys,
     evidence_matches,
     scheduled_identifier,
@@ -42,6 +47,15 @@ NOW = datetime(2026, 9, 17, 8, 0, tzinfo=UTC)
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch):
     monkeypatch.setattr(composer_module.asyncio, "sleep", AsyncMock())
+
+
+@pytest.fixture(autouse=True)
+def traces(monkeypatch) -> AsyncMock:
+    """The composer's step traces, off unless a test turns them on."""
+    recorder = AsyncMock()
+    monkeypatch.setattr(composer_module, "record_page_trace", recorder)
+    monkeypatch.setattr(composer_module, "trace_enabled", lambda: False)
+    return recorder
 
 
 def _composer() -> tuple[PostComposer, MagicMock]:
@@ -373,6 +387,113 @@ class TestScheduledPosts:
         assert result["status"] == "entry_ambiguous"
 
 
+class TestStepTraces:
+    """The scheduled-posts and schedule flows record the page after each click.
+
+    Only what a click reveals is missing from the navigation traces, so each
+    trace must follow its click before anything waits on the result.
+    """
+
+    def _flow(self, monkeypatch, traces: AsyncMock) -> tuple[PostComposer, MagicMock]:
+        monkeypatch.setattr(composer_module, "trace_enabled", lambda: True)
+        composer, page = _composer()
+        element = MagicMock()
+        element.first = element
+        element.last = element
+        element.locator.return_value = element
+        element.filter.return_value = element
+        element.click = AsyncMock()
+        element.wait_for = AsyncMock()
+        element.count = AsyncMock(return_value=1)
+        element.is_visible = AsyncMock(return_value=False)
+        element.evaluate = AsyncMock(return_value={"text": "", "entities": []})
+        page.locator.return_value = element
+        page.goto = AsyncMock()
+        page.evaluate = AsyncMock(return_value=["Synthetic scheduled post"])
+        setattr(composer._navigator, "_navigate_to_page", AsyncMock())
+        setattr(composer._session, "check_rate_limit", AsyncMock())
+        self.element = element
+        self.traces = traces
+        return composer, page
+
+    def _steps(self) -> list[str]:
+        return [call.args[1] for call in self.traces.await_args_list]
+
+    async def test_the_scheduled_list_flow_traces_every_step(self, monkeypatch, traces):
+        composer, _page = self._flow(monkeypatch, traces)
+
+        result = await composer.get_scheduled_posts()
+
+        assert result["sections"] == {"scheduled_posts": "Synthetic scheduled post"}
+        assert self._steps() == [
+            "composer-after-open",
+            "composer-scheduled-after-schedule-control-click",
+            "composer-scheduled-after-view-all-click",
+            "composer-scheduled-list-after-open",
+        ]
+
+    async def test_what_the_schedule_control_opened_is_traced_before_waiting(
+        self, monkeypatch, traces
+    ):
+        composer, _page = self._flow(monkeypatch, traces)
+        # The editor appears; the date input the click should reveal does not.
+        self.element.wait_for = AsyncMock(
+            side_effect=[None, PlaywrightTimeoutError("no date input")]
+        )
+
+        result = await composer.get_scheduled_posts()
+
+        assert result["status"] == "list_unavailable"
+        assert self._steps() == [
+            "composer-after-open",
+            "composer-scheduled-after-schedule-control-click",
+            "composer-scheduled-list-unavailable",
+        ]
+
+    async def test_a_failing_trace_never_changes_the_outcome(self, monkeypatch, traces):
+        composer, _page = self._flow(monkeypatch, traces)
+        traces.side_effect = OSError("trace directory not writable")
+
+        result = await composer.get_scheduled_posts()
+
+        assert result["sections"] == {"scheduled_posts": "Synthetic scheduled post"}
+        assert traces.await_count == 4
+
+    async def test_nothing_is_traced_when_tracing_is_off(self, monkeypatch, traces):
+        composer, _page = self._flow(monkeypatch, traces)
+        monkeypatch.setattr(composer_module, "trace_enabled", lambda: False)
+
+        result = await composer.get_scheduled_posts()
+
+        assert result["sections"] == {"scheduled_posts": "Synthetic scheduled post"}
+        traces.assert_not_awaited()
+
+    async def test_the_create_post_schedule_step_is_traced_after_its_click(
+        self, monkeypatch, traces
+    ):
+        composer, page = self._flow(monkeypatch, traces)
+        page.evaluate = AsyncMock(
+            return_value={
+                "timeZone": "UTC",
+                "year": 2026,
+                "month": 9,
+                "day": 18,
+                "hour": 9,
+                "minute": 0,
+                "todayYear": 2026,
+                "todayMonth": 9,
+                "todayDay": 17,
+            }
+        )
+        self.element.wait_for = AsyncMock(side_effect=PlaywrightTimeoutError("no"))
+
+        with pytest.raises(_Abort) as abort:
+            await composer._apply_schedule(NOW)
+
+        assert abort.value.status == "schedule_unavailable"
+        assert self._steps() == ["composer-schedule-after-control-click"]
+
+
 class TestPostLinkCapture:
     async def test_a_link_merely_new_on_the_feed_is_not_claimed(self, monkeypatch):
         composer, _page = _composer()
@@ -511,6 +632,7 @@ class TestOwnPosts:
         self, actor_href: str | None, *, marked: bool = True
     ) -> tuple[PostComposer, MagicMock]:
         composer, page = _composer()
+        self.calls: list[str] = []
 
         async def navigate(url: str) -> None:
             page.url = (
@@ -524,17 +646,27 @@ class TestOwnPosts:
         )
         setattr(composer._session, "check_rate_limit", AsyncMock())
         page.wait_for_selector = AsyncMock()
-        page.wait_for_function = AsyncMock()
+
+        async def wait_for_function(script: str, **_kwargs: Any) -> None:
+            self.calls.append(
+                "wait_rendered" if script == _POST_RENDERED_JS else "wait_menu_open"
+            )
+
+        page.wait_for_function = AsyncMock(side_effect=wait_for_function)
         ownership = {
-            "actorHref": actor_href,
+            "authorHrefs": [actor_href] if actor_href is not None else [],
             "controlCount": 1,
             "domUrn": True,
             "text": "Synthetic post",
         }
+        self.ownership = ownership
 
         async def evaluate(script: str, *args: Any) -> Any:
             if script == _POST_MENU_MARK_JS:
+                self.calls.append("mark")
                 return marked
+            if script == _POST_OWNERSHIP_JS:
+                self.calls.append("read")
             return ownership
 
         page.evaluate = AsyncMock(side_effect=evaluate)
@@ -566,7 +698,7 @@ class TestOwnPosts:
         assert result["status"] == "post_unavailable"
         self.opener.click.assert_not_awaited()
         self.menu_item.click.assert_not_awaited()
-        page.wait_for_function.assert_not_awaited()
+        assert "wait_menu_open" not in self.calls
 
     async def test_missing_owner_actions_are_refused(self):
         composer, page = self._setup("/in/sample-person/")
@@ -580,11 +712,17 @@ class TestOwnPosts:
 
     async def test_a_menu_that_never_opens_as_the_posts_is_refused(self):
         composer, page = self._setup("/in/sample-person/")
-        page.wait_for_function = AsyncMock(side_effect=PlaywrightTimeoutError("no"))
+
+        async def wait_for_function(script: str, **_kwargs: Any) -> None:
+            if script == _POST_MENU_OPEN_JS:
+                raise PlaywrightTimeoutError("no")
+
+        page.wait_for_function = AsyncMock(side_effect=wait_for_function)
 
         result = await composer.delete_post(POST_URL, confirm=True)
 
-        assert result["status"] == "not_own_post"
+        # Refused, but a menu that did not open says nothing about authorship.
+        assert result["status"] == "menu_unavailable"
         self.menu_item.wait_for.assert_not_awaited()
         self.menu_item.click.assert_not_awaited()
 
@@ -611,6 +749,115 @@ class TestOwnPosts:
         assert result["new_text"] == "New text"
         assert self.opener.click.await_count == 1
         self.menu_item.click.assert_not_awaited()
+
+    async def _call(self, composer: PostComposer, tool: str) -> dict[str, Any]:
+        if tool == "delete_post":
+            return await composer.delete_post(POST_URL, confirm=False)
+        return await composer.edit_post(
+            POST_URL, build_post_edit("New text", allow_schedule=False), confirm=False
+        )
+
+    @pytest.mark.parametrize("tool", ["delete_post", "edit_post"])
+    async def test_both_tools_wait_for_the_post_before_reading_it(self, tool):
+        composer, _page = self._setup("/in/sample-person/")
+
+        result = await self._call(composer, tool)
+
+        assert result["status"] == "preview"
+        assert self.calls[:3] == ["wait_rendered", "read", "mark"]
+
+    @pytest.mark.parametrize("tool", ["delete_post", "edit_post"])
+    async def test_a_post_that_never_rendered_its_author_is_not_called_foreign(
+        self, tool
+    ):
+        # What a page read before the post rendered reports: controls may be
+        # there, author links are not. Live, this came back as not_own_post
+        # for the member's own post.
+        composer, _page = self._setup(None)
+
+        result = await self._call(composer, tool)
+
+        assert result["status"] == "author_unverified"
+        self.opener.click.assert_not_awaited()
+
+    @pytest.mark.parametrize("tool", ["delete_post", "edit_post"])
+    async def test_a_render_wait_that_times_out_still_fails_closed(self, tool):
+        composer, page = self._setup(None)
+        self.ownership["controlCount"] = 0
+        page.wait_for_function = AsyncMock(side_effect=PlaywrightTimeoutError("no"))
+
+        result = await self._call(composer, tool)
+
+        assert result["status"] == "post_unavailable"
+        self.opener.click.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        ("author", "expected"),
+        [
+            ("/in/sample-person", "preview"),
+            ("/in/someone-else/", "not_own_post"),
+            ("/company/sample-company/", "not_own_post"),
+            ("/in/ACoAASyntheticProfileId000000000000/", "author_unverified"),
+        ],
+    )
+    async def test_delete_and_edit_reach_the_same_verdict(self, author, expected):
+        verdicts = []
+        for tool in ("delete_post", "edit_post"):
+            composer, _page = self._setup(author)
+            verdicts.append((await self._call(composer, tool))["status"])
+
+        assert verdicts == [expected, expected]
+
+
+OWN = {"person:/in/sample-person/"}
+PROFILE_ID = "ACoAASyntheticProfileId000000000000"
+
+
+class TestAuthorship:
+    def test_the_members_vanity_link_is_their_own(self):
+        assert authorship(["/in/Sample-Person?miniProfileUrn=x"], OWN) == "own"
+
+    def test_another_vanity_is_someone_else(self):
+        assert authorship(["/in/someone-else/"], OWN) == "other"
+
+    def test_a_company_author_is_not_the_member(self):
+        assert authorship(["/company/sample-company/"], OWN) == "other"
+
+    def test_no_author_link_proves_nothing(self):
+        assert authorship([], OWN) == "unknown"
+        assert authorship(None, OWN) == "unknown"
+
+    def test_a_profile_id_link_is_not_compared_against_a_vanity(self):
+        assert authorship([f"/in/{PROFILE_ID}/"], OWN) == "unknown"
+
+    def test_profile_ids_compare_where_both_sides_expose_one(self):
+        own = OWN | {f"profile:{PROFILE_ID}"}
+        assert authorship([f"/in/{PROFILE_ID}/"], own) == "own"
+        other = "/in/ACoAASomeoneElsesProfileId0000000000/"
+        assert authorship([other], own) == "other"
+
+    def test_the_mini_profile_urn_adds_the_profile_id(self):
+        href = (
+            "/in/sample-person/?miniProfileUrn="
+            f"urn%3Ali%3Afs_miniProfile%3A{PROFILE_ID}"
+        )
+        assert author_keys(href) == {
+            "person:/in/sample-person/",
+            f"profile:{PROFILE_ID}",
+        }
+        assert authorship([href], OWN) == "own"
+
+    def test_author_links_that_disagree_prove_nothing(self):
+        hrefs = ["/in/sample-person/", "/in/someone-else/"]
+        assert authorship(hrefs, OWN) == "unknown"
+
+    def test_one_matching_and_one_contradicting_namespace_prove_nothing(self):
+        own = OWN | {f"profile:{PROFILE_ID}"}
+        href = (
+            "/in/sample-person/?miniProfileUrn="
+            "urn:li:fs_miniProfile:ACoAAOther0000000000000000"
+        )
+        assert authorship([href], own) == "unknown"
 
 
 class TestEditScheduledPost:

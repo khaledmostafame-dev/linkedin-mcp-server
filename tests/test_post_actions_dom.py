@@ -167,6 +167,9 @@ def _post_page(
     comment_menus: bool = True,
     post_owner_items: bool = True,
     open_comment_menu: bool = False,
+    author_href: str = "/in/synthetic-author/",
+    leading_profile_link: bool = False,
+    render_delay_ms: int = 0,
 ) -> str:
     label = LABELS[locale]
     extra_hook = (
@@ -234,17 +237,55 @@ def _post_page(
         if comment_in_panel
         else ""
     )
+    # A profile link <main> renders ahead of the post unit (a sidebar card
+    # rendered first): "the first profile link in <main>" would take it.
+    leading_link = (
+        '<div><a href="/in/synthetic-sidebar-member/"><span>Someone</span></a></div>'
+        if leading_profile_link
+        else ""
+    )
+    # A page still rendering, in the order measured live (2026-09-17): the
+    # boot loader with no <main> at all, then a laid-out <main> (a visible
+    # placeholder, so a wait for a visible <main> is already satisfied) before
+    # the post inside it, then the post. The page's controls are wired up only
+    # once the post exists, as a client-rendered page does.
+    deferred = render_delay_ms > 0
+    loader = (
+        '<div id="app-boot-bg-loader"><div><svg></svg></div></div><div id="app-root"></div>'
+        if deferred
+        else ""
+    )
+    template_open = '<template id="deferred-root">' if deferred else ""
+    template_close = "</template>" if deferred else ""
+    boot_open = "function boot() {" if deferred else ""
+    boot_close = (
+        f"""}}
+  setTimeout(() => {{
+    document.getElementById('app-boot-bg-loader').remove();
+    document.getElementById('app-root').innerHTML =
+      '<div class="application-outlet"><main aria-label="Main Feed">'
+      + '<div aria-busy="true"><div style="height: 240px"></div></div></main></div>';
+    setTimeout(() => {{
+      document.getElementById('app-root').replaceWith(
+        document.getElementById('deferred-root').content.cloneNode(true));
+      boot();
+    }}, {render_delay_ms});
+  }}, 100);
+"""
+        if deferred
+        else ""
+    )
     return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
 <body dir="ltr"><div id="artdeco-toasts__wormhole"></div>{dialog}
-<div><div class="application-outlet"><main aria-label="Main Feed">
-<div aria-label="Feed update"><section>
+{loader}{template_open}<div id="app-root"><div class="application-outlet"><main aria-label="Main Feed">
+{leading_link}<div aria-label="Feed update"><section>
 <a aria-label="{label["menu"]}" data-test-boost-header="" href="/ad-beta/">Boost</a>
 <div data-view-name="feed-full-update"><div>
 <div id="post" role="article" data-urn="urn:li:activity:7000000000000000001"><div><div>
   <h2>Feed post</h2>
   <div><div><div><div>
-    <a aria-label="{label["comment"]}" href="/in/synthetic-author/"><img alt=""></a>
-    <div><a aria-label="{label["comment"]}" href="/in/synthetic-author/"><span>Synthetic Author</span></a></div>
+    <a aria-label="{label["comment"]}" href="{author_href}"><img alt=""></a>
+    <div><a aria-label="{label["comment"]}" href="{author_href}"><span>Synthetic Author</span></a></div>
   </div></div>
   <div><div id="menu-root">
     <button id="opener" aria-expanded="false" aria-label="{label["menu"]}" type="button" tabindex="0">
@@ -286,11 +327,11 @@ def _post_page(
   </div>
   </div></div>
 </div></div></div></div></div></section></div>
-</main></div></div>
+</main></div></div>{template_close}
 {detached_panel}
 <output id="counters" hidden data-opener="0" data-save="0" data-reactions="0"
   data-comment-menu="0" data-sort="0"></output>
-<script>
+<script>{boot_open}
   // Page globals are invisible to patchright's isolated evaluate world, so
   // the counters live in the DOM; irreversible actions are also reported to
   // the test server, because the flows navigate away afterwards.
@@ -410,7 +451,7 @@ def _post_page(
     dialog.innerHTML = '<ul><li><a href="/in/synthetic-reactor-1/">Reactor</a></li></ul>';
     document.body.appendChild(dialog);
   }});
-</script>
+{boot_close}</script>
 </body></html>"""
 
 
@@ -669,6 +710,12 @@ def fast_steps(monkeypatch):
     monkeypatch.setattr(composer_module, "_OPEN_TIMEOUT_MS", 3000)
 
 
+@pytest.fixture(autouse=True)
+def no_composer_traces(monkeypatch):
+    # The composer's step traces screenshot a real page; nothing here reads them.
+    monkeypatch.setattr(composer_module, "trace_enabled", lambda: False)
+
+
 async def _composer(
     page: Any, **variant: Any
 ) -> tuple[PostComposer, list[tuple[str, str]]]:
@@ -760,7 +807,9 @@ async def test_a_post_panel_holding_a_comment_is_refused(dom_page, fast_steps):
 
     result = await composer.delete_post(POST_URL, confirm=True)
 
-    assert result["status"] == "not_own_post"
+    # The menu that opened is not provably the post's: refused, but it says
+    # nothing about who wrote the post.
+    assert result["status"] == "menu_unavailable"
     assert records == []
 
 
@@ -790,3 +839,76 @@ async def test_owner_items_come_only_from_the_posts_own_panel(dom_page, fast_ste
 
     assert result["status"] == "not_own_post"
     assert records == []
+
+
+# --- ownership: rendering and the author's own links ----------------------
+
+
+async def _preview(composer: PostComposer, tool: str) -> dict[str, Any]:
+    if tool == "delete_post":
+        return await composer.delete_post(POST_URL, confirm=False)
+    return await composer.edit_post(
+        POST_URL,
+        build_post_edit("New synthetic text", allow_schedule=False),
+        confirm=False,
+    )
+
+
+@pytest.mark.parametrize("tool", ["delete_post", "edit_post"])
+async def test_a_post_still_rendering_is_judged_once_it_renders(
+    dom_page, fast_steps, tool
+):
+    # Live run 2026-09-17: the page was still the boot loader right after the
+    # navigation, and <main> attaches before the post inside it does. Read at
+    # that moment the author link does not exist yet.
+    composer, records = await _composer(dom_page, render_delay_ms=900)
+
+    result = await _preview(composer, tool)
+
+    assert result["status"] == "preview"
+    counters = await _composer_counters(dom_page)
+    assert (counters["opener"], counters["commentMenu"], records) == (1, 0, [])
+
+
+@pytest.mark.parametrize("tool", ["delete_post", "edit_post"])
+async def test_a_profile_link_ahead_of_the_post_is_not_its_author(
+    dom_page, fast_steps, tool
+):
+    composer, records = await _composer(dom_page, leading_profile_link=True)
+
+    result = await _preview(composer, tool)
+
+    assert result["status"] == "preview"
+    assert records == []
+
+
+@pytest.mark.parametrize("tool", ["delete_post", "edit_post"])
+async def test_another_members_post_is_refused_by_both_tools(
+    dom_page, fast_steps, tool
+):
+    composer, records = await _composer(
+        dom_page, author_href="/in/synthetic-other-member/?miniProfileUrn=x"
+    )
+
+    result = await _preview(composer, tool)
+
+    assert result["status"] == "not_own_post"
+    counters = await _composer_counters(dom_page)
+    assert (counters["opener"], records) == (0, [])
+
+
+@pytest.mark.parametrize("tool", ["delete_post", "edit_post"])
+async def test_an_author_named_only_by_profile_id_is_unverified_not_foreign(
+    dom_page, fast_steps, tool
+):
+    # The member is known here by vanity only, so a profile-id link can be
+    # neither matched nor contradicted.
+    composer, records = await _composer(
+        dom_page, author_href="/in/ACoAASyntheticProfileId000000000000/"
+    )
+
+    result = await _preview(composer, tool)
+
+    assert result["status"] == "author_unverified"
+    counters = await _composer_counters(dom_page)
+    assert (counters["opener"], records) == (0, [])
