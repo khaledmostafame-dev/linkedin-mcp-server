@@ -295,10 +295,12 @@ def register_person_tools(
         Returns:
             Dict with query, candidates (list of {name, geo_urn_id}; zero
             entries for no match, more than one when LinkedIn's own
-            typeahead considers the name ambiguous), and ambiguous (bool).
-            Each candidate's geo_urn_id is confirmed by actually selecting
-            that specific suggestion -- never guessed from its position or
-            label text.
+            typeahead considers the name ambiguous), ambiguous (bool), and
+            cached (bool). Each candidate's geo_urn_id is confirmed by
+            actually selecting that specific suggestion -- never guessed
+            from its position or label text. An unambiguous answer is
+            remembered for 30 days (see ``geo_resolver.GeoResolutionCache``),
+            so a repeated query resolves with cached=True and no navigation.
         """
         try:
             extractor = extractor or await get_ready_extractor(

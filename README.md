@@ -62,7 +62,7 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `save_job` | Save or unsave a job posting for the authenticated account (requires confirmation; idempotent) |
 | `get_job_alerts` | List the authenticated user's job alerts, each alert's own search returned as a reference |
 | `search_people` | Search for people by keywords, location (free text, resolved at call time against LinkedIn's own typeahead, or a numeric geo URN id), connection degree (1st/2nd/3rd), current/past company, school, industry, title, and profile language, paginating up to `max_pages` and reporting `pages_fetched`/`stopped_reason`/`truncated` |
-| `resolve_geo_location` | Resolve a free-text place name to LinkedIn geo URN id candidates without running a search; used internally by `search_people`'s free-text `location`, and directly to disambiguate when it reports more than one candidate |
+| `resolve_geo_location` | Resolve a free-text place name to LinkedIn geo URN id candidates without running a search; used internally by `search_people`'s free-text `location`, and directly to disambiguate when it reports more than one candidate. An unambiguous answer is cached for 30 days (`cached: true` on a hit, zero extra navigation) — see [Geo location resolution](#geo-location-resolution) |
 | `get_job_details` | Get detailed information about a specific job posting |
 | `get_feed` | Get recent posts from the authenticated user's home feed |
 | `get_notifications` | List recent notifications (replies, reactions, mentions, connection requests) from the notifications page, with an optional "my_posts"/"mentions" filter |
@@ -694,6 +694,16 @@ LinkedIn restricts accounts, not clients, so the server paces every tool call th
 For every number, `0` switches that limit off. An unreadable value stops the server at startup rather than silently falling back.
 
 To clear a cooldown early, for example after resolving a checkpoint in a normal browser, stop the server, delete `pacing-state.json`, and start it again. Deleting the file while the server runs has no effect, because the running server keeps its own copy.
+
+<a id="geo-location-resolution"></a>
+
+### 🌍 Geo location resolution
+
+`resolve_geo_location` and `search_people`'s free-text `location` both resolve a place name by driving LinkedIn's own jobs-search location typeahead, which costs one navigation per query (never more, except one bounded recovery navigation if the page is found genuinely lost mid-resolution) — a numeric geo URN id, passed directly, costs none.
+
+An unambiguous answer is remembered in `geo-resolution-cache.json`, beside `pacing-state.json` in the same auth root (`~/.linkedin-mcp/` by default), keyed by the query text case/diacritic/whitespace-folded. A cache hit resolves with **zero navigation** and reports `cached: true`; a fresh resolution reports `cached: false`. Entries expire after **30 days**, after which the next call to that query resolves live again and refreshes the cache. Only an unambiguous resolution is ever cached — a no-match or a still-ambiguous candidate list is resolved live every time, since there is no single answer to remember.
+
+A missing or corrupt cache file starts fresh with a warning, exactly like pacing state. To clear it (for example if LinkedIn's own geo taxonomy changes for a query before the TTL expires), stop the server, delete `geo-resolution-cache.json`, and start it again.
 
 <a id="sales-navigator-tools"></a>
 
