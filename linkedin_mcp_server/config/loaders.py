@@ -164,6 +164,14 @@ class EnvironmentKeys:
     PACING_MAX_WRITES_PER_HOUR = "PACING_MAX_WRITES_PER_HOUR"
     PACING_MAX_WRITES_PER_DAY = "PACING_MAX_WRITES_PER_DAY"
     PACING_COOLDOWN_BASE_SECONDS = "PACING_COOLDOWN_BASE_SECONDS"
+    PACING_WRITE_JITTER_SECONDS = "PACING_WRITE_JITTER_SECONDS"
+    PACING_PRIVATE_WRITE_MIN_INTERVAL_SECONDS = (
+        "PACING_PRIVATE_WRITE_MIN_INTERVAL_SECONDS"
+    )
+    PACING_PRIVATE_WRITE_JITTER_SECONDS = "PACING_PRIVATE_WRITE_JITTER_SECONDS"
+    PACING_MAX_PRIVATE_WRITES_PER_HOUR = "PACING_MAX_PRIVATE_WRITES_PER_HOUR"
+    PACING_MAX_PRIVATE_WRITES_PER_DAY = "PACING_MAX_PRIVATE_WRITES_PER_DAY"
+    PACING_MAX_CALLS_PER_MINUTE = "PACING_MAX_CALLS_PER_MINUTE"
 
 
 # What ``manifest.json`` fills from ``user_config``, and the exact string each
@@ -491,6 +499,28 @@ _PACING_NUMBERS: tuple[tuple[str, str, bool], ...] = (
     (EnvironmentKeys.PACING_MAX_WRITES_PER_HOUR, "max_writes_per_hour", True),
     (EnvironmentKeys.PACING_MAX_WRITES_PER_DAY, "max_writes_per_day", True),
     (EnvironmentKeys.PACING_COOLDOWN_BASE_SECONDS, "cooldown_base_seconds", False),
+    (EnvironmentKeys.PACING_WRITE_JITTER_SECONDS, "write_jitter_seconds", False),
+    (
+        EnvironmentKeys.PACING_PRIVATE_WRITE_MIN_INTERVAL_SECONDS,
+        "private_write_min_interval_seconds",
+        False,
+    ),
+    (
+        EnvironmentKeys.PACING_PRIVATE_WRITE_JITTER_SECONDS,
+        "private_write_jitter_seconds",
+        False,
+    ),
+    (
+        EnvironmentKeys.PACING_MAX_PRIVATE_WRITES_PER_HOUR,
+        "max_private_writes_per_hour",
+        True,
+    ),
+    (
+        EnvironmentKeys.PACING_MAX_PRIVATE_WRITES_PER_DAY,
+        "max_private_writes_per_day",
+        True,
+    ),
+    (EnvironmentKeys.PACING_MAX_CALLS_PER_MINUTE, "max_calls_per_minute", True),
 )
 
 
@@ -882,28 +912,70 @@ def load_from_args(config: AppConfig, argv: Sequence[str]) -> AppConfig:
             "write_min_interval_seconds",
             "SECONDS",
             non_negative_float,
-            "Gap between write tool calls (default: 90; 0 = none)",
+            "Gap between public write tool calls (default: 35; 0 = none)",
+        ),
+        (
+            "--pacing-write-jitter",
+            "write_jitter_seconds",
+            "SECONDS",
+            non_negative_float,
+            "Random extra added to every public write gap (default: 25)",
         ),
         (
             "--pacing-max-reads-per-hour",
             "max_reads_per_hour",
             "N",
             non_negative_int,
-            "Read tool calls allowed in any hour (default: 40; 0 = no cap)",
+            "Read tool calls allowed in any hour (default: 60; 0 = no cap)",
         ),
         (
             "--pacing-max-writes-per-hour",
             "max_writes_per_hour",
             "N",
             non_negative_int,
-            "Write tool calls allowed in any hour (default: 6; 0 = no cap)",
+            "Public write tool calls allowed in any hour (default: 40; 0 = no cap)",
         ),
         (
             "--pacing-max-writes-per-day",
             "max_writes_per_day",
             "N",
             non_negative_int,
-            "Write tool calls allowed in any 24 hours (default: 20; 0 = no cap)",
+            "Public write tool calls allowed in any 24 hours (default: 50; 0 = no cap)",
+        ),
+        (
+            "--pacing-private-write-min-interval",
+            "private_write_min_interval_seconds",
+            "SECONDS",
+            non_negative_float,
+            "Gap between private write tool calls (default: 10; 0 = none)",
+        ),
+        (
+            "--pacing-private-write-jitter",
+            "private_write_jitter_seconds",
+            "SECONDS",
+            non_negative_float,
+            "Random extra added to every private write gap (default: 10)",
+        ),
+        (
+            "--pacing-max-private-writes-per-hour",
+            "max_private_writes_per_hour",
+            "N",
+            non_negative_int,
+            "Private write tool calls allowed in any hour (default: 60; 0 = no cap)",
+        ),
+        (
+            "--pacing-max-private-writes-per-day",
+            "max_private_writes_per_day",
+            "N",
+            non_negative_int,
+            "Private write tool calls allowed in any 24 hours (default: 300; 0 = no cap)",
+        ),
+        (
+            "--pacing-max-calls-per-minute",
+            "max_calls_per_minute",
+            "N",
+            non_negative_int,
+            "Tool calls reaching LinkedIn allowed in any 60 seconds (default: 20; 0 = no cap)",
         ),
         (
             "--pacing-cooldown-base",

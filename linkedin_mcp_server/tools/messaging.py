@@ -412,7 +412,9 @@ def register_messaging_tools(
         timeout=tool_timeout,
         title="Mark Conversation Read",
         annotations={"destructiveHint": True, "openWorldHint": True},
-        tags={"messaging", "write", "actions"},
+        # "private": changes this account's inbox only, so pacing spends the
+        # private write bucket (`pacing.PRIVATE_TAG`).
+        tags={"messaging", "write", "actions", "private"},
         exclude_args=["extractor"],
     )
     async def mark_conversation_read(
@@ -481,7 +483,9 @@ def register_messaging_tools(
         timeout=tool_timeout,
         title="Archive Conversation",
         annotations={"destructiveHint": True, "openWorldHint": True},
-        tags={"messaging", "write", "actions"},
+        # "private": changes this account's inbox only, so pacing spends the
+        # private write bucket (`pacing.PRIVATE_TAG`).
+        tags={"messaging", "write", "actions", "private"},
         exclude_args=["extractor"],
     )
     async def archive_conversation(

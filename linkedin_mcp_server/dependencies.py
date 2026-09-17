@@ -5,6 +5,7 @@ from typing import NoReturn
 
 from fastmcp import Context
 
+from linkedin_mcp_server import pacing_signals
 from linkedin_mcp_server.bootstrap import (
     RuntimePolicy,
     current_login_generation,
@@ -169,6 +170,10 @@ async def get_ready_extractor(
         await ensure_tool_ready_or_raise(tool_name, ctx)
         browser = await get_or_create_browser()
         await ensure_authenticated()
+        # From here the tool may act on a page it did not navigate to itself, so
+        # the call counts as having reached LinkedIn. A failure above, before any
+        # navigation, leaves it out of the pacing budget.
+        pacing_signals.report_contact()
         return LinkedInExtractor(browser.page)
     except AuthenticationError as e:
         # The first statement of every tool body, so a failure here means the

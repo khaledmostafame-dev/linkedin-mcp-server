@@ -11,6 +11,10 @@ Recorded rather than inferred from the exception a tool raises, because the
 exception does not reliably arrive: an auth barrier goes through
 ``handle_auth_error``, which replaces it with a relogin error, and a section
 scraper may fold a failure into ``section_errors`` and return normally.
+
+It also carries whether a call reached LinkedIn at all (:func:`report_contact`),
+so pacing can leave a call that failed before its first request out of the
+budget: a browser that never launched has spent nothing LinkedIn could count.
 """
 
 from __future__ import annotations
@@ -47,6 +51,24 @@ _signals: ContextVar[set[str] | None] = ContextVar(
 )
 
 
+class Contact:
+    """Whether the current tool call has reached LinkedIn yet.
+
+    A mutable holder for the same reason as the signal set: a helper task sees a
+    copy of the context, and only a mutation of the shared object gets back.
+    """
+
+    __slots__ = ("reached",)
+
+    def __init__(self) -> None:
+        self.reached = False
+
+
+_contact: ContextVar[Contact | None] = ContextVar(
+    "linkedin_pacing_contact", default=None
+)
+
+
 def is_challenge_url(url: str) -> bool:
     """Whether *url* is one of LinkedIn's checkpoint, challenge or authwall routes.
 
@@ -80,6 +102,23 @@ def report(kind: str, url: str = "") -> None:
     if kind not in signals:
         logger.warning("LinkedIn pushed back during a tool call: %s %s", kind, where)
     signals.add(kind)
+    # LinkedIn answered, so the call reached it, whatever else was reported.
+    report_contact()
+
+
+def report_contact() -> None:
+    """Record that the current tool call may now reach LinkedIn.
+
+    Called before each navigation in the shared helpers and when a tool is
+    handed a ready browser, since from then on it may act on a page it did not
+    navigate to itself. Pacing treats a call that *raised* without this ever
+    being called as one LinkedIn never saw, and leaves it out of the budget.
+    Reporting too early only costs budget; a path that reaches LinkedIn without
+    reporting would under-count, so when in doubt, report.
+    """
+    contact = _contact.get()
+    if contact is not None:
+        contact.reached = True
 
 
 def report_if_challenge(url: str) -> None:
@@ -99,6 +138,7 @@ def detached_context() -> Context:
     """
     context = copy_context()
     context.run(_signals.set, None)
+    context.run(_contact.set, None)
     return context
 
 
@@ -111,3 +151,14 @@ def collecting() -> Iterator[set[str]]:
         yield signals
     finally:
         _signals.reset(token)
+
+
+@contextmanager
+def tracking_contact() -> Iterator[Contact]:
+    """Track, in the yielded holder, whether the block reached LinkedIn."""
+    contact = Contact()
+    token = _contact.set(contact)
+    try:
+        yield contact
+    finally:
+        _contact.reset(token)

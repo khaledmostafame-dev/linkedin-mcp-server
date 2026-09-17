@@ -162,6 +162,43 @@ class TestPacingConfig:
         assert config.pacing.max_writes_per_day > 0
         assert config.pacing.cooldown_base_seconds > 0
 
+    def test_the_defaults_are_the_account_owners_choices(self):
+        # Chosen by the account owner on 2026-09-17 (config/schema.py). A change
+        # to any of them is a change to the risk the account runs.
+        pacing = load_config().pacing
+
+        assert {
+            "min_interval_seconds": pacing.min_interval_seconds,
+            "jitter_seconds": pacing.jitter_seconds,
+            "max_calls_per_minute": pacing.max_calls_per_minute,
+            "max_reads_per_hour": pacing.max_reads_per_hour,
+            "write_min_interval_seconds": pacing.write_min_interval_seconds,
+            "write_jitter_seconds": pacing.write_jitter_seconds,
+            "max_writes_per_hour": pacing.max_writes_per_hour,
+            "max_writes_per_day": pacing.max_writes_per_day,
+            "private_write_min_interval_seconds": (
+                pacing.private_write_min_interval_seconds
+            ),
+            "private_write_jitter_seconds": pacing.private_write_jitter_seconds,
+            "max_private_writes_per_hour": pacing.max_private_writes_per_hour,
+            "max_private_writes_per_day": pacing.max_private_writes_per_day,
+            "cooldown_base_seconds": pacing.cooldown_base_seconds,
+        } == {
+            "min_interval_seconds": 8,
+            "jitter_seconds": 7,
+            "max_calls_per_minute": 20,
+            "max_reads_per_hour": 60,
+            "write_min_interval_seconds": 35,
+            "write_jitter_seconds": 25,
+            "max_writes_per_hour": 40,
+            "max_writes_per_day": 50,
+            "private_write_min_interval_seconds": 10,
+            "private_write_jitter_seconds": 10,
+            "max_private_writes_per_hour": 60,
+            "max_private_writes_per_day": 300,
+            "cooldown_base_seconds": 1800,
+        }
+
     def test_environment_overrides(self, monkeypatch):
         monkeypatch.setenv("PACING_ENABLED", "false")
         monkeypatch.setenv("PACING_MIN_INTERVAL_SECONDS", "2.5")
@@ -171,6 +208,12 @@ class TestPacingConfig:
         monkeypatch.setenv("PACING_MAX_WRITES_PER_HOUR", "3")
         monkeypatch.setenv("PACING_MAX_WRITES_PER_DAY", "0")
         monkeypatch.setenv("PACING_COOLDOWN_BASE_SECONDS", "600")
+        monkeypatch.setenv("PACING_WRITE_JITTER_SECONDS", "4")
+        monkeypatch.setenv("PACING_PRIVATE_WRITE_MIN_INTERVAL_SECONDS", "3")
+        monkeypatch.setenv("PACING_PRIVATE_WRITE_JITTER_SECONDS", "2.5")
+        monkeypatch.setenv("PACING_MAX_PRIVATE_WRITES_PER_HOUR", "11")
+        monkeypatch.setenv("PACING_MAX_PRIVATE_WRITES_PER_DAY", "0")
+        monkeypatch.setenv("PACING_MAX_CALLS_PER_MINUTE", "7")
 
         pacing = load_config().pacing
 
@@ -182,6 +225,12 @@ class TestPacingConfig:
         assert pacing.max_writes_per_hour == 3
         assert pacing.max_writes_per_day == 0
         assert pacing.cooldown_base_seconds == 600
+        assert pacing.write_jitter_seconds == 4
+        assert pacing.private_write_min_interval_seconds == 3
+        assert pacing.private_write_jitter_seconds == 2.5
+        assert pacing.max_private_writes_per_hour == 11
+        assert pacing.max_private_writes_per_day == 0
+        assert pacing.max_calls_per_minute == 7
 
     @pytest.mark.parametrize(
         ("key", "value"),
@@ -192,6 +241,10 @@ class TestPacingConfig:
             ("PACING_MIN_INTERVAL_SECONDS", "inf"),
             ("PACING_MAX_WRITES_PER_DAY", "2.5"),
             ("PACING_MAX_READS_PER_HOUR", "-3"),
+            ("PACING_MAX_CALLS_PER_MINUTE", "1.5"),
+            ("PACING_MAX_PRIVATE_WRITES_PER_HOUR", "-1"),
+            ("PACING_PRIVATE_WRITE_JITTER_SECONDS", "nan"),
+            ("PACING_WRITE_JITTER_SECONDS", "-2"),
         ],
     )
     def test_unusable_values_are_refused(self, monkeypatch, key, value):
@@ -203,13 +256,39 @@ class TestPacingConfig:
     def test_cli_flags_win_over_the_environment(self, monkeypatch):
         monkeypatch.setenv("PACING_MAX_WRITES_PER_DAY", "5")
 
+        monkeypatch.setenv("PACING_MAX_CALLS_PER_MINUTE", "5")
+
         config = load_config(
-            ["--no-pacing", "--pacing-max-writes-per-day", "9", "--pacing-jitter", "1"]
+            [
+                "--no-pacing",
+                "--pacing-max-writes-per-day",
+                "9",
+                "--pacing-jitter",
+                "1",
+                "--pacing-max-calls-per-minute",
+                "12",
+                "--pacing-write-jitter",
+                "3",
+                "--pacing-private-write-min-interval",
+                "4",
+                "--pacing-private-write-jitter",
+                "6",
+                "--pacing-max-private-writes-per-hour",
+                "13",
+                "--pacing-max-private-writes-per-day",
+                "14",
+            ]
         )
 
         assert config.pacing.enabled is False
         assert config.pacing.max_writes_per_day == 9
         assert config.pacing.jitter_seconds == 1
+        assert config.pacing.max_calls_per_minute == 12
+        assert config.pacing.write_jitter_seconds == 3
+        assert config.pacing.private_write_min_interval_seconds == 4
+        assert config.pacing.private_write_jitter_seconds == 6
+        assert config.pacing.max_private_writes_per_hour == 13
+        assert config.pacing.max_private_writes_per_day == 14
 
     def test_validation_refuses_a_negative_value_set_directly(self):
         config = AppConfig()

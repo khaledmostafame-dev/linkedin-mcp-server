@@ -10,6 +10,7 @@ import logging
 from typing import Any
 from urllib.parse import quote
 
+from linkedin_mcp_server import pacing_signals
 from linkedin_mcp_server.config.schema import BrowserConfig
 
 from .exceptions import ProxyConnectionError
@@ -163,6 +164,9 @@ async def goto_reporting_proxy_errors(page: Any, url: str, **kwargs: Any) -> Any
     runtime bridge) would otherwise surface the raw driver error, which reads
     like a LinkedIn problem and can carry the proxy URL into a log.
     """
+    # Before the request leaves: a navigation that then fails may still have
+    # reached LinkedIn, and pacing has to count it (`pacing_signals`).
+    pacing_signals.report_contact()
     try:
         return await page.goto(url, **kwargs)
     except Exception as exc:

@@ -5,24 +5,37 @@ server and one logged-in browser, so the only place a limit can hold for all of
 them is the server, inside the serialization that already makes calls take
 turns. Three mechanisms, each answering a different failure:
 
-* **Spacing.** A gap after every LinkedIn call, longer after a write, with random
-  jitter so the cadence is never a constant (upstream #860/#877, #732/#734).
-  Short waits are served inline with progress; a wait longer than
+* **Spacing.** A gap after every LinkedIn call, longer after a write, each with
+  random jitter drawn per call so the cadence is never a constant (upstream
+  #860/#877, #732/#734). A per-minute cap across every kind of call works the
+  same way. Short waits are served inline with progress; a wait longer than
   :data:`MAX_INLINE_WAIT_SECONDS` fails fast with the time it ends instead.
-* **Rolling caps.** Reads per hour, writes per hour and per day. Exceeding one
-  fails fast naming the limit and when it frees up. Never a silent sleep: a
-  client waiting minutes on a call reads as a hung server and retries.
+* **Rolling caps.** Reads per hour; public writes per hour and per day; private
+  writes per hour and per day. Exceeding one fails fast naming the limit and
+  when it frees up. Never a silent sleep: a client waiting minutes on a call
+  reads as a hung server and retries.
 * **Cooldown.** When a call sees HTTP 429 or a checkpoint/challenge/authwall
   redirect (``pacing_signals``), every LinkedIn call is refused until the
   cooldown ends. It doubles per repeat within a day (upstream #957 backs off
   inside one call; a checkpoint needs longer than a call).
 
 Tool classification is shared with every tool module: a tool is a **write** if
-its annotations say ``destructiveHint`` or its tags include ``"write"``; tools
-tagged ``"local"`` never touch the browser or LinkedIn and bypass both pacing and
-serialization; ``close_session`` drives the browser but not LinkedIn, so it is
-serialized and unpaced. Everything else is a **read**. An unresolvable tool is
-treated as a write, the safe direction.
+its annotations say ``destructiveHint`` or its tags include ``"write"``. A write
+also tagged ``"private"`` changes only what this account sees (saving a post or
+a job, marking a conversation read, archiving one) and spends a **private**
+bucket with its own gap and caps, never the public one. A write *call* whose
+confirmation argument (``confirm``, or ``confirm_send`` for ``send_message``) is
+``false`` is a preview that changes nothing, so it is paced and counted as a
+**read**; it stays paced because some previews open a page to report the
+current state. Tools tagged ``"local"`` never touch the browser or LinkedIn and
+bypass both pacing and serialization; ``close_session`` drives the browser but
+not LinkedIn, so it is serialized and unpaced. Everything else is a **read**. An
+unresolvable tool is treated as a public write, the safe direction.
+
+A call is counted when it starts. One that raises before it reached LinkedIn
+(``pacing_signals.report_contact``: a browser that never launched, a session
+refused before any navigation) is taken back out and leaves the gap where it
+was. A call that completes always counts.
 
 State (counters, next allowed times, cooldown) persists as
 ``pacing-state.json`` in the auth root, so a container restart does not reset
@@ -65,9 +78,15 @@ PACING_STATUS_TOOL = "get_pacing_status"
 LOCAL_TAG = "local"
 #: Tag that makes a tool a write even without ``destructiveHint``.
 WRITE_TAG = "write"
+#: Tag for a write only this account can see; it spends the private bucket.
+PRIVATE_TAG = "private"
+#: The parameter a write tool takes its explicit confirmation in. Exactly one
+#: per write tool (``tests/test_write_tool_safety.py``).
+CONFIRM_PARAMETERS = ("confirm", "confirm_send")
 #: Drive the browser but never LinkedIn: serialized, not paced.
 _BROWSER_ONLY_TOOLS = frozenset({"close_session"})
 
+MINUTE = 60.0
 HOUR = 3600.0
 DAY = 24 * HOUR
 
@@ -93,6 +112,16 @@ class ToolKind(enum.Enum):
     BROWSER_ONLY = "browser_only"
     READ = "read"
     WRITE = "write"
+    PRIVATE_WRITE = "private_write"
+
+    @property
+    def noun(self) -> str:
+        """The kind as a message names it (``private write``)."""
+        return self.value.replace("_", " ")
+
+
+_WRITES = frozenset({ToolKind.WRITE, ToolKind.PRIVATE_WRITE})
+_UNPACED = frozenset({ToolKind.LOCAL, ToolKind.BROWSER_ONLY})
 
 
 def classify_tool(name: str, annotations: Any, tags: Iterable[str] | None) -> ToolKind:
@@ -103,18 +132,34 @@ def classify_tool(name: str, annotations: Any, tags: Iterable[str] | None) -> To
     if name in _BROWSER_ONLY_TOOLS:
         return ToolKind.BROWSER_ONLY
     if WRITE_TAG in tag_set or getattr(annotations, "destructiveHint", None) is True:
-        return ToolKind.WRITE
+        return ToolKind.PRIVATE_WRITE if PRIVATE_TAG in tag_set else ToolKind.WRITE
     return ToolKind.READ
+
+
+def is_preview(parameters: Any, arguments: Any) -> bool:
+    """Whether a write call only previews: its confirmation argument is ``false``.
+
+    The confirmation parameter is whichever of :data:`CONFIRM_PARAMETERS` the
+    tool declares. Anything less certain than exactly one declared and a JSON
+    ``false`` passed for it (a missing argument, a string, a tool declaring
+    neither or both) is not a preview, so the call stays a write.
+    """
+    properties = parameters.get("properties") if isinstance(parameters, dict) else None
+    if not isinstance(properties, dict) or not isinstance(arguments, dict):
+        return False
+    declared = [name for name in CONFIRM_PARAMETERS if name in properties]
+    return len(declared) == 1 and arguments.get(declared[0]) is False
 
 
 async def classify_call(
     context: MiddlewareContext[mt.CallToolRequestParams],
 ) -> ToolKind:
-    """Classify the tool a call names, reading its metadata from the server.
+    """Classify the call from the tool's registered metadata and its arguments.
 
     Read from the registered tool rather than a list of names kept here, so a
     tool added later is classified by what it declares. A tool that cannot be
-    resolved counts as a write, the direction that cannot cost the account.
+    resolved counts as a public write, the direction that cannot cost the
+    account, whatever its arguments say.
     """
     name = getattr(context.message, "name", "") or ""
     tool = None
@@ -128,9 +173,14 @@ async def classify_call(
         if name == PACING_STATUS_TOOL or name in _BROWSER_ONLY_TOOLS:
             return classify_tool(name, None, None)
         return ToolKind.WRITE
-    return classify_tool(
+    kind = classify_tool(
         name, getattr(tool, "annotations", None), getattr(tool, "tags", None)
     )
+    if kind in _WRITES and is_preview(
+        getattr(tool, "parameters", None), getattr(context.message, "arguments", None)
+    ):
+        return ToolKind.READ
+    return kind
 
 
 def _iso(timestamp: float) -> str:
@@ -154,24 +204,49 @@ def _duration(seconds: float) -> str:
 
 @dataclass
 class PacingState:
-    """Everything pacing remembers, in wall-clock seconds since the epoch."""
+    """Everything pacing remembers, in wall-clock seconds since the epoch.
+
+    ``writes`` and ``next_write_at`` are the public bucket. Every counted call
+    is in exactly one of the three stamp lists, which is what the per-minute
+    cap counts across.
+    """
 
     reads: list[float] = field(default_factory=list)
     writes: list[float] = field(default_factory=list)
+    private_writes: list[float] = field(default_factory=list)
     next_call_at: float = 0.0
     next_write_at: float = 0.0
+    next_private_write_at: float = 0.0
     cooldown_until: float = 0.0
     strikes: int = 0
     last_strike_at: float = 0.0
     last_signals: list[str] = field(default_factory=list)
+
+    def stamps(self, kind: ToolKind) -> list[float]:
+        """The rolling-window list a call of *kind* is counted in."""
+        if kind is ToolKind.READ:
+            return self.reads
+        if kind is ToolKind.PRIVATE_WRITE:
+            return self.private_writes
+        return self.writes
+
+    def recent_calls(self, now: float) -> list[float]:
+        """Every counted call of any kind in the last minute, sorted."""
+        return sorted(
+            t
+            for t in (*self.reads, *self.writes, *self.private_writes)
+            if t > now - MINUTE
+        )
 
     def to_json(self) -> dict[str, Any]:
         return {
             "version": _STATE_VERSION,
             "reads": self.reads,
             "writes": self.writes,
+            "private_writes": self.private_writes,
             "next_call_at": self.next_call_at,
             "next_write_at": self.next_write_at,
+            "next_private_write_at": self.next_private_write_at,
             "cooldown_until": self.cooldown_until,
             "strikes": self.strikes,
             "last_strike_at": self.last_strike_at,
@@ -180,7 +255,11 @@ class PacingState:
 
     @classmethod
     def from_json(cls, data: object) -> PacingState:
-        """Parse persisted state, raising ``ValueError`` on any malformed field."""
+        """Parse persisted state, raising ``ValueError`` on any malformed field.
+
+        A field missing from the file reads as empty, so a file written before
+        the private bucket existed still loads with its counters intact.
+        """
         if not isinstance(data, dict):
             raise ValueError("pacing state is not an object")
         payload = cast(dict[str, Any], data)
@@ -223,8 +302,10 @@ class PacingState:
         return cls(
             reads=numbers("reads"),
             writes=numbers("writes"),
+            private_writes=numbers("private_writes"),
             next_call_at=number("next_call_at"),
             next_write_at=number("next_write_at"),
+            next_private_write_at=number("next_private_write_at"),
             cooldown_until=number("cooldown_until"),
             strikes=strikes,
             last_strike_at=number("last_strike_at"),
@@ -244,8 +325,12 @@ class PacingState:
         return PacingState(
             reads=sorted(set(self.reads) | set(other.reads)),
             writes=sorted(set(self.writes) | set(other.writes)),
+            private_writes=sorted(set(self.private_writes) | set(other.private_writes)),
             next_call_at=max(self.next_call_at, other.next_call_at),
             next_write_at=max(self.next_write_at, other.next_write_at),
+            next_private_write_at=max(
+                self.next_private_write_at, other.next_private_write_at
+            ),
             cooldown_until=max(self.cooldown_until, other.cooldown_until),
             strikes=max(self.strikes, other.strikes),
             last_strike_at=max(self.last_strike_at, other.last_strike_at),
@@ -261,12 +346,18 @@ class PacingState:
         """
         slack = now + _CLOCK_SLACK_SECONDS
         gap = policy.min_interval_seconds + policy.jitter_seconds
-        write_gap = policy.write_min_interval_seconds + policy.jitter_seconds
+        write_gap = policy.write_min_interval_seconds + policy.write_jitter_seconds
+        private_gap = (
+            policy.private_write_min_interval_seconds
+            + policy.private_write_jitter_seconds
+        )
         return PacingState(
             reads=[t for t in self.reads if now - HOUR < t <= slack],
             writes=[t for t in self.writes if now - DAY < t <= slack],
+            private_writes=[t for t in self.private_writes if now - DAY < t <= slack],
             next_call_at=min(self.next_call_at, now + gap),
             next_write_at=min(self.next_write_at, now + write_gap),
+            next_private_write_at=min(self.next_private_write_at, now + private_gap),
             cooldown_until=min(self.cooldown_until, now + MAX_COOLDOWN_SECONDS),
             strikes=self.strikes,
             last_strike_at=min(self.last_strike_at, slack),
@@ -291,15 +382,35 @@ def _cap_release(stamps: list[float], cap: int, window: float) -> float:
     return stamps[len(stamps) - cap] + window
 
 
+def _over_cap(
+    stamps: list[float], now: float, window: float, cap: int, name: str
+) -> tuple[float, str] | None:
+    """When a rolling cap frees up and its label, or ``None`` while under it."""
+    if not cap:
+        return None
+    inside = sorted(t for t in stamps if t > now - window)
+    if len(inside) < cap:
+        return None
+    return _cap_release(inside, cap, window), f"{name} ({cap})"
+
+
+def _holding(reason: str, policy: PacingConfig) -> str:
+    """What holds a call back, as a refusal names it."""
+    if reason == "max_calls_per_minute":
+        return f"max_calls_per_minute ({policy.max_calls_per_minute}) is reached"
+    return f"{reason} has not elapsed"
+
+
 def assess(
     state: PacingState, kind: ToolKind, now: float, policy: PacingConfig
 ) -> Verdict:
     """Decide when a call of *kind* may start. Pure, so the status tool agrees.
 
     A refusal (cooldown or cap) is reported as the earliest moment the limit
-    frees up; waits for spacing alone carry no refusal and may be served inline.
+    frees up; waits for spacing and the per-minute cap carry no refusal and may
+    be served inline.
     """
-    if kind in (ToolKind.LOCAL, ToolKind.BROWSER_ONLY) or not policy.enabled:
+    if kind in _UNPACED or not policy.enabled:
         return Verdict(now, "not paced")
 
     if state.cooldown_until > now:
@@ -316,43 +427,65 @@ def assess(
             ),
         )
 
-    refusals: list[tuple[float, str]] = []
     if kind is ToolKind.READ:
-        reads = sorted(state.reads)
-        if policy.max_reads_per_hour and len(reads) >= policy.max_reads_per_hour:
-            release = _cap_release(reads, policy.max_reads_per_hour, HOUR)
-            refusals.append(
-                (release, f"max_reads_per_hour ({policy.max_reads_per_hour})")
-            )
+        caps = [(state.reads, HOUR, policy.max_reads_per_hour, "max_reads_per_hour")]
+    elif kind is ToolKind.PRIVATE_WRITE:
+        caps = [
+            (
+                state.private_writes,
+                HOUR,
+                policy.max_private_writes_per_hour,
+                "max_private_writes_per_hour",
+            ),
+            (
+                state.private_writes,
+                DAY,
+                policy.max_private_writes_per_day,
+                "max_private_writes_per_day",
+            ),
+        ]
     else:
-        writes = sorted(state.writes)
-        last_hour = [t for t in writes if t > now - HOUR]
-        if policy.max_writes_per_hour and len(last_hour) >= policy.max_writes_per_hour:
-            release = _cap_release(last_hour, policy.max_writes_per_hour, HOUR)
-            refusals.append(
-                (release, f"max_writes_per_hour ({policy.max_writes_per_hour})")
-            )
-        if policy.max_writes_per_day and len(writes) >= policy.max_writes_per_day:
-            release = _cap_release(writes, policy.max_writes_per_day, DAY)
-            refusals.append(
-                (release, f"max_writes_per_day ({policy.max_writes_per_day})")
-            )
+        caps = [
+            (state.writes, HOUR, policy.max_writes_per_hour, "max_writes_per_hour"),
+            (state.writes, DAY, policy.max_writes_per_day, "max_writes_per_day"),
+        ]
+    refusals = [
+        refusal
+        for stamps, window, cap, name in caps
+        if (refusal := _over_cap(stamps, now, window, cap, name)) is not None
+    ]
     if refusals:
         release, limit = max(refusals)
-        noun = "read" if kind is ToolKind.READ else "write"
         return Verdict(
             release,
             limit,
             refusal=(
-                f"LinkedIn pacing limit reached: {limit}. The next {noun} is "
+                f"LinkedIn pacing limit reached: {limit}. The next {kind.noun} is "
                 f"allowed at {_iso(release)} (in {_duration(release - now)}). "
                 "Calls are refused rather than queued; retry after that time."
             ),
         )
 
-    earliest, reason = state.next_call_at, "min_interval_seconds"
-    if kind is ToolKind.WRITE and state.next_write_at > earliest:
-        earliest, reason = state.next_write_at, "write_min_interval_seconds"
+    holds = [(state.next_call_at, "min_interval_seconds")]
+    if kind is ToolKind.WRITE:
+        holds.append((state.next_write_at, "write_min_interval_seconds"))
+    elif kind is ToolKind.PRIVATE_WRITE:
+        holds.append(
+            (state.next_private_write_at, "private_write_min_interval_seconds")
+        )
+    recent = state.recent_calls(now)
+    if policy.max_calls_per_minute and len(recent) >= policy.max_calls_per_minute:
+        holds.append(
+            (
+                _cap_release(recent, policy.max_calls_per_minute, MINUTE),
+                "max_calls_per_minute",
+            )
+        )
+    # The stricter hold wins; on a tie, the earlier entry names it.
+    earliest, reason = holds[0]
+    for when, why in holds[1:]:
+        if when > earliest:
+            earliest, reason = when, why
     if earliest <= now:
         return Verdict(now, "ready")
     return Verdict(earliest, reason)
@@ -462,7 +595,7 @@ class PacingMiddleware(Middleware):
     ) -> ToolResult:
         policy = self._policy()
         kind = await classify_call(context)
-        if not policy.enabled or kind in (ToolKind.LOCAL, ToolKind.BROWSER_ONLY):
+        if not policy.enabled or kind in _UNPACED:
             return await call_next(context)
 
         tool_name = context.message.name
@@ -475,8 +608,8 @@ class PacingMiddleware(Middleware):
         if wait > MAX_INLINE_WAIT_SECONDS:
             logger.info("Refused %s: %s wait of %.0fs", tool_name, verdict.reason, wait)
             raise ToolError(
-                f"LinkedIn pacing: {verdict.reason} has not elapsed. The next "
-                f"{kind.value} is allowed at {_iso(verdict.earliest)} (in "
+                f"LinkedIn pacing: {_holding(verdict.reason, policy)}. The next "
+                f"{kind.noun} is allowed at {_iso(verdict.earliest)} (in "
                 f"{_duration(wait)}); retry after that time."
             )
         if wait > 0:
@@ -487,34 +620,80 @@ class PacingMiddleware(Middleware):
             )
             await self._sleep(wait)
 
-        # Counted at the start: a call that fails still reached LinkedIn.
+        # Counted at the start, so a status read or a peer process mid-call
+        # sees the slot as spent; taken back out below if the call fails before
+        # it reaches LinkedIn.
         started = self._clock()
         state = self.current_state()
-        if kind is ToolKind.READ:
-            state.reads.append(started)
-        else:
-            state.writes.append(started)
+        stamps = state.stamps(kind)
+        counted = started not in stamps
+        if counted:
+            stamps.append(started)
+        next_call_before = state.next_call_at
         # Held at the full gap for the duration of the call, so a status read or
         # a peer process mid-call never sees the slot as free.
         state.next_call_at = max(state.next_call_at, started + DAY)
         self._commit(state)
 
         signals: set[str] = set()
+        contact = pacing_signals.Contact()
+        completed = False
         try:
-            with pacing_signals.collecting() as signals:
-                return await call_next(context)
+            with (
+                pacing_signals.collecting() as signals,
+                pacing_signals.tracking_contact() as contact,
+            ):
+                result = await call_next(context)
+            completed = True
+            return result
         finally:
-            self._finish(kind, signals, policy)
+            if completed or contact.reached or signals:
+                self._finish(kind, signals, policy)
+            else:
+                self._take_back(
+                    kind, started if counted else None, next_call_before, tool_name
+                )
+
+    def _take_back(
+        self,
+        kind: ToolKind,
+        stamp: float | None,
+        next_call_at: float,
+        tool_name: str,
+    ) -> None:
+        """Undo the start of a call that raised before it reached LinkedIn.
+
+        LinkedIn saw nothing, so the budget is returned and the gap still runs
+        from the last call it did see; no write gap is started.
+        """
+        state = self.current_state()
+        stamps = state.stamps(kind)
+        if stamp is not None and stamp in stamps:
+            stamps.remove(stamp)
+        state.next_call_at = next_call_at
+        self._commit(state)
+        logger.info("Not counting %s: it failed before reaching LinkedIn", tool_name)
 
     def _finish(self, kind: ToolKind, signals: set[str], policy: PacingConfig) -> None:
         ended = self._clock()
         state = self.current_state()
         # The placeholder set at the start is replaced, not maxed against.
-        state.next_call_at = ended + policy.min_interval_seconds + self._jitter(policy)
+        state.next_call_at = (
+            ended + policy.min_interval_seconds + self._jitter(policy.jitter_seconds)
+        )
         if kind is ToolKind.WRITE:
             state.next_write_at = max(
                 state.next_write_at,
-                ended + policy.write_min_interval_seconds + self._jitter(policy),
+                ended
+                + policy.write_min_interval_seconds
+                + self._jitter(policy.write_jitter_seconds),
+            )
+        elif kind is ToolKind.PRIVATE_WRITE:
+            state.next_private_write_at = max(
+                state.next_private_write_at,
+                ended
+                + policy.private_write_min_interval_seconds
+                + self._jitter(policy.private_write_jitter_seconds),
             )
         if signals and policy.cooldown_base_seconds > 0:
             if ended - state.last_strike_at > STRIKE_MEMORY_SECONDS:
@@ -535,10 +714,11 @@ class PacingMiddleware(Middleware):
             )
         self._commit(state)
 
-    def _jitter(self, policy: PacingConfig) -> float:
-        if policy.jitter_seconds <= 0:
+    def _jitter(self, upper: float) -> float:
+        """A fresh draw from [0, *upper*] for every gap, never a fixed offset."""
+        if upper <= 0:
             return 0.0
-        return self._rng.uniform(0.0, policy.jitter_seconds)
+        return self._rng.uniform(0.0, upper)
 
     def status(self) -> dict[str, Any]:
         """What ``get_pacing_status`` reports. Reads state; changes nothing."""
@@ -555,17 +735,23 @@ class PacingMiddleware(Middleware):
                 "held_by": None if verdict.earliest <= now else verdict.reason,
             }
 
-        writes_last_hour = sum(1 for t in state.writes if t > now - HOUR)
+        def last_hour(stamps: list[float]) -> int:
+            return sum(1 for t in stamps if t > now - HOUR)
+
         return {
             "enabled": policy.enabled,
             "now": _iso(now),
             "counters": {
+                "calls_last_minute": len(state.recent_calls(now)),
                 "reads_last_hour": len(state.reads),
-                "writes_last_hour": writes_last_hour,
+                "writes_last_hour": last_hour(state.writes),
                 "writes_last_day": len(state.writes),
+                "private_writes_last_hour": last_hour(state.private_writes),
+                "private_writes_last_day": len(state.private_writes),
             },
             "next_read": when(ToolKind.READ),
             "next_write": when(ToolKind.WRITE),
+            "next_private_write": when(ToolKind.PRIVATE_WRITE),
             "cooldown": {
                 "active": policy.enabled and state.cooldown_until > now,
                 "until": _iso(state.cooldown_until)
@@ -580,10 +766,18 @@ class PacingMiddleware(Middleware):
             "config": {
                 "min_interval_seconds": policy.min_interval_seconds,
                 "jitter_seconds": policy.jitter_seconds,
-                "write_min_interval_seconds": policy.write_min_interval_seconds,
+                "max_calls_per_minute": policy.max_calls_per_minute,
                 "max_reads_per_hour": policy.max_reads_per_hour,
+                "write_min_interval_seconds": policy.write_min_interval_seconds,
+                "write_jitter_seconds": policy.write_jitter_seconds,
                 "max_writes_per_hour": policy.max_writes_per_hour,
                 "max_writes_per_day": policy.max_writes_per_day,
+                "private_write_min_interval_seconds": (
+                    policy.private_write_min_interval_seconds
+                ),
+                "private_write_jitter_seconds": policy.private_write_jitter_seconds,
+                "max_private_writes_per_hour": policy.max_private_writes_per_hour,
+                "max_private_writes_per_day": policy.max_private_writes_per_day,
                 "cooldown_base_seconds": policy.cooldown_base_seconds,
                 "max_inline_wait_seconds": MAX_INLINE_WAIT_SECONDS,
             },

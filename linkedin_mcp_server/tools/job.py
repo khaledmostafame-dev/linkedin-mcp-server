@@ -167,7 +167,9 @@ def register_job_tools(
         timeout=tool_timeout,
         title="Save Job",
         annotations={"destructiveHint": True, "openWorldHint": True},
-        tags={"job", "write", "actions"},
+        # "private": only this account sees a saved job, so pacing spends the
+        # private write bucket (`pacing.PRIVATE_TAG`).
+        tags={"job", "write", "actions", "private"},
         exclude_args=["extractor"],
     )
     async def save_job(

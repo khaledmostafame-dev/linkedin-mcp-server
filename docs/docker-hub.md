@@ -36,7 +36,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to LinkedIn. A
 - **Groups**: Search groups and list a group's posts or members
 - **Events**: Search events, read an event's details and list its attendees
 - **Sales Navigator**: Search leads and accounts and read your lead/account lists (read-only; requires a Sales Navigator seat)
-- **Pacing**: Every LinkedIn call is paced with rolling caps and a cooldown after a 429 or checkpoint; `get_pacing_status` reports the counters without contacting LinkedIn
+- **Pacing**: Every LinkedIn call is paced with rolling caps, separate public and private write budgets, and a cooldown after a 429 or checkpoint; write previews count as reads and calls that fail before reaching LinkedIn are not counted; `get_pacing_status` reports the counters without contacting LinkedIn
 - **Compact References**: Return typed per-section links alongside readable text without shipping full-page markdown
 
 ## Quick Start
@@ -149,10 +149,16 @@ Use `$env:USERPROFILE\.linkedin-mcp` when constructing the host path outside JSO
 | `PACING_ENABLED` | `true` | Pace, cap and cool down tool calls that reach LinkedIn, across every client. See [Pacing and account safety](https://github.com/stickerdaniel/linkedin-mcp-server#pacing). |
 | `PACING_MIN_INTERVAL_SECONDS` | `8` | Gap after any LinkedIn call, in seconds (`0` = none). |
 | `PACING_JITTER_SECONDS` | `7` | Random extra, up to this many seconds, added to every gap. |
-| `PACING_WRITE_MIN_INTERVAL_SECONDS` | `90` | Gap between write calls such as `send_message` and `connect_with_person` (`0` = none). |
-| `PACING_MAX_READS_PER_HOUR` | `40` | Read calls allowed in any 60 minutes; over it, calls fail with the time to retry (`0` = no cap). |
-| `PACING_MAX_WRITES_PER_HOUR` | `6` | Write calls allowed in any 60 minutes (`0` = no cap). |
-| `PACING_MAX_WRITES_PER_DAY` | `20` | Write calls allowed in any 24 hours (`0` = no cap). |
+| `PACING_MAX_CALLS_PER_MINUTE` | `20` | Calls of any kind that reach LinkedIn in any 60 seconds; a slot up to 30 s away is waited for, a later one fails with the time to retry (`0` = no cap). |
+| `PACING_MAX_READS_PER_HOUR` | `60` | Read calls allowed in any 60 minutes, including write previews (`confirm=false`); over it, calls fail with the time to retry (`0` = no cap). |
+| `PACING_WRITE_MIN_INTERVAL_SECONDS` | `35` | Gap between public write calls such as `send_message` and `connect_with_person` (`0` = none). |
+| `PACING_WRITE_JITTER_SECONDS` | `25` | Random extra, up to this many seconds, drawn for every public write gap. |
+| `PACING_MAX_WRITES_PER_HOUR` | `40` | Public write calls allowed in any 60 minutes (`0` = no cap). |
+| `PACING_MAX_WRITES_PER_DAY` | `50` | Public write calls allowed in any 24 hours (`0` = no cap). |
+| `PACING_PRIVATE_WRITE_MIN_INTERVAL_SECONDS` | `10` | Gap between private write calls (`save_post`, `save_job`, `mark_conversation_read`, `archive_conversation`), which never spend the public write budget (`0` = none). |
+| `PACING_PRIVATE_WRITE_JITTER_SECONDS` | `10` | Random extra, up to this many seconds, drawn for every private write gap. |
+| `PACING_MAX_PRIVATE_WRITES_PER_HOUR` | `60` | Private write calls allowed in any 60 minutes (`0` = no cap). |
+| `PACING_MAX_PRIVATE_WRITES_PER_DAY` | `300` | Private write calls allowed in any 24 hours (`0` = no cap). |
 | `PACING_COOLDOWN_BASE_SECONDS` | `1800` | After an HTTP 429 or a checkpoint redirect, refuse LinkedIn calls this long, doubling on repeats within a day (`0` = no cooldown). State persists in `pacing-state.json` in the mounted `~/.linkedin-mcp`. |
 | `AUTO_IMPORT_FROM_BROWSER` | on | Import a session from a signed-in local browser on the first tool call that needs one. Skipped in containers, which have no host browser or keychain. |
 | `TRANSPORT` | `stdio` | Transport mode: stdio, streamable-http |
