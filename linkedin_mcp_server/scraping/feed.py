@@ -21,6 +21,7 @@ from linkedin_mcp_server.scraping.feed_payload import (
     build_feed_references,
     is_feed_payload_response,
 )
+from linkedin_mcp_server.scraping.link_metadata import build_references
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.response_capture import (
     drain_listener_tasks as _drain_listener_tasks_impl,
@@ -32,6 +33,36 @@ from linkedin_mcp_server.scraping.text import (
 )
 
 logger = logging.getLogger(__name__)
+
+NOTIFICATIONS_URL = "https://www.linkedin.com/notifications/"
+
+# LinkedIn drops an unrecognised query parameter rather than erroring: live
+# capture 2026-09-17 (`007-extractor-after-goto.json`) navigated with
+# `?filterType=MENTIONS` and landed on `/notifications/` with `query_params:
+# []` -- the parameter never reached the page, so "mentions" silently
+# returned the same content as "all". The same capture's node list shows the
+# real mechanism instead: a row of four sibling pills at depth 14, three
+# exposing `role="radio"` + `aria-checked` (nodes 165/169/177 -- the first
+# checked, matching "All" being the default view) and a fourth rendered as a
+# plain `<a href="/notifications/?filter=...">` (node 173) whose href *does*
+# carry a query parameter -- but named `filter`, not `filterType`, and the
+# capture strips attribute values, so the token(s) LinkedIn assigns to
+# "my_posts"/"mentions" were not captured either. Guessing a new token would
+# repeat the same class of bug with a different name, so filtering instead
+# clicks the pill at the target's position and verifies its `aria-checked`
+# flips to "true" -- position, role and state, never text, per AGENTS.md's
+# scraping rules. Only the three true `role="radio"` pills are treated as
+# candidates (the fourth, plain-anchor pill exposes no checked state to
+# verify against, so it is not a safe click target for a checkable filter).
+# This position mapping is still a best-effort assumption -- the capture
+# that proved the mechanism could not also prove which of the two unchecked
+# pills is "my_posts" and which is "mentions" -- so a click that does not
+# verifiably flip the state, or fewer than three radio pills at all, returns
+# `filter_unavailable` rather than unfiltered content mislabeled as filtered.
+_NOTIFICATION_FILTER_PILL_INDEX = {"my_posts": 1, "mentions": 2}
+_FILTER_PILL_SELECTOR = '[role="radio"]'
+_FILTER_VERIFY_ATTEMPTS = 10
+_FILTER_VERIFY_INTERVAL = 0.2
 
 
 class FeedScraper:
@@ -254,3 +285,110 @@ class FeedScraper:
             text=cleaned,
             references=build_feed_references(raw_result["references"], captured_urls),
         )
+
+    async def extract_notifications(
+        self,
+        filter_: str = "all",
+        max_scrolls: int = 6,
+    ) -> ExtractedSection:
+        """Scrape the notifications page, optionally selecting a filter pill.
+
+        See the module-level comment above ``_NOTIFICATION_FILTER_PILL_INDEX``
+        for the live-capture evidence behind this mechanism (structural
+        click + state verification, not a query parameter).
+        """
+        try:
+            return await self._extract_notifications_once(filter_, max_scrolls)
+        except LinkedInScraperException:
+            raise
+        except Exception as e:
+            logger.warning("Failed to extract notifications: %s", e)
+            return ExtractedSection(
+                text="",
+                references=[],
+                error=build_issue_diagnostics(e, context="extract_notifications"),
+            )
+
+    async def _extract_notifications_once(
+        self,
+        filter_: str,
+        max_scrolls: int,
+    ) -> ExtractedSection:
+        page = self._session.page
+        await self._navigator._navigate_to_page(NOTIFICATIONS_URL)
+        await self._session.check_rate_limit()
+
+        try:
+            await page.wait_for_selector("main")
+        except PlaywrightTimeoutError:
+            logger.debug("No <main> element found on %s", NOTIFICATIONS_URL)
+
+        await self._session.dismiss_modal()
+
+        if filter_ != "all":
+            applied = await self._select_notification_filter(filter_)
+            if not applied:
+                return ExtractedSection(
+                    text="",
+                    references=[],
+                    error={
+                        "error_type": "filter_unavailable",
+                        "error_message": (
+                            f"Could not verify that the {filter_!r} notifications "
+                            "filter was applied: LinkedIn's filter pills carry no "
+                            "text this fork can read, so the pill for this filter "
+                            "cannot be identified with certainty, or the click did "
+                            "not verifiably change its selected state. Returning "
+                            "nothing rather than unfiltered content mislabeled as "
+                            "filtered."
+                        ),
+                    },
+                )
+
+        await self._session.scroll_body(pause_time=0.5, max_scrolls=max_scrolls)
+
+        raw_result = await self._content._extract_root_content(["main"])
+        raw = raw_result["text"]
+
+        if not raw:
+            return ExtractedSection(text="", references=[])
+        truncated = truncate_linkedin_noise(raw)
+        if not truncated and raw.strip():
+            logger.warning(
+                "Page %s returned only LinkedIn chrome (likely rate-limited)",
+                NOTIFICATIONS_URL,
+            )
+            return ExtractedSection(text=RATE_LIMITED_SECTION_TEXT, references=[])
+        cleaned = filter_linkedin_noise_lines(truncated)
+        return ExtractedSection(
+            text=cleaned,
+            references=build_references(raw_result["references"], "notifications"),
+        )
+
+    async def _select_notification_filter(self, filter_: str) -> bool:
+        """Click the filter pill at ``filter_``'s position; verify it checked.
+
+        Returns False (never raises) when fewer than three ``role="radio"``
+        pills are present, the target index is unknown, or the click does
+        not verifiably flip ``aria-checked`` to "true" within the budget.
+        """
+        index = _NOTIFICATION_FILTER_PILL_INDEX.get(filter_)
+        if index is None:
+            return False
+        radios = self._session.page.locator(_FILTER_PILL_SELECTOR)
+        if await radios.count() <= index:
+            return False
+        target = radios.nth(index)
+        try:
+            await target.click(timeout=5000)
+        except Exception:
+            logger.debug("Notification filter pill click failed", exc_info=True)
+            return False
+        for _ in range(_FILTER_VERIFY_ATTEMPTS):
+            try:
+                if await target.get_attribute("aria-checked") == "true":
+                    return True
+            except Exception:
+                break
+            await self._session.delay(_FILTER_VERIFY_INTERVAL)
+        return False

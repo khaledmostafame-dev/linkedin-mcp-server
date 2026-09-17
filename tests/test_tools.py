@@ -1948,7 +1948,7 @@ class TestFeedTools:
 class TestNotificationsTools:
     async def test_get_notifications_success(self, mock_context):
         mock_extractor = MagicMock()
-        mock_extractor.extract_page = AsyncMock(
+        mock_extractor.extract_notifications = AsyncMock(
             return_value=ExtractedSection(text="New reply\nNew reaction", references=[])
         )
 
@@ -1961,15 +1961,23 @@ class TestNotificationsTools:
         result = await tool_fn(mock_context, extractor=mock_extractor)
         assert result["url"] == "https://www.linkedin.com/notifications/"
         assert result["sections"]["notifications"] == "New reply\nNew reaction"
-        mock_extractor.extract_page.assert_awaited_once()
-        await_args = mock_extractor.extract_page.await_args
+        mock_extractor.extract_notifications.assert_awaited_once()
+        await_args = mock_extractor.extract_notifications.await_args
         assert await_args is not None
-        assert await_args.args[0] == "https://www.linkedin.com/notifications/"
-        assert await_args.kwargs["section_name"] == "notifications"
+        assert await_args.kwargs["filter_"] == "all"
 
-    async def test_get_notifications_applies_filter_query(self, mock_context):
+    async def test_get_notifications_passes_the_requested_filter_through(
+        self, mock_context
+    ):
+        """The tool no longer builds a URL for the filter (see AGENTS.md /
+        ``scraping.feed.FeedScraper.extract_notifications``: LinkedIn drops an
+        unrecognised query parameter entirely, so filtering is structural,
+        click-based work the scraper owns). The tool layer's only job is to
+        pass the requested filter name through and report whatever the
+        scraper decided.
+        """
         mock_extractor = MagicMock()
-        mock_extractor.extract_page = AsyncMock(
+        mock_extractor.extract_notifications = AsyncMock(
             return_value=ExtractedSection(text="Activity on your post", references=[])
         )
 
@@ -1982,13 +1990,44 @@ class TestNotificationsTools:
         result = await tool_fn(
             mock_context, filter="my_posts", extractor=mock_extractor
         )
-        assert result["url"] == (
-            "https://www.linkedin.com/notifications/?filterType=MY_POSTS"
+        assert result["url"] == "https://www.linkedin.com/notifications/"
+        await_args = mock_extractor.extract_notifications.await_args
+        assert await_args.kwargs["filter_"] == "my_posts"
+
+    async def test_get_notifications_surfaces_a_filter_unavailable_error(
+        self, mock_context
+    ):
+        """The pill couldn't be verified: report the refusal, not stale content."""
+        mock_extractor = MagicMock()
+        mock_extractor.extract_notifications = AsyncMock(
+            return_value=ExtractedSection(
+                text="",
+                references=[],
+                error={
+                    "error_type": "filter_unavailable",
+                    "error_message": "Could not verify the pill's state.",
+                },
+            )
+        )
+
+        from linkedin_mcp_server.tools.feed import register_feed_tools
+
+        mcp = FastMCP("test")
+        register_feed_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_notifications")
+        result = await tool_fn(
+            mock_context, filter="mentions", extractor=mock_extractor
+        )
+        assert result["sections"] == {}
+        assert (
+            result["section_errors"]["notifications"]["error_type"]
+            == "filter_unavailable"
         )
 
     async def test_get_notifications_surfaces_references(self, mock_context):
         mock_extractor = MagicMock()
-        mock_extractor.extract_page = AsyncMock(
+        mock_extractor.extract_notifications = AsyncMock(
             return_value=ExtractedSection(
                 text="Ada Lovelace replied to your comment",
                 references=[
@@ -2014,7 +2053,7 @@ class TestNotificationsTools:
         self, mock_context
     ):
         mock_extractor = MagicMock()
-        mock_extractor.extract_page = AsyncMock(
+        mock_extractor.extract_notifications = AsyncMock(
             return_value=ExtractedSection(text=RATE_LIMITED_SECTION_TEXT, references=[])
         )
 

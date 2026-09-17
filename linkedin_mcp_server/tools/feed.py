@@ -25,21 +25,6 @@ from linkedin_mcp_server.scraping.link_metadata import Reference
 
 logger = logging.getLogger(__name__)
 
-# LinkedIn's notifications page renders "All" / "My posts" / "Mentions" as
-# client-side tabs. The only observed mechanism for reaching a specific tab
-# by URL is a `filterType` query parameter carrying one of these tokens;
-# unverified against a live account, since this fork never signs in to
-# LinkedIn (see AGENTS.md Hard safety rules). "all" needs no parameter and
-# is the well-precedented path (see get_feed / get_inbox); the other two
-# should be treated as best-effort until confirmed live.
-_NOTIFICATION_FILTER_QUERY = {"my_posts": "MY_POSTS", "mentions": "MENTIONS"}
-
-
-def _notifications_url(filter_: str) -> str:
-    base = "https://www.linkedin.com/notifications/"
-    token = _NOTIFICATION_FILTER_QUERY.get(filter_)
-    return f"{base}?filterType={token}" if token else base
-
 
 def register_feed_tools(
     mcp: FastMCP, *, tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS
@@ -150,12 +135,16 @@ def register_feed_tools(
                 default 30). Items load in batches as the page scrolls, so
                 the actual count may slightly exceed the target.
             filter: One of "all" (default), "my_posts" (activity on your own
-                posts), or "mentions". The non-default values are sent as
-                LinkedIn's `filterType` query parameter (`MY_POSTS` /
-                `MENTIONS`); this has not been confirmed against a live
-                account (this fork never signs in to LinkedIn) and may need
-                adjusting if LinkedIn's actual parameter differs — treat
-                anything other than "all" as best-effort until verified.
+                posts), or "mentions". A non-default value is applied by
+                clicking LinkedIn's filter pill at that position and
+                verifying it actually became selected (see
+                ``scraping.feed.FeedScraper.extract_notifications`` for the
+                live-capture evidence: the page ignores a query parameter
+                entirely, so filtering is structural, not URL-based). When
+                the pill cannot be identified or the click cannot be
+                verified, section_errors["notifications"] carries
+                error_type "filter_unavailable" instead of unfiltered
+                content mislabeled as filtered.
 
         Returns:
             Dict with url, sections (notifications -> raw text), and
@@ -175,12 +164,12 @@ def register_feed_tools(
                 progress=0, total=100, message="Loading notifications"
             )
 
-            url = _notifications_url(filter)
+            url = "https://www.linkedin.com/notifications/"
             # Notification cards load in batches similar to search results;
             # one scroll per ~5 items mirrors search_posts' pacing.
             scrolls = max(1, -(-max_items // 5))
-            extracted = await extractor.extract_page(
-                url, section_name="notifications", max_scrolls=scrolls
+            extracted = await extractor.extract_notifications(
+                filter_=filter, max_scrolls=scrolls
             )
 
             sections: dict[str, str] = {}

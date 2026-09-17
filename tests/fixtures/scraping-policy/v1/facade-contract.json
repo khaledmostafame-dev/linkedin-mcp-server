@@ -1257,7 +1257,7 @@
           "properties": {
             "filter": {
               "default": "all",
-              "description": "One of \"all\" (default), \"my_posts\" (activity on your own\nposts), or \"mentions\". The non-default values are sent as\nLinkedIn's `filterType` query parameter (`MY_POSTS` /\n`MENTIONS`); this has not been confirmed against a live\naccount (this fork never signs in to LinkedIn) and may need\nadjusting if LinkedIn's actual parameter differs — treat\nanything other than \"all\" as best-effort until verified.",
+              "description": "One of \"all\" (default), \"my_posts\" (activity on your own\nposts), or \"mentions\". A non-default value is applied by\nclicking LinkedIn's filter pill at that position and\nverifying it actually became selected (see\n``scraping.feed.FeedScraper.extract_notifications`` for the\nlive-capture evidence: the page ignores a query parameter\nentirely, so filtering is structural, not URL-based). When\nthe pill cannot be identified or the click cannot be\nverified, section_errors[\"notifications\"] carries\nerror_type \"filter_unavailable\" instead of unfiltered\ncontent mislabeled as filtered.",
               "pattern": "^(all|my_posts|mentions)$",
               "type": "string"
             },

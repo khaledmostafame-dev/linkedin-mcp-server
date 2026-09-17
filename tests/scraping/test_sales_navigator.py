@@ -23,13 +23,29 @@ def _page_result(text: str = "Lead: Ada Lovelace", references: list | None = Non
     return {"text": text, "references": references or []}
 
 
-def _scraper(landed_urls: list[str], page_results: list | None = None):
+#: Comfortably above ``_APP_SHELL_MIN_NODES`` (40) and stable across repeated
+#: samples, so the render-wait settles on its second poll by default. Tests
+#: that care about the render gate itself override this explicitly.
+_RENDERED_NODE_COUNT = 999
+
+
+def _scraper(
+    landed_urls: list[str],
+    page_results: list | None = None,
+    *,
+    node_counts: int | list[int] = _RENDERED_NODE_COUNT,
+    upsell_present: bool = False,
+):
     """Build a scraper whose landed URL and extracted page advance per call.
 
     ``landed_urls`` feeds ``navigator._navigate_to_page`` (one entry per
     navigation); ``page_results`` feeds ``content._extract_root_content``
     (one entry per extraction, defaulting to a single successful page
-    repeated for every call if only one is given).
+    repeated for every call if only one is given). ``node_counts`` feeds the
+    app-shell render wait's ``document.querySelectorAll('*').length`` poll
+    (a constant repeats every sample; a list is consumed one value per
+    poll, repeating its last entry once exhausted). ``upsell_present`` makes
+    the rendered page's premium-link check trip.
     """
     session = MagicMock()
     page = MagicMock()
@@ -51,6 +67,24 @@ def _scraper(landed_urls: list[str], page_results: list | None = None):
     session.check_rate_limit = AsyncMock()
     session.dismiss_modal = AsyncMock()
     session.scroll_body = AsyncMock()
+    session.delay = AsyncMock()
+
+    if isinstance(node_counts, int):
+        page.evaluate = AsyncMock(return_value=node_counts)
+    else:
+        counts = list(node_counts)
+
+        async def evaluate(_script: str) -> int:
+            index = min(evaluate.calls, len(counts) - 1)
+            evaluate.calls += 1
+            return counts[index]
+
+        evaluate.calls = 0
+        page.evaluate = AsyncMock(side_effect=evaluate)
+
+    upsell_locator = MagicMock()
+    upsell_locator.count = AsyncMock(return_value=1 if upsell_present else 0)
+    page.locator = MagicMock(return_value=upsell_locator)
 
     content = MagicMock()
     if page_results is None:
@@ -217,3 +251,139 @@ class TestGetList:
         assert result["pages_fetched"] == 0
         assert result["stopped_reason"] == "empty_page"
         assert result["sections"] == {}
+
+
+class TestAppShellRenderGate:
+    """The SPA-render wait (live capture 2026-09-17: a real seat landed on
+    `/sales/search/people` with only 15 DOM nodes -- the bare app shell,
+    read before its JS bundle rendered anything). None of these scenarios
+    may report `empty_page`: that value must mean "a real, rendered page
+    had nothing on it", never "we read a page before it could render".
+    """
+
+    async def test_app_never_renders_reports_unavailable_not_empty_page(self):
+        scraper, _navigator, content = _scraper(
+            ["https://www.linkedin.com/sales/search/people?keywords=ada&page=1"],
+            node_counts=15,  # stays at bare-shell size for the whole budget
+        )
+
+        result = await scraper.search_leads("ada")
+
+        assert result["sections"] == {}
+        assert result["pages_fetched"] == 0
+        assert result["stopped_reason"] == "app_not_rendered"
+        assert (
+            result["section_errors"]["search_results"]["error_type"]
+            == SALES_NAVIGATOR_UNAVAILABLE_ERROR
+        )
+        content._extract_root_content.assert_not_awaited()
+
+    async def test_a_rendered_page_proceeds_normally(self):
+        """The render gate doesn't get in the way of the ordinary success path."""
+        scraper, _navigator, content = _scraper(
+            ["https://www.linkedin.com/sales/search/people?keywords=ada&page=1"]
+        )
+
+        result = await scraper.search_leads("ada")
+
+        assert result["sections"]["search_results"] == "Lead: Ada Lovelace"
+        assert result["pages_fetched"] == 1
+        assert "section_errors" not in result
+        content._extract_root_content.assert_awaited()
+
+    async def test_upsell_link_after_render_reports_unavailable(self):
+        """A rendered page whose only content is an upgrade prompt.
+
+        Locale-independent per AGENTS.md: a premium/upsell href path, never
+        page text, is what marks this as "no seat", not "no results".
+        """
+        scraper, _navigator, content = _scraper(
+            ["https://www.linkedin.com/sales/search/people?keywords=ada&page=1"],
+            upsell_present=True,
+        )
+
+        result = await scraper.search_leads("ada")
+
+        assert result["sections"] == {}
+        assert result["stopped_reason"] == "app_not_rendered"
+        assert (
+            result["section_errors"]["search_results"]["error_type"]
+            == SALES_NAVIGATOR_UNAVAILABLE_ERROR
+        )
+        content._extract_root_content.assert_not_awaited()
+
+    async def test_client_side_redirect_during_render_wait_is_not_empty_page(self):
+        """A redirect off `/sales/` that fires only after the initial `goto`.
+
+        `_navigate_and_check_seat` only reads the landed URL right after
+        navigation resolves; a seat-check redirect LinkedIn's own JS fires
+        only once it finishes checking access happens later, while
+        `_wait_for_app_render` is still polling. This proves that later
+        redirect is still caught, and still reported as
+        `sales_navigator_unavailable`, never `empty_page`.
+        """
+        session = MagicMock()
+        page = MagicMock()
+        page.url = "https://www.linkedin.com/sales/search/people?keywords=ada&page=1"
+        session.page = page
+        session.check_rate_limit = AsyncMock()
+        session.dismiss_modal = AsyncMock()
+        session.scroll_body = AsyncMock()
+        session.delay = AsyncMock()
+
+        async def evaluate(_script: str) -> int:
+            evaluate.calls += 1
+            if evaluate.calls == 2:
+                page.url = "https://www.linkedin.com/premium/products/"
+            return 999
+
+        evaluate.calls = 0
+        page.evaluate = AsyncMock(side_effect=evaluate)
+        upsell_locator = MagicMock()
+        upsell_locator.count = AsyncMock(return_value=0)
+        page.locator = MagicMock(return_value=upsell_locator)
+
+        navigator = MagicMock()
+        navigator._navigate_to_page = AsyncMock()  # url is already set, above
+        content = MagicMock()
+        content._extract_root_content = AsyncMock(return_value=_page_result())
+
+        scraper = SalesNavigatorScraper(session, navigator, content)
+
+        result = await scraper.search_leads("ada")
+
+        assert result["stopped_reason"] == "app_not_rendered"
+        assert (
+            result["section_errors"]["search_results"]["error_type"]
+            == SALES_NAVIGATOR_UNAVAILABLE_ERROR
+        )
+        content._extract_root_content.assert_not_awaited()
+
+    async def test_render_gate_also_covers_get_lists(self):
+        scraper, _navigator, content = _scraper(
+            ["https://www.linkedin.com/sales/lists/people"], node_counts=15
+        )
+
+        result = await scraper.get_lists("leads")
+
+        assert result["sections"] == {}
+        assert (
+            result["section_errors"]["lists"]["error_type"]
+            == SALES_NAVIGATOR_UNAVAILABLE_ERROR
+        )
+        content._extract_root_content.assert_not_awaited()
+
+    async def test_render_gate_also_covers_get_list(self):
+        scraper, _navigator, content = _scraper(
+            ["https://www.linkedin.com/sales/lists/people/1"], node_counts=15
+        )
+
+        result = await scraper.get_list("https://www.linkedin.com/sales/lists/people/1")
+
+        assert result["pages_fetched"] == 0
+        assert result["stopped_reason"] == "app_not_rendered"
+        assert (
+            result["section_errors"]["list_members"]["error_type"]
+            == SALES_NAVIGATOR_UNAVAILABLE_ERROR
+        )
+        content._extract_root_content.assert_not_awaited()
