@@ -913,6 +913,7 @@ uv run -m linkedin_mcp_server
 - `--log-level {DEBUG,INFO,WARNING,ERROR}` - Logging level (default: WARNING)
 - `--help` - Show help
 - `ENABLE_COMPANY_PAGE_TOOLS` (environment only) - **EXPERIMENTAL — not fully tested, known not working (live check 2026-09-17: admin analytics routes returned not_authorized), disabled by default.** `true` registers `get_company_page_analytics` and lets `create_post` / `create_poll` accept `post_as`; off, the tool is hidden and any `post_as` is refused before browser work (default: false)
+- `LINKEDIN_TRACE_DOM` (environment only) - Also write a structural DOM skeleton, `dom/NNN-<step>.json`, beside each trace screenshot: tags, roles, attribute names, `data-*` values and URL path shapes, never page text or `aria-label`/`title`/`alt`/`placeholder` values. For fixing selectors against LinkedIn's real markup; traces are kept per `LINKEDIN_TRACE_MODE` (default: off)
 
 > **Note:** Most CLI options have environment variable equivalents. See `.env.example` for details.
 
