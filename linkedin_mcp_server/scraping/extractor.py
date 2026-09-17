@@ -104,6 +104,12 @@ class LinkedInExtractor:
         """Scrape the LinkedIn home feed, scrolling until enough posts load."""
         return await self._feed.extract_feed(num_posts)
 
+    async def extract_notifications(
+        self, filter_: str = "all", max_scrolls: int = 6
+    ) -> ExtractedSection:
+        """Scrape notifications, optionally selecting a filter pill structurally."""
+        return await self._feed.extract_notifications(filter_, max_scrolls)
+
     async def extract_page(
         self,
         url: str,

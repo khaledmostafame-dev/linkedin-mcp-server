@@ -68,7 +68,7 @@ TOOL_DELEGATES = {
     "get_job_details": "scrape_job",
     "get_mutual_connections": "get_mutual_connections",
     "get_my_profile": "get_my_profile",
-    "get_notifications": "extract_page",
+    "get_notifications": "extract_notifications",
     "get_person_profile": "scrape_person",
     "get_post_analytics": "get_post_analytics",
     "get_post_comments": "get_post_comments",
@@ -566,7 +566,7 @@ def test_facade_methods_are_exactly_the_frozen_coroutine_surface():
     }
 
     assert actual == expected
-    assert len(TOOL_FACADE_METHODS) == 56
+    assert len(TOOL_FACADE_METHODS) == 57
     assert len(COMPATIBILITY_METHODS) == 2
 
 

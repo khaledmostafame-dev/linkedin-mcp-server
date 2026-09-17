@@ -35,6 +35,7 @@ from typing import Any
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from linkedin_mcp_server.scraping.navigation import PageNavigator
+from linkedin_mcp_server.scraping.post_actions import POST_MENU_JS
 from linkedin_mcp_server.scraping.post_content import (
     MentionSegment,
     MentionTarget,
@@ -72,17 +73,50 @@ _TEXT_INPUT_SELECTOR = 'input[type="text"], input:not([type])'
 
 
 def _icon_button(*icons: str, role: str = "button") -> str:
-    """A button carrying one of LinkedIn's icon test hooks (names, not text)."""
+    """An element carrying one of LinkedIn's icon test hooks (names, not text).
+
+    Live capture 2026-09-17 (`005-extractor-after-goto.json`, `/sharing/
+    compose`) found neither of the two variants below on the current
+    composer: no element anywhere on the page carries `data-test-icon`, and
+    there are no `<use>` elements at all. LinkedIn now renders each icon as
+    an inline `<svg id="icon-name">` -- the same capture lists `clock-medium`
+    and `arrow-right-small` by id among 90 such svgs -- so that is added as a
+    third variant rather than replacing the other two, in case an older
+    LinkedIn surface still uses them.
+    """
     parts: list[str] = []
     for icon in icons:
         parts.append(f'{role}:has(svg[data-test-icon="{icon}"])')
         parts.append(f'{role}:has(use[href="#{icon}"])')
+        parts.append(f'{role}:has(svg[id="{icon}"])')
     return ", ".join(parts)
 
 
-# Measured upstream (PRs 690, 692, 696).
-_SCHEDULE_BUTTON_SELECTOR = _icon_button("clock-medium")
-_VIEW_ALL_SCHEDULED_SELECTOR = _icon_button("arrow-right-small")
+# Measured upstream (PRs 690, 692, 696); the `data-test-icon`/`use[href]`
+# hooks they measured are gone on the current live composer (see
+# `_icon_button`'s docstring). The same capture also found the schedule
+# button's `clock-medium` icon wrapped not in a `<button>` but in an
+# `<a href="/sharing/compose" aria-haspopup="dialog" aria-expanded="false">`
+# (capture node 93/95) -- a real link, not a button element -- so both
+# selectors below now match either wrapper tag. `arrow-right-small` (the
+# "view all scheduled" arrow) is confirmed present on the page by id, but
+# only outside the schedule mini-dialog (an unrelated "see all" link at
+# node 1069/1071); that sub-dialog only exists after clicking the schedule
+# button, so its own markup is unverified -- a capture of the DOM
+# immediately after that click is the next evidence needed if this selector
+# still misses live.
+_SCHEDULE_BUTTON_SELECTOR = ", ".join(
+    [
+        _icon_button("clock-medium", role="button"),
+        _icon_button("clock-medium", role="a"),
+    ]
+)
+_VIEW_ALL_SCHEDULED_SELECTOR = ", ".join(
+    [
+        _icon_button("arrow-right-small", role="button"),
+        _icon_button("arrow-right-small", role="a"),
+    ]
+)
 _MENU_DELETE_SELECTOR = _icon_button("trash-medium", role='[role="button"]')
 _MENU_EDIT_SELECTOR = _icon_button("edit-medium", role='[role="button"]')
 # Post settings (upstream PR 835): the author row is ``#ACTOR`` and the
@@ -90,11 +124,13 @@ _MENU_EDIT_SELECTOR = _icon_button("edit-medium", role='[role="button"]')
 _SETTINGS_HEADER_SELECTOR = "#share-to-linkedin-modal__header"
 _ACTOR_ROW_SELECTOR = "#ACTOR"
 _ACTOR_RADIO_SELECTOR = '[role="radiogroup"] [role="radio"]'
-# A post's own control menu: an overflow-icon button. Its menu items are
-# div[role=button] (upstream PR 696) or menuitems carrying icon test hooks.
-_OVERFLOW_BUTTON_SELECTOR = (
-    'button:has(svg[data-test-icon*="overflow"]), button:has(use[href*="overflow"])'
-)
+# A post's own control menu is found by ``post_actions.POST_MENU_JS``, not
+# by an overflow icon: on a live post page (2026-09-17) the post's opener
+# carries no icon hook while every comment's opener does, so an icon match
+# only ever reached comment menus. Its items are div[role=button] (upstream
+# PR 696) or menuitems carrying icon test hooks, looked up inside the panel
+# the opener controls and nowhere else.
+_POST_MENU_MARK = "data-linkedin-mcp-post-menu"
 _OWNER_DELETE_ITEM_SELECTOR = ", ".join(
     [
         _icon_button("trash-medium", role='[role="button"]'),
@@ -293,31 +329,63 @@ _SHADOW_WALK_JS = r"""
 
 # The post a /feed/update/<urn>/ page shows: the first visible profile or
 # company link in <main> is its actor (header precedes body and comments), and
-# the first overflow button is its own control menu. Returned raw.
+# ``controlCount`` is 1 when the post's own control-menu opener is identified
+# (POST_MENU_JS), 0 otherwise. Comment menus never count. Returned raw.
 _POST_OWNERSHIP_JS = (
     "(urn) => {"
     + _SHADOW_WALK_JS
+    + POST_MENU_JS
     + """
         const main = roots.map(root => root.querySelector('main')).find(Boolean);
         if (!main) return null;
         const actor = Array.from(main.querySelectorAll('a[href*="/in/"], a[href*="/company/"]'))
             .find(visible);
-        const controls = Array.from(main.querySelectorAll('button')).filter(button =>
-            visible(button) &&
-            Array.from(button.querySelectorAll('svg, use')).some(node =>
-                (node.getAttribute('data-test-icon') || node.getAttribute('href') || '')
-                    .includes('overflow')));
+        const menu = postMenu(main);
         const text = main.innerText || '';
         const domUrn = Array.from(main.querySelectorAll('*')).some(node =>
             Array.from(node.attributes || []).some(a => a.value.includes(urn))
         );
         return {
             actorHref: actor ? actor.getAttribute('href') : null,
-            controlCount: controls.length,
+            controlCount: menu ? 1 : 0,
             domUrn,
             text: text.slice(0, 2000),
         };
     }"""
+)
+
+# Marks the post's own (collapsed) control-menu opener with the token, so the
+# click is a real pointer click on exactly that element.
+_POST_MENU_MARK_JS = (
+    "(token) => {"
+    + _SHADOW_WALK_JS
+    + POST_MENU_JS
+    + f"""
+        for (const root of roots) {{
+            for (const marked of root.querySelectorAll('[{_POST_MENU_MARK}]')) {{
+                marked.removeAttribute('{_POST_MENU_MARK}');
+            }}
+        }}
+        const main = roots.map(root => root.querySelector('main')).find(Boolean);
+        const menu = postMenu(main);
+        if (!menu || menu.open) return false;
+        menu.opener.setAttribute('{_POST_MENU_MARK}', token);
+        return true;
+    }}"""
+)
+
+# True once the marked opener is the post's menu and that menu is open; a
+# panel holding a comment never counts (see POST_MENU_JS).
+_POST_MENU_OPEN_JS = (
+    "(token) => {"
+    + _SHADOW_WALK_JS
+    + POST_MENU_JS
+    + f"""
+        const main = roots.map(root => root.querySelector('main')).find(Boolean);
+        const menu = postMenu(main);
+        return menu !== null && menu.open &&
+            menu.opener.getAttribute('{_POST_MENU_MARK}') === token;
+    }}"""
 )
 
 _POST_LINKS_JS = (
@@ -1439,7 +1507,13 @@ class PostComposer:
             return post_result(
                 self._page.url,
                 "list_unavailable",
-                "LinkedIn did not open the scheduled posts view.",
+                "LinkedIn did not open the scheduled posts view. This step is "
+                "unverified against a live account past the schedule button "
+                "itself: the mini date/time-picker dialog it opens, and its "
+                "'view all scheduled posts' arrow, only exist after that "
+                "click, so no capture of their markup exists yet. A DOM "
+                "capture taken right after clicking the schedule control "
+                "would confirm or fix this selector.",
             )
         # The modal renders its heading before its entries; settled means two
         # identical non-empty samples (upstream PR 692).
@@ -1710,19 +1784,28 @@ class PostComposer:
             raise _Abort(
                 "post_unavailable", "The post page did not show that post's controls."
             )
-        try:
-            await (
-                self._page.locator(f"main {_OVERFLOW_BUTTON_SELECTOR}")
-                .filter(visible=True)
-                .first.click(timeout=_STEP_TIMEOUT_MS)
+        token = secrets.token_hex(8)
+        if await self._page.evaluate(_POST_MENU_MARK_JS, token) is not True:
+            raise _Abort(
+                "post_unavailable",
+                "The post's own control menu could not be identified; nothing was "
+                "changed.",
             )
+        try:
+            await self._page.locator(f'[{_POST_MENU_MARK}="{token}"]').click(
+                timeout=_STEP_TIMEOUT_MS
+            )
+            await self._page.wait_for_function(
+                _POST_MENU_OPEN_JS, arg=token, timeout=_STEP_TIMEOUT_MS
+            )
+            panel = self._post_menu_panel(token)
             await (
-                self._page.locator(_OWNER_DELETE_ITEM_SELECTOR)
+                panel.locator(_OWNER_DELETE_ITEM_SELECTOR)
                 .filter(visible=True)
                 .first.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
             )
             await (
-                self._page.locator(_OWNER_EDIT_ITEM_SELECTOR)
+                panel.locator(_OWNER_EDIT_ITEM_SELECTOR)
                 .filter(visible=True)
                 .first.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
             )
@@ -1733,7 +1816,11 @@ class PostComposer:
                 "The post's control menu does not offer owner actions; nothing "
                 "was changed.",
             ) from error
-        return {**ownership, "ownKey": own}
+        return {**ownership, "ownKey": own, "menuToken": token}
+
+    def _post_menu_panel(self, token: str) -> Any:
+        """The panel the marked post-menu opener controls: its next sibling."""
+        return self._page.locator(f'[{_POST_MENU_MARK}="{token}"] + *')
 
     async def _close_menu(self) -> None:
         try:
@@ -1759,7 +1846,8 @@ class PostComposer:
             )
         try:
             await (
-                self._page.locator(_OWNER_DELETE_ITEM_SELECTOR)
+                self._post_menu_panel(str(ownership["menuToken"]))
+                .locator(_OWNER_DELETE_ITEM_SELECTOR)
                 .filter(visible=True)
                 .first.click(timeout=_STEP_TIMEOUT_MS)
             )
@@ -1837,17 +1925,21 @@ class PostComposer:
         try:
             try:
                 await (
-                    self._page.locator(_OWNER_EDIT_ITEM_SELECTOR)
+                    self._post_menu_panel(str(ownership["menuToken"]))
+                    .locator(_OWNER_EDIT_ITEM_SELECTOR)
                     .filter(visible=True)
                     .first.click(timeout=_STEP_TIMEOUT_MS)
                 )
-                editor = self._editor()
+                # Only an editor inside a dialog: the post page keeps its own
+                # comment box (a role=textbox editor too) open underneath.
+                editors = self._composer_dialog().locator(_EDITOR_SELECTOR)
+                editor = editors.first
                 await editor.wait_for(state="visible", timeout=_OPEN_TIMEOUT_MS)
             except Exception as error:
                 raise _Abort(
                     "edit_unavailable", "LinkedIn did not open the post's editor."
                 ) from error
-            if await self._page.locator(f"{_EDITOR_SELECTOR}:visible").count() != 1:
+            if await editors.filter(visible=True).count() != 1:
                 raise _Abort("edit_unavailable", "More than one editor is open.")
             typed = await self._replace_editor_text(editor, edit)
             submitted = True

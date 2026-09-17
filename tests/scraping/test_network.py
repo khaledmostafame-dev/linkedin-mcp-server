@@ -72,7 +72,7 @@ class TestGetMutualConnections:
     async def test_found_link_is_resolved_and_captured(self, mock_page):
         scraper = _scraper(mock_page)
         mock_page.evaluate = AsyncMock(
-            return_value="/search/results/people/?facetConnectionOf=%22ACoAAA%22"
+            return_value="/search/results/people/?connectionOf=%22ACoAAA%22"
         )
 
         with patch.object(
@@ -85,8 +85,7 @@ class TestGetMutualConnections:
 
         captured_url = mock_capture.call_args.args[0]
         assert captured_url == (
-            "https://www.linkedin.com/search/results/people/"
-            "?facetConnectionOf=%22ACoAAA%22"
+            "https://www.linkedin.com/search/results/people/?connectionOf=%22ACoAAA%22"
         )
         assert result["sections"]["mutual_connections"] == "Jane Doe\nMutual connection"
         assert result["references"]["mutual_connections"] == _refs(3)
@@ -95,7 +94,7 @@ class TestGetMutualConnections:
     async def test_reaching_max_results_is_reported_as_such(self, mock_page):
         scraper = _scraper(mock_page)
         mock_page.evaluate = AsyncMock(
-            return_value="/search/results/people/?facetConnectionOf=%22X%22"
+            return_value="/search/results/people/?connectionOf=%22X%22"
         )
 
         with patch.object(

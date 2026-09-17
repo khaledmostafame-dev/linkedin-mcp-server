@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncio
 import logging
@@ -727,3 +727,218 @@ class TestFeedToolDeadline:
 
         with pytest.raises(ToolError, match="timed out"):
             await self._call(use_session=False)
+
+
+class _FakeRadioLocator:
+    """A `[role="radio"]` locator double over a shared list of pill states.
+
+    ``flip_on_click`` toggles whether ``click`` actually flips the target's
+    ``checked`` flag -- False reproduces a click that "succeeds" (no
+    exception) but never changes the pill's accessible state, the case
+    ``_select_notification_filter`` must catch rather than trust the click.
+    """
+
+    def __init__(
+        self,
+        radios: list[dict[str, bool]],
+        indices: list[int] | None = None,
+        *,
+        flip_on_click: bool = True,
+    ):
+        self._radios = radios
+        self._indices = indices if indices is not None else list(range(len(radios)))
+        self._flip_on_click = flip_on_click
+
+    async def count(self) -> int:
+        return len(self._indices)
+
+    def nth(self, index: int) -> "_FakeRadioLocator":
+        return _FakeRadioLocator(
+            self._radios, [self._indices[index]], flip_on_click=self._flip_on_click
+        )
+
+    async def click(self, timeout: int | None = None) -> None:
+        if self._flip_on_click:
+            idx = self._indices[0]
+            for other in self._radios:
+                other["checked"] = False
+            self._radios[idx]["checked"] = True
+
+    async def get_attribute(self, name: str) -> str:
+        assert name == "aria-checked"
+        idx = self._indices[0]
+        return "true" if self._radios[idx]["checked"] else "false"
+
+
+class _FakeRadioPage:
+    def __init__(self, radios: list[dict[str, bool]], *, flip_on_click: bool = True):
+        self._radios = radios
+        self._flip_on_click = flip_on_click
+
+    def locator(self, selector: str) -> _FakeRadioLocator:
+        from linkedin_mcp_server.scraping.feed import _FILTER_PILL_SELECTOR
+
+        assert selector == _FILTER_PILL_SELECTOR
+        return _FakeRadioLocator(self._radios, flip_on_click=self._flip_on_click)
+
+
+def _filter_scraper(radios: list[dict[str, bool]], *, flip_on_click: bool = True):
+    """A FeedScraper wired only with what ``_select_notification_filter`` reads.
+
+    Built via ``__new__`` rather than the real constructor: the method under
+    test never touches ``_navigator``/``_content``, and wiring those up (real
+    navigation, rate-limit checks) would only obscure what this is asserting
+    -- the pill-position mapping and the click-verification loop.
+    """
+    scraper = FeedScraper.__new__(FeedScraper)
+    scraper._session = SimpleNamespace(
+        page=_FakeRadioPage(radios, flip_on_click=flip_on_click),
+        delay=AsyncMock(),
+    )
+    return scraper
+
+
+class TestSelectNotificationFilterPositionAndVerification:
+    """The click-by-position + verify-state mechanism, isolated.
+
+    Live capture 2026-09-17 proved LinkedIn drops the old `?filterType=`
+    query parameter entirely (see the module-level comment in
+    ``scraping/feed.py`` above ``_NOTIFICATION_FILTER_PILL_INDEX``), so
+    filtering has to click a structural pill and verify the click actually
+    changed the pill's ``aria-checked`` state -- never trust a click that
+    "succeeded" with no exception, and never fall back to unfiltered content.
+    """
+
+    async def test_mentions_targets_the_third_radio_pill(self):
+        radios = [
+            {"checked": True},  # "All", checked by default
+            {"checked": False},
+            {"checked": False},
+        ]
+        scraper = _filter_scraper(radios)
+
+        applied = await scraper._select_notification_filter("mentions")
+
+        assert applied is True
+        assert radios[2]["checked"] is True
+        assert radios[0]["checked"] is False  # the old selection was cleared
+
+    async def test_my_posts_targets_the_second_radio_pill(self):
+        radios = [{"checked": True}, {"checked": False}, {"checked": False}]
+        scraper = _filter_scraper(radios)
+
+        applied = await scraper._select_notification_filter("my_posts")
+
+        assert applied is True
+        assert radios[1]["checked"] is True
+
+    async def test_fewer_than_three_radio_pills_is_refused_without_clicking(self):
+        # Only the default "All" pill is present -- LinkedIn's markup
+        # changed, or this ran before the row finished rendering.
+        radios = [{"checked": True}]
+        scraper = _filter_scraper(radios)
+
+        applied = await scraper._select_notification_filter("mentions")
+
+        assert applied is False
+        assert radios[0]["checked"] is True  # untouched
+
+    async def test_a_click_that_never_flips_aria_checked_is_reported_false(self):
+        """The click "succeeds" (no exception) but the pill never checks.
+
+        This is exactly the class of bug the fix exists to catch: a click
+        landing on the wrong element, or LinkedIn's own state update lagging
+        past the verification budget. Trusting the click alone (no
+        exception raised) would silently return unfiltered content
+        mislabeled as filtered -- the one outcome AGENTS.md rules out.
+        """
+        radios = [{"checked": True}, {"checked": False}, {"checked": False}]
+        scraper = _filter_scraper(radios, flip_on_click=False)
+
+        applied = await scraper._select_notification_filter("mentions")
+
+        assert applied is False
+
+    async def test_all_is_not_a_valid_click_target(self):
+        """ "all" has no pill index -- it is the default view, never clicked."""
+        radios = [{"checked": True}, {"checked": False}, {"checked": False}]
+        scraper = _filter_scraper(radios)
+
+        applied = await scraper._select_notification_filter("all")
+
+        assert applied is False
+
+
+def _notification_scraper():
+    """A FeedScraper with session/navigator/content mocked for envelope tests."""
+    session = MagicMock()
+    page = MagicMock()
+    session.page = page
+    session.check_rate_limit = AsyncMock()
+    session.dismiss_modal = AsyncMock()
+    session.scroll_body = AsyncMock()
+    session.delay = AsyncMock()
+    page.wait_for_selector = AsyncMock()
+
+    navigator = MagicMock()
+    navigator._navigate_to_page = AsyncMock()
+
+    content = MagicMock()
+    content._extract_root_content = AsyncMock(
+        return_value={"text": "Someone reacted to your post", "references": []}
+    )
+
+    scraper = FeedScraper(session, navigator, content)
+    return scraper, session, navigator, content
+
+
+class TestExtractNotificationsFilterEnvelope:
+    """``extract_notifications``'s decision to extract vs. refuse.
+
+    ``_select_notification_filter`` is patched on the instance here: this
+    layer's own job is the envelope around it (skip selection for "all",
+    refuse to read the page at all when selection could not be verified),
+    which the position/verification tests above already cover directly.
+    """
+
+    async def test_all_filter_never_touches_pill_selection(self):
+        scraper, *_ = _notification_scraper()
+
+        with patch.object(
+            scraper, "_select_notification_filter", AsyncMock()
+        ) as select:
+            result = await scraper.extract_notifications("all")
+
+        select.assert_not_awaited()
+        assert result.text == "Someone reacted to your post"
+        assert result.error is None
+
+    async def test_a_verified_filter_click_proceeds_to_extraction(self):
+        scraper, *_ = _notification_scraper()
+
+        with patch.object(
+            scraper, "_select_notification_filter", AsyncMock(return_value=True)
+        ):
+            result = await scraper.extract_notifications("mentions")
+
+        assert result.text == "Someone reacted to your post"
+        assert result.error is None
+
+    async def test_an_unverified_filter_click_never_reads_the_page(self):
+        """The hard rule this whole fix exists for.
+
+        When the pill's selected state cannot be verified, the page is never
+        even read -- returning its content, unfiltered, labelled "mentions"
+        would be exactly the silent-wrong-result bug being fixed.
+        """
+        scraper, _session, _navigator, content = _notification_scraper()
+
+        with patch.object(
+            scraper, "_select_notification_filter", AsyncMock(return_value=False)
+        ):
+            result = await scraper.extract_notifications("my_posts")
+
+        assert result.text == ""
+        assert result.error is not None
+        assert result.error["error_type"] == "filter_unavailable"
+        content._extract_root_content.assert_not_awaited()

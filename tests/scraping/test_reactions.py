@@ -4,7 +4,8 @@ Every case here proves the fail-closed contract: an ambiguous structural
 match (or a dialog that never appears) reports a section_errors entry and
 touches nothing further, matching the reasoning in
 linkedin_mcp_server/scraping/reactions.py. page.evaluate is a mock, so the
-real JS never executes and each step's outcome is supplied directly.
+real JS never executes and each step's outcome is supplied directly;
+tests/test_post_actions_dom.py runs the control probe itself.
 """
 
 from __future__ import annotations
@@ -15,7 +16,10 @@ from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from linkedin_mcp_server.scraping.content import PageContentReader
 from linkedin_mcp_server.scraping.navigation import PageNavigator
-from linkedin_mcp_server.scraping.reactions import ReactionsReader
+from linkedin_mcp_server.scraping.reactions import (
+    _FIND_SOCIAL_COUNTS_CONTROL_JS,
+    ReactionsReader,
+)
 from linkedin_mcp_server.scraping.session import ScrapingSession
 
 POST_URL = "https://www.linkedin.com/posts/alice_hello-ugcPost-1-xx/"
@@ -70,7 +74,7 @@ async def test_successful_flow_returns_reactor_references(mock_page):
     mock_page.wait_for_selector = AsyncMock()
 
     async def evaluate(script, *args, **kwargs):
-        if "findActionRow" in script:
+        if script == _FIND_SOCIAL_COUNTS_CONTROL_JS:
             return True
         if "scrollable.scrollTop" in script:
             return False  # stop scrolling immediately

@@ -489,11 +489,28 @@ _DOM_PRELUDE = r"""
     const isDisabled = button =>
         button.disabled ||
         (button.getAttribute('aria-disabled') || '').toLowerCase() === 'true';
-    const visibleEditors = () =>
-        Array.from(document.querySelectorAll(EDITOR_SELECTOR)).filter(editor =>
-            visible(editor) &&
-            !(editor.parentElement && editor.parentElement.closest(EDITOR_SELECTOR))
+    // A live comment box (2026-09-17) is a role=textbox editor with an empty,
+    // role-less contenteditable sibling (the rich-text editor's clipboard
+    // helper, which renders 1px tall and so reads as visible). Such a helper
+    // is dropped only while it is empty and shares its parent with a textbox
+    // editor; anything else stays in, so a second real editor stays ambiguous.
+    const visibleEditors = () => {
+        const editors = Array.from(document.querySelectorAll(EDITOR_SELECTOR)).filter(
+            editor =>
+                visible(editor) &&
+                !(editor.parentElement && editor.parentElement.closest(EDITOR_SELECTOR))
         );
+        const isTextbox = editor => editor.getAttribute('role') === 'textbox';
+        return editors.filter(editor =>
+            isTextbox(editor) ||
+            normalizeText(editor.textContent) !== '' ||
+            !editors.some(other =>
+                other !== editor &&
+                isTextbox(other) &&
+                other.parentElement === editor.parentElement
+            )
+        );
+    };
     const visibleDialogs = () =>
         Array.from(document.querySelectorAll(DIALOG_SELECTOR)).filter(visible).length;
     const describe = (state, unit) => {
@@ -616,7 +633,11 @@ _EXPANSION_SCAN_JS = (
                 scope = scope.parentElement;
             }
             const limit = owner ? owner.element : scanRoot();
-            for (let level = 0; scope && level < 3; level += 1, scope = scope.parentElement) {
+            // Four levels: on a live post (2026-09-17) the top-level loaders sit
+            // in a sibling of the list's third ancestor. The risky-element break
+            // below, not this cap, is what keeps the walk out of the comment box
+            // and the post's action bar.
+            for (let level = 0; scope && level < 4; level += 1, scope = scope.parentElement) {
                 if (scope === limit || !limit.contains(scope)) break;
                 const unsafe = Array.from(scope.querySelectorAll(RISKY_SELECTOR))
                     .some(element => state.enclosingUnit(element) === owner);
@@ -686,6 +707,7 @@ _REPLY_PREPARE_JS = (
             .filter(button => visible(button) && state.enclosingUnit(button) === unit);
         if (toggles.length !== 1) return {status: 'unresolved'};
         const toggle = toggles[0];
+        const media = button => (button.querySelector('img, svg, picture') ? 1 : 0);
         let candidates = [];
         let bar = toggle.parentElement;
         for (let level = 0; bar && level < 3 && bar !== unit.element; level += 1) {
@@ -695,7 +717,7 @@ _REPLY_PREPARE_JS = (
                 other => other !== unit && bar.contains(other.element)
             );
             if (reachesHeader || reachesReplies || bar.querySelector(EDITOR_SELECTOR)) break;
-            candidates = Array.from(bar.querySelectorAll('button')).filter(button =>
+            const found = Array.from(bar.querySelectorAll('button')).filter(button =>
                 button !== toggle &&
                 state.enclosingUnit(button) === unit &&
                 visible(button) &&
@@ -707,10 +729,13 @@ _REPLY_PREPARE_JS = (
                 !button.closest('a[href], form, ' + DIALOG_SELECTOR) &&
                 (toggle.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING)
             );
-            if (candidates.length) break;
+            if (found.length) candidates = found;
+            // A level holding only media buttons (on a live post, the comment's
+            // reaction-count button, one level closer than Reply for half the
+            // comments) is kept as a fallback while the walk goes one level up.
+            if (found.some(button => !media(button))) break;
             bar = bar.parentElement;
         }
-        const media = button => (button.querySelector('img, svg, picture') ? 1 : 0);
         candidates.sort((first, second) => media(first) - media(second));
         candidates = candidates.slice(0, arg.maxCandidates);
         candidates.forEach((button, index) =>

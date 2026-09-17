@@ -87,7 +87,7 @@
       "call": "get_mutual_connections",
       "kind": "evaluate",
       "operation": "mutual_connections_link",
-      "program_digest": "d8f3516599ba",
+      "program_digest": "3f4e0900506c",
       "section": "mutual_connections"
     }
   ],

@@ -1,18 +1,21 @@
-"""Save/unsave a LinkedIn post through its overflow menu's save toggle.
+"""Save/unsave a LinkedIn post through its overflow menu's save item.
 
-LinkedIn's "Save"/"Saved" action lives inside a post's "..." overflow
+LinkedIn's "Save"/"Unsave" action lives inside a post's "..." control
 menu rather than in its top-level action row, so this is a two-step
-structural probe: find the single menu-opener button, then — once the
-resulting menu is open — the single toggle control inside it. Every step
+structural probe: find the post's single menu opener, then — once the
+panel it controls is open — the single save item inside it. Every step
 is fail-closed, matching ``reactions.py``: an ambiguous match (zero or
 more than one candidate) stops the whole action before anything is
-clicked, and ``confirm=False`` always stops it before the toggle itself
-is clicked (see ``save_post``).
+clicked, and ``confirm=False`` always stops it before the item itself is
+clicked (see ``save_post``).
 
-The DOM assumptions below (see the three ``_*_JS`` constants) are **not**
-verified against a live account — this fork never signs in to LinkedIn
-(AGENTS.md Hard safety rules) — and must be confirmed live before this
-tool is trusted; see this tool's ``live_verification_needed`` entry.
+The opener probe matches the structure of a signed-in, English-UI post
+page captured on 2026-09-17. The open menu was not part of that capture:
+its item shape (``[role="button"]`` items carrying ``data-test-icon``
+hooks) is the one ``post_composer.py`` ports from upstream measurements
+of the same control menu, and the bookmark icon names follow the
+``<glyph>-outline|fill-<size>`` scheme LinkedIn uses elsewhere on the
+page. Both remain to be confirmed live with the menu open.
 """
 
 from __future__ import annotations
@@ -29,50 +32,134 @@ from linkedin_mcp_server.scraping.session import ScrapingSession
 
 logger = logging.getLogger(__name__)
 
-_MENU_SELECTOR = '[role="menu"]'
-
-# The post's overflow-menu opener, identified the same way
-# connection_actions.OPEN_MORE_BUTTON_JS identifies a profile's More
-# button: aria-expanded is present on a menu opener and on nothing else
-# in a post's <main> (Like/Comment/Repost/Send carry aria-label, not
-# aria-expanded). Exact-count guard: clicks only when there is exactly
-# one candidate, never "the first one".
-_OPEN_POST_OVERFLOW_MENU_JS = r"""
-() => {
-  const main = document.querySelector('main');
-  if (!main) return false;
-  const openers = main.querySelectorAll('button[aria-expanded]');
-  if (openers.length !== 1) return false;
-  openers[0].click();
-  return true;
-}
+# The post's own control menu, shared with ``post_composer.py`` (whose
+# delete_post/edit_post open the same menu). Prepended to every program
+# that needs it, so each one re-derives the elements from the live DOM
+# instead of holding a handle across evaluate calls. ``postMenu(main)``
+# takes the page's <main>, found by the caller.
+#
+# The opener (measured 2026-09-17). A post page holds dozens of
+# ``button[aria-expanded]`` (46 on the captured one): the post's menu
+# opener, the Like reaction picker, Repost, the comment editor's emoji
+# picker, the comment sort control and one overflow opener per comment.
+# The post's own opener is told apart by position and shape only:
+#   * it precedes the post's first social-action control in document
+#     order. Those controls carry LinkedIn's ``data-finite-scroll-hotkey``
+#     hook, the post's own row renders first, and everything belonging to
+#     comments (sort control, per-comment menus) renders after it. That
+#     first control must itself sit outside every comment: a post whose
+#     own action row is missing would otherwise hand the anchor to the
+#     first comment's row and let the comment sort control qualify;
+#   * its next element sibling is the dropdown panel it controls, which
+#     carries ``aria-hidden`` while collapsed. That excludes the reactor
+#     facepile's "see more" control, the one other aria-expanded button
+#     above the action row, which has no sibling at all;
+#   * its panel holds no comment (an element whose ``data-id``/``data-urn``/
+#     ``data-entity-urn`` names a comment URN, the hook ``comments.py``
+#     reads), collapsed or open.
+# Exactly one such button, or nothing.
+#
+# The menu counts as open only when the opener reports
+# aria-expanded="true", its panel is no longer aria-hidden="true", and the
+# panel holds at least one actionable item and still no comment.
+POST_MENU_JS = r"""
+  const MENU_ITEM = '[role="button"], [role="menuitem"], button, a[href]';
+  const COMMENT_UNIT = ['data-id', 'data-urn', 'data-entity-urn']
+    .map(name => `[${name}*="comment:("]`).join(', ');
+  function postMenu(main) {
+    if (!main) return null;
+    const firstAction = main.querySelector('[data-finite-scroll-hotkey]');
+    if (!firstAction || firstAction.closest(COMMENT_UNIT)) return null;
+    const openers = Array.from(
+      main.querySelectorAll('button[aria-expanded]')
+    ).filter(button => {
+      const precedes = button.compareDocumentPosition(firstAction)
+        & Node.DOCUMENT_POSITION_FOLLOWING;
+      const panel = button.nextElementSibling;
+      return Boolean(precedes) && panel !== null && (
+        panel.hasAttribute('aria-hidden')
+        || button.getAttribute('aria-expanded') === 'true'
+      );
+    });
+    if (openers.length !== 1) return null;
+    const opener = openers[0];
+    const panel = opener.nextElementSibling;
+    if (panel.querySelector(COMMENT_UNIT)) return null;
+    const open = opener.getAttribute('aria-expanded') === 'true'
+      && panel.getAttribute('aria-hidden') !== 'true'
+      && panel.querySelector(MENU_ITEM) !== null;
+    return { opener, panel, open };
+  }
 """
 
-# The save/unsave toggle inside the open overflow menu, identified by
-# aria-pressed presence (a toggle button) rather than by its label text —
-# the one attribute a "Save"/"Saved" menu item is expected to carry that
-# "Report", "Copy link", etc. would not. Returns the toggle's current
-# state, or null when the match is not exactly one element.
-_READ_SAVE_TOGGLE_STATE_JS = r"""
-() => {
-  const menu = document.querySelector('[role="menu"]');
-  if (!menu) return null;
-  const toggles = menu.querySelectorAll('[aria-pressed]');
-  if (toggles.length !== 1) return null;
-  return toggles[0].getAttribute('aria-pressed') === 'true';
-}
+# The save item is the one item holding a ``bookmark-*`` icon hook: an
+# outline glyph reads as "not saved", a fill glyph as "saved". Any other
+# bookmark glyph, or more than one such item, is refused.
+_SAVE_ITEM_JS = r"""
+  const pagePostMenu = () => postMenu(document.querySelector('main'));
+  function saveItem() {
+    const menu = pagePostMenu();
+    if (!menu || !menu.open) return null;
+    const icons = menu.panel.querySelectorAll(
+      'svg[data-test-icon^="bookmark-"], use[href^="#bookmark-"]'
+    );
+    const items = new Map();
+    for (const icon of icons) {
+      const item = icon.closest(MENU_ITEM);
+      if (!item || !menu.panel.contains(item)) return null;
+      const name = icon.getAttribute('data-test-icon')
+        || (icon.getAttribute('href') || '').slice(1);
+      const saved = /^bookmark-fill(-|$)/.test(name) ? true
+        : /^bookmark-outline(-|$)/.test(name) ? false : null;
+      if (!items.has(item)) items.set(item, new Set());
+      items.get(item).add(saved);
+    }
+    if (items.size !== 1) return null;
+    const [[item, states]] = Array.from(items.entries());
+    if (states.size !== 1 || states.has(null)) return null;
+    return { item, saved: states.has(true) };
+  }
 """
 
-_CLICK_SAVE_TOGGLE_JS = r"""
-() => {
-  const menu = document.querySelector('[role="menu"]');
+
+def _post_menu_program(body: str) -> str:
+    return "() => {" + POST_MENU_JS + _SAVE_ITEM_JS + body + "}"
+
+
+# Clicks the post's menu opener; an already-open menu is left as it is.
+_OPEN_POST_OVERFLOW_MENU_JS = _post_menu_program(
+    r"""
+  const menu = pagePostMenu();
   if (!menu) return false;
-  const toggles = menu.querySelectorAll('[aria-pressed]');
-  if (toggles.length !== 1) return false;
-  toggles[0].click();
+  if (!menu.open) menu.opener.click();
   return true;
-}
 """
+)
+
+_POST_MENU_OPEN_JS = _post_menu_program(
+    r"""
+  const menu = pagePostMenu();
+  return menu !== null && menu.open;
+"""
+)
+
+# The save item's current state, or null when there is not exactly one
+# item with a recognised bookmark glyph.
+_READ_SAVE_TOGGLE_STATE_JS = _post_menu_program(
+    r"""
+  const found = saveItem();
+  return found === null ? null : found.saved;
+"""
+)
+
+_CLICK_SAVE_TOGGLE_JS = _post_menu_program(
+    r"""
+  const found = saveItem();
+  if (found === null) return false;
+  found.item.click();
+  return true;
+"""
+)
 
 
 def _save_post_result(
@@ -98,6 +185,27 @@ class PostActions:
     def __init__(self, session: ScrapingSession, navigator: PageNavigator):
         self._session = session
         self._navigator = navigator
+
+    async def _reread_after_click(self, page: Any, url: str) -> bool | None:
+        """The save item's state after its click, or None when unknown.
+
+        Clicking a dropdown item normally closes the dropdown, and the
+        state can only be read while it is open, so a closed menu is
+        reopened first. Opening the menu changes nothing on LinkedIn.
+        """
+        try:
+            state = await page.evaluate(_READ_SAVE_TOGGLE_STATE_JS)
+            if state is not None:
+                return state
+            if not await page.evaluate(_OPEN_POST_OVERFLOW_MENU_JS):
+                return None
+            await page.wait_for_function(_POST_MENU_OPEN_JS, timeout=5000)
+            return await page.evaluate(_READ_SAVE_TOGGLE_STATE_JS)
+        except Exception as e:
+            logger.warning(
+                "Failed to re-read the save state after clicking on %s: %s", url, e
+            )
+            return None
 
     async def save_post(
         self, post_url: str, *, confirm: bool, unsave: bool = False
@@ -140,17 +248,19 @@ class PostActions:
                 "structural_signal_not_found",
                 "Could not identify the post's overflow-menu opener "
                 "structurally (expected exactly one button[aria-expanded] "
-                "in <main>). Nothing was clicked.",
+                "with a collapsed panel beside it, above the post's action "
+                "row). Nothing was clicked.",
             )
 
         try:
-            await page.wait_for_selector(_MENU_SELECTOR, timeout=5000)
+            await page.wait_for_function(_POST_MENU_OPEN_JS, timeout=5000)
         except PlaywrightTimeoutError:
             return _save_post_result(
                 url,
                 "structural_signal_not_found",
-                'The overflow menu did not open (no [role="menu"] '
-                "appeared). Nothing further was clicked.",
+                "The overflow menu did not open (its opener never reported "
+                'aria-expanded="true" with a populated panel). Nothing '
+                "further was clicked.",
             )
 
         try:
@@ -162,8 +272,9 @@ class PostActions:
             return _save_post_result(
                 url,
                 "structural_signal_not_found",
-                "Could not identify a single aria-pressed save toggle "
-                "inside the overflow menu. Nothing was clicked.",
+                "Could not identify a single save item (one bookmark "
+                "outline/fill icon hook) inside the overflow menu. Nothing "
+                "was clicked.",
             )
 
         desired_saved = not unsave
@@ -201,15 +312,7 @@ class PostActions:
         # click already changed LinkedIn's state (mirrors send_message's
         # own retry_safe contract in scraping/contracts.py).
         await self._session.delay(0.5)
-        try:
-            new_state = await page.evaluate(_READ_SAVE_TOGGLE_STATE_JS)
-        except Exception as e:
-            logger.warning(
-                "Failed to re-read the save-toggle state after clicking on %s: %s",
-                url,
-                e,
-            )
-            new_state = None
+        new_state = await self._reread_after_click(page, url)
 
         if new_state == desired_saved:
             verb = "saved" if desired_saved else "unsaved"

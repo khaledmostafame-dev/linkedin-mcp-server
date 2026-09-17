@@ -600,7 +600,7 @@ def semantic_program_id(program: str) -> str:
         ("SIDEBAR_SECTIONS", "sidebar_profiles"),
         ("showAllUrls", "sidebar_profiles"),
         ("hasInvite", "connection_action_signals"),
-        ("facetConnectionOf", "mutual_connections_link"),
+        ('href*="connectionOf=', "mutual_connections_link"),
         ("expanded === 'false'", "open_more_button"),
         ("hasIncomingActionRow", "incoming_accept"),
         ("status === 'resolved'", "profile_message_target_ready"),
@@ -633,6 +633,7 @@ def semantic_program_id(program: str) -> str:
         ('main a[href*="/in/"]', "sidebar_expanded_profiles"),
         ("savedLabels.includes(text) ? 'saved' : 'unsaved'", "job_save_state"),
         ("expectedLabels", "job_save_click"),
+        ("querySelectorAll('*').length", "app_shell_node_count"),
     )
     for marker, operation in checks:
         if marker in compact:
