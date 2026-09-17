@@ -31,9 +31,11 @@ import re
 import secrets
 import time
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from linkedin_mcp_server.debug_trace import record_page_trace, trace_enabled
 from linkedin_mcp_server.scraping.navigation import PageNavigator
 from linkedin_mcp_server.scraping.post_actions import POST_MENU_JS
 from linkedin_mcp_server.scraping.post_content import (
@@ -327,27 +329,69 @@ _SHADOW_WALK_JS = r"""
     };
 """
 
-# The post a /feed/update/<urn>/ page shows: the first visible profile or
-# company link in <main> is its actor (header precedes body and comments), and
-# ``controlCount`` is 1 when the post's own control-menu opener is identified
-# (POST_MENU_JS), 0 otherwise. Comment menus never count. Returned raw.
+# The post unit on a /feed/update/<urn>/ page and its author links. Measured on
+# a signed-in English-UI post page (2026-09-17, structure-only captures): the
+# post's control-menu opener (POST_MENU_JS) and its first social action share
+# one nearest container, and inside it the only profile/company links that
+# precede the opener are the author's own photo link and name link; the body,
+# any reshared post and every comment follow the opener. Scoping to that unit
+# replaces "the first profile link in <main>", which a page still rendering
+# answers with nothing at all, and a changed layout with whoever renders first.
+_POST_UNIT_JS = r"""
+    function postUnit(main) {
+        const menu = postMenu(main);
+        if (!menu) return null;
+        const firstAction = main.querySelector('[data-finite-scroll-hotkey]');
+        let unit = menu.opener.parentElement;
+        while (unit && !unit.contains(firstAction)) unit = unit.parentElement;
+        if (!unit || !main.contains(unit)) return null;
+        const authors = Array.from(
+            unit.querySelectorAll('a[href*="/in/"], a[href*="/company/"]')
+        ).filter(link =>
+            (link.compareDocumentPosition(menu.opener) & Node.DOCUMENT_POSITION_FOLLOWING)
+            && visible(link)
+        );
+        return {menu, unit, authors};
+    }
+"""
+
+# True once the post has rendered far enough to be judged: its control menu
+# is identified and its author links exist. A post page first paints a boot
+# loader with no <main> (measured, 29 nodes) and can attach <main> before the
+# post itself, so neither the navigation nor <main> is that signal.
+_POST_RENDERED_JS = (
+    "() => {"
+    + _SHADOW_WALK_JS
+    + POST_MENU_JS
+    + _POST_UNIT_JS
+    + """
+        const main = roots.map(root => root.querySelector('main')).find(Boolean);
+        if (!main) return false;
+        const unit = postUnit(main);
+        return unit !== null && unit.authors.length > 0;
+    }"""
+)
+
+# The post a /feed/update/<urn>/ page shows: ``authorHrefs`` are the unit's
+# author links (empty when the unit is not identified), and ``controlCount``
+# is 1 when the post's own control-menu opener is identified (POST_MENU_JS),
+# 0 otherwise. Comment menus never count. Returned raw; Python decides.
 _POST_OWNERSHIP_JS = (
     "(urn) => {"
     + _SHADOW_WALK_JS
     + POST_MENU_JS
+    + _POST_UNIT_JS
     + """
         const main = roots.map(root => root.querySelector('main')).find(Boolean);
         if (!main) return null;
-        const actor = Array.from(main.querySelectorAll('a[href*="/in/"], a[href*="/company/"]'))
-            .find(visible);
-        const menu = postMenu(main);
+        const unit = postUnit(main);
         const text = main.innerText || '';
         const domUrn = Array.from(main.querySelectorAll('*')).some(node =>
             Array.from(node.attributes || []).some(a => a.value.includes(urn))
         );
         return {
-            actorHref: actor ? actor.getAttribute('href') : null,
-            controlCount: menu ? 1 : 0,
+            authorHrefs: unit ? unit.authors.map(link => link.getAttribute('href')) : [],
+            controlCount: postMenu(main) ? 1 : 0,
             domUrn,
             text: text.slice(0, 2000),
         };
@@ -527,6 +571,85 @@ def evidence_matches(keys: set[str], target: MentionTarget) -> bool:
     return all(key == target.key or _namespace(key) != namespace for key in keys)
 
 
+# A member's encoded profile id as it appears in /in/<id>/ links and in
+# fsd_profile / fs_miniProfile URNs. Mixed case and matched as such: a vanity
+# slug is case-insensitive, this id is not, so it must not be casefolded into
+# a vanity key that would then contradict the member's real vanity.
+_PROFILE_ID_RE = re.compile(r"^ACoA[A-Za-z0-9_-]{20,}$")
+_PROFILE_URN_RE = re.compile(
+    r"^urn:li:(?:fsd_profile|fs_miniProfile):([A-Za-z0-9_-]+)$"
+)
+_PERSON_NAMESPACES = frozenset({"person", "profile", "member"})
+
+
+def author_keys(href: str) -> set[str]:
+    """Identity keys one author link exposes.
+
+    Its path names the member by vanity (``person:``) or by profile id
+    (``profile:``), or names a company; a ``miniProfileUrn`` query value (the
+    live author links carry one) adds the profile id.
+    """
+    if not isinstance(href, str):
+        return set()
+    try:
+        parsed = urlparse(href.strip())
+    except ValueError:
+        return set()
+    keys: set[str] = set()
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 2 and parts[0] == "in" and _PROFILE_ID_RE.match(unquote(parts[1])):
+        keys.add(f"profile:{unquote(parts[1])}")
+    else:
+        target = identity_key_from_url(href)
+        if target is not None:
+            keys.add(target.key)
+    for name, values in parse_qs(parsed.query).items():
+        if name.casefold() != "miniprofileurn":
+            continue
+        for value in values:
+            match = _PROFILE_URN_RE.match(value)
+            if match:
+                keys.add(f"profile:{match.group(1)}")
+    return keys
+
+
+def authorship(author_hrefs: Any, own_keys: set[str]) -> str:
+    """``own``, ``other`` or ``unknown``: what the author links prove.
+
+    Compared only where both sides expose the same namespace: a vanity key
+    against a vanity key, a profile id against a profile id. ``other`` needs a
+    positive contradiction (a different key in a shared namespace, or a
+    company where the member is a person); no shared namespace, author links
+    that disagree among themselves, or no author links at all prove nothing
+    and read ``unknown``, never ``other``.
+    """
+    keys: set[str] = set()
+    for href in author_hrefs if isinstance(author_hrefs, list) else []:
+        keys |= author_keys(href)
+    if not keys:
+        return "unknown"
+    by_namespace: dict[str, set[str]] = {}
+    for key in keys:
+        by_namespace.setdefault(_namespace(key), set()).add(key)
+    if any(len(values) > 1 for values in by_namespace.values()):
+        return "unknown"
+    person = [ns for ns in by_namespace if ns in _PERSON_NAMESPACES]
+    if not person:
+        return "other"
+    if len(person) != len(by_namespace):
+        return "unknown"
+    own: dict[str, set[str]] = {}
+    for key in own_keys:
+        own.setdefault(_namespace(key), set()).add(key)
+    shared = [ns for ns in person if ns in own]
+    if not shared:
+        return "unknown"
+    matched = [ns for ns in shared if by_namespace[ns] <= own[ns]]
+    if len(matched) == len(shared):
+        return "own"
+    return "other" if not matched else "unknown"
+
+
 def post_result(
     url: str,
     status: str,
@@ -575,6 +698,7 @@ class PostComposer:
             return None
         if await self._page.locator(f"{_EDITOR_SELECTOR}:visible").count() != 1:
             return None
+        await self._trace("after-open")
         return editor
 
     async def _editor_state(self, editor: Any) -> dict[str, Any]:
@@ -610,6 +734,25 @@ class PostComposer:
 
     async def _pause(self, low: float = 0.15, high: float = 0.45) -> None:
         await asyncio.sleep(self._random.uniform(low, high))
+
+    async def _trace(self, step: str) -> None:
+        """Record the page right after an interaction step, when tracing is on.
+
+        The navigation traces only cover page loads, and the composer's
+        dialogs open without one, so the markup each click reveals (the
+        schedule mini-dialog, the scheduled posts list) is otherwise never
+        captured; with ``LINKEDIN_TRACE_DOM`` the trace carries its DOM
+        skeleton. Best effort: nothing is touched when tracing is off, and a
+        failed capture never changes the tool's outcome.
+        """
+        if not trace_enabled():
+            return
+        try:
+            await record_page_trace(
+                self._page, f"composer-{step}", extra={"flow": "post_composer"}
+            )
+        except Exception:
+            logger.debug("Composer trace %s failed", step, exc_info=True)
 
     # --- visibility -------------------------------------------------------
 
@@ -1058,6 +1201,7 @@ class PostComposer:
             await composer.locator(_SCHEDULE_BUTTON_SELECTOR).first.click(
                 timeout=_STEP_TIMEOUT_MS
             )
+            await self._trace("schedule-after-control-click")
             date_input = self._page.locator(_SCHEDULE_DATE_SELECTOR).first
             time_input = self._page.locator(_SCHEDULE_TIME_SELECTOR).first
             await date_input.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
@@ -1121,6 +1265,7 @@ class PostComposer:
             await schedule_dialog.locator(confirm_selector).last.click(
                 timeout=_STEP_TIMEOUT_MS
             )
+            await self._trace("schedule-after-confirm-click")
             await date_input.wait_for(state="hidden", timeout=_STEP_TIMEOUT_MS)
             await self._editor().wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
         except Exception as error:
@@ -1492,6 +1637,9 @@ class PostComposer:
                 .locator(_SCHEDULE_BUTTON_SELECTOR)
                 .first.click(timeout=_STEP_TIMEOUT_MS)
             )
+            # Traced before any wait: what this click opens is the capture
+            # the 'view all scheduled posts' selector still lacks.
+            await self._trace("scheduled-after-schedule-control-click")
             date_input = self._page.locator(_SCHEDULE_DATE_SELECTOR).first
             await date_input.wait_for(state="visible", timeout=_STEP_TIMEOUT_MS)
             schedule_dialog = self._page.locator(_DIALOG_SELECTOR).filter(
@@ -1500,9 +1648,11 @@ class PostComposer:
             await schedule_dialog.locator(_VIEW_ALL_SCHEDULED_SELECTOR).first.click(
                 timeout=_STEP_TIMEOUT_MS
             )
+            await self._trace("scheduled-after-view-all-click")
             await date_input.wait_for(state="hidden", timeout=_STEP_TIMEOUT_MS)
         except Exception:
             logger.debug("Scheduled posts view did not open", exc_info=True)
+            await self._trace("scheduled-list-unavailable")
             await self._dismiss_composer(clear=False)
             return post_result(
                 self._page.url,
@@ -1511,9 +1661,10 @@ class PostComposer:
                 "unverified against a live account past the schedule button "
                 "itself: the mini date/time-picker dialog it opens, and its "
                 "'view all scheduled posts' arrow, only exist after that "
-                "click, so no capture of their markup exists yet. A DOM "
-                "capture taken right after clicking the schedule control "
-                "would confirm or fix this selector.",
+                "click, so no capture of their markup exists yet. With "
+                "LINKEDIN_TRACE_DOM enabled the trace records the page right "
+                "after each step of this flow, which would confirm or fix this "
+                "selector.",
             )
         # The modal renders its heading before its entries; settled means two
         # identical non-empty samples (upstream PR 692).
@@ -1525,6 +1676,7 @@ class PostComposer:
                 if sample == previous:
                     break
                 previous = sample
+        await self._trace("scheduled-list-after-open")
         return None
 
     async def _read_scheduled_entries(self) -> list[dict[str, Any]]:
@@ -1749,40 +1901,63 @@ class PostComposer:
             return None
         return target.key
 
-    async def _open_own_post_menu(self, post_url: str) -> dict[str, Any]:
-        """Load an own post and open its control menu; raise _Abort otherwise.
+    async def _read_post_page(self, post_url: str) -> dict[str, Any] | None:
+        """Open a post's page, let the post render, and read it raw.
 
-        Authorship needs two structural signals, both required: the post's
-        actor link is the logged-in member's own profile (resolved through the
-        /in/me/ redirect), and its control menu offers the owner-only edit and
-        delete actions (icon test hooks, not labels).
+        The wait is bounded and its timeout is not an answer: whatever the
+        page shows then is read and judged, and a post that never rendered
+        reads as unidentified, which every caller refuses.
         """
-        own = await self._own_member_path()
-        if own is None:
-            raise _Abort(
-                "author_unverified", "The logged-in member's profile was not resolved."
-            )
         urn = post_url.rstrip("/").rsplit("/", 1)[-1]
         await self._navigator._navigate_to_page(post_url)
         await self._session.check_rate_limit()
         if urn not in self._page.url:
             raise _Abort("post_unavailable", "LinkedIn did not open that post's page.")
         try:
-            await self._page.wait_for_selector("main", timeout=_OPEN_TIMEOUT_MS)
-        except PlaywrightTimeoutError:
-            logger.debug("Post page main did not appear")
+            await self._page.wait_for_function(
+                _POST_RENDERED_JS, timeout=_OPEN_TIMEOUT_MS
+            )
+        except Exception:
+            logger.debug("Post did not render within the wait", exc_info=True)
         ownership = await self._page.evaluate(_POST_OWNERSHIP_JS, urn)
-        if not isinstance(ownership, dict):
+        return ownership if isinstance(ownership, dict) else None
+
+    async def _open_own_post_menu(self, post_url: str) -> dict[str, Any]:
+        """Load an own post and open its control menu; raise _Abort otherwise.
+
+        The one ownership check delete_post and edit_post share. Authorship
+        needs two structural signals, both required: the post's author links
+        name the logged-in member (resolved through the /in/me/ redirect;
+        see ``authorship``), and its control menu offers the owner-only edit
+        and delete actions (icon test hooks, not labels). ``not_own_post`` is
+        reserved for positive evidence of another author; a post that did not
+        render, or whose author cannot be compared, is refused as unverified.
+        """
+        own = await self._own_member_path()
+        if own is None:
+            raise _Abort(
+                "author_unverified", "The logged-in member's profile was not resolved."
+            )
+        ownership = await self._read_post_page(post_url)
+        if ownership is None:
             raise _Abort("post_unavailable", "The post page could not be read.")
-        actor = identity_key_from_url(str(ownership.get("actorHref") or ""))
-        if actor is None or actor.key != own:
+        author = authorship(ownership.get("authorHrefs"), {own})
+        if author == "other":
             raise _Abort(
                 "not_own_post",
                 "The post's author is not the logged-in member; nothing was changed.",
             )
         if not ownership.get("controlCount"):
             raise _Abort(
-                "post_unavailable", "The post page did not show that post's controls."
+                "post_unavailable",
+                "The post page did not show that post's controls; nothing was "
+                "changed. It may still have been loading.",
+            )
+        if author != "own":
+            raise _Abort(
+                "author_unverified",
+                "The post's author could not be proven to be the logged-in member; "
+                "nothing was changed.",
             )
         token = secrets.token_hex(8)
         if await self._page.evaluate(_POST_MENU_MARK_JS, token) is not True:
@@ -1798,6 +1973,14 @@ class PostComposer:
             await self._page.wait_for_function(
                 _POST_MENU_OPEN_JS, arg=token, timeout=_STEP_TIMEOUT_MS
             )
+        except Exception as error:
+            await self._close_menu()
+            raise _Abort(
+                "menu_unavailable",
+                "The post's control menu did not open as that post's menu; nothing "
+                "was changed.",
+            ) from error
+        try:
             panel = self._post_menu_panel(token)
             await (
                 panel.locator(_OWNER_DELETE_ITEM_SELECTOR)
@@ -1870,21 +2053,19 @@ class PostComposer:
                 retry_safe=False,
             )
         await asyncio.sleep(1.5)
-        await self._navigator._navigate_to_page(post_url)
-        urn = post_url.rstrip("/").rsplit("/", 1)[-1]
-        after = await self._page.evaluate(_POST_OWNERSHIP_JS, urn)
-        after_actor = (
-            identity_key_from_url(str(after.get("actorHref") or ""))
-            if isinstance(after, dict)
-            else None
-        )
-        # Gone means the page no longer shows this member's post with its
-        # controls. Anything ambiguous reads as "still there": the answer
-        # then asks for a check instead of claiming a deletion.
-        still_there = not isinstance(after, dict) or bool(
+        try:
+            after = await self._read_post_page(post_url)
+        except _Abort:
+            # LinkedIn no longer opens that post's page at all.
+            after = {"authorHrefs": [], "controlCount": 0}
+        # Gone means the page, given the same bounded time to render the
+        # post, still shows no post of this member's with its controls.
+        # Anything ambiguous reads as "still there": the answer then asks for
+        # a check instead of claiming a deletion.
+        still_there = after is None or bool(
             after.get("controlCount")
-            and after_actor is not None
-            and after_actor.key == ownership.get("ownKey")
+            and authorship(after.get("authorHrefs"), {str(ownership.get("ownKey"))})
+            != "other"
         )
         if still_there:
             return post_result(
@@ -1962,9 +2143,10 @@ class PostComposer:
                 "post before retrying.",
                 retry_safe=False,
             )
-        await self._navigator._navigate_to_page(post_url)
-        urn = post_url.rstrip("/").rsplit("/", 1)[-1]
-        after = await self._page.evaluate(_POST_OWNERSHIP_JS, urn)
+        try:
+            after = await self._read_post_page(post_url)
+        except _Abort:
+            after = None
         shown = collapse_whitespace(str((after or {}).get("text") or ""))
         expected = collapse_whitespace("".join(typed.expected))
         return post_result(
