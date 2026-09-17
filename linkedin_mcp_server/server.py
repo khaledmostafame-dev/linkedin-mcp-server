@@ -358,8 +358,15 @@ def create_mcp_server(
             tags={LOCAL_TAG, "pacing"},
         )
         async def get_pacing_status() -> dict[str, Any]:
-            """Report LinkedIn pacing: call counters, when the next read and write
-            are allowed, any active cooldown, and the effective limits.
+            """Report LinkedIn pacing: call counters, when the next read, public
+            write and private write are allowed, any active cooldown, and the
+            effective limits.
+
+            Private writes (save_post, save_job, mark_conversation_read,
+            archive_conversation) have their own budget; `writes_*` counters are
+            the public one. A write tool called with confirm=false (confirm_send
+            for send_message) is a preview and counts as a read, and a call that
+            failed before reaching LinkedIn is not counted at all.
 
             Never contacts LinkedIn and never waits for the browser. Use it before
             a batch of calls, or after a pacing refusal, to see when to retry.

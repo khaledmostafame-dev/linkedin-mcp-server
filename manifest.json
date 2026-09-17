@@ -285,7 +285,7 @@
     },
     {
       "name": "get_pacing_status",
-      "description": "Show LinkedIn pacing counters, when the next read and write are allowed, any cooldown, and the effective limits, without contacting LinkedIn"
+      "description": "Show LinkedIn pacing counters, when the next read, public write and private write are allowed, any cooldown, and the effective limits, without contacting LinkedIn"
     }
   ],
   "user_config": {

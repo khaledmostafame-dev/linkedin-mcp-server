@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from linkedin_mcp_server.pacing import ToolKind, classify_tool
+from linkedin_mcp_server.pacing import ToolKind, classify_tool, is_preview
 from linkedin_mcp_server.server import create_mcp_server
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +41,15 @@ WRITE_PREFIXES = (
 CONFIRM_PARAMETERS = ("confirm", "confirm_send")
 # Drives the browser without touching LinkedIn; pacing exempts it by name.
 BROWSER_ONLY = {"close_session"}
+# Writes nobody but this account can see, paced from the private bucket. Named
+# here on purpose: moving a tool into the looser bucket is a decision about the
+# account, so it has to show up as a change to this set.
+PRIVATE_WRITES = {
+    "archive_conversation",
+    "mark_conversation_read",
+    "save_job",
+    "save_post",
+}
 
 
 def _is_write_name(name: str) -> bool:
@@ -78,8 +87,9 @@ def test_every_write_is_destructive_tagged_and_paced_as_a_write(tools):
             problems.append(f"{name}: missing the 'write' tag")
         if "local" in tags:
             problems.append(f"{name}: tagged 'local', which skips pacing")
-        if classify_tool(name, tool.annotations, tool.tags) is not ToolKind.WRITE:
-            problems.append(f"{name}: pacing does not classify it as a write")
+        expected = ToolKind.PRIVATE_WRITE if name in PRIVATE_WRITES else ToolKind.WRITE
+        if classify_tool(name, tool.annotations, tool.tags) is not expected:
+            problems.append(f"{name}: pacing does not classify it as {expected}")
 
     assert problems == []
 
@@ -102,6 +112,30 @@ def test_every_write_requires_an_explicit_boolean_confirmation(tools):
             problems.append(f"{name}: {parameter} has a default")
         if properties[parameter].get("type") != "boolean":
             problems.append(f"{name}: {parameter} is not a boolean")
+
+    assert problems == []
+
+
+def test_exactly_the_private_writes_carry_the_private_tag(tools):
+    tagged = {name for name, tool in tools.items() if "private" in (tool.tags or ())}
+
+    assert tagged == PRIVATE_WRITES
+
+
+def test_a_write_call_is_a_preview_exactly_when_its_confirmation_is_false(tools):
+    problems = []
+    for name, tool in sorted(tools.items()):
+        if not _is_write_name(name):
+            continue
+        properties = (tool.parameters or {}).get("properties", {})
+        (parameter,) = [p for p in CONFIRM_PARAMETERS if p in properties]
+        if not is_preview(tool.parameters, {parameter: False}):
+            problems.append(f"{name}: {parameter}=false is not read as a preview")
+        if is_preview(tool.parameters, {parameter: True}):
+            problems.append(f"{name}: {parameter}=true is read as a preview")
+        other = next(p for p in CONFIRM_PARAMETERS if p != parameter)
+        if is_preview(tool.parameters, {other: False, parameter: True}):
+            problems.append(f"{name}: {other}=false overrides {parameter}")
 
     assert problems == []
 

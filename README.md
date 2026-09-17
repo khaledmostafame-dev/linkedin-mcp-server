@@ -102,7 +102,7 @@ An MCP server that connects AI assistants like Claude to LinkedIn through your o
 | `sales_nav_get_lists` | List the authenticated user's Sales Navigator lead or account lists. Requires a Sales Navigator seat |
 | `sales_nav_get_list` | Read one Sales Navigator list's members, bounded by `max_items`. Requires a Sales Navigator seat |
 | `close_session` | Close browser session and clean up resources |
-| `get_pacing_status` | Show LinkedIn pacing: call counters, when the next read and write are allowed, any cooldown, and the effective limits. Never contacts LinkedIn |
+| `get_pacing_status` | Show LinkedIn pacing: call counters, when the next read, public write and private write are allowed, any cooldown, and the effective limits. Never contacts LinkedIn |
 
 <br/>
 <br/>
@@ -674,22 +674,33 @@ belongs behind something that provides it.
 
 LinkedIn restricts accounts, not clients, so the server paces every tool call that reaches LinkedIn, across every MCP client connected to it. Pacing is **on by default** with limits meant for a personal account. LinkedIn publishes no safe rates, so this lowers the risk of a restriction; it cannot rule one out.
 
-- **Spacing.** Each LinkedIn call waits a minimum gap after the previous one ends, plus random jitter so the cadence is never constant. Writes (`send_message`, `connect_with_person`, and any tool annotated `destructiveHint` or tagged `write`) have a longer gap of their own. Waits of up to 30 seconds happen inside the call and are reported as progress; a longer one fails at once with the time to retry.
-- **Rolling caps.** Reads per hour, and writes per hour and per day. A call over a cap fails at once with an error naming the limit and when it frees up. Nothing is queued or slept on for minutes.
+- **Spacing.** Each LinkedIn call waits a minimum gap after the previous one ends, plus random jitter so the cadence is never constant. Writes have a longer gap of their own with their own jitter, drawn again for every write. No more than a set number of calls of any kind may start in any 60 seconds. Waits of up to 30 seconds happen inside the call and are reported as progress; a longer one fails at once with the time to retry.
+- **Two write buckets.** A tool annotated `destructiveHint` or tagged `write` is a write. **Private writes** change only what your own account sees: `save_post`, `save_job`, `mark_conversation_read` and `archive_conversation` (tagged `private`). They have their own gap and caps and never spend the public budget. **Public writes** are every other write (`send_message`, `connect_with_person`, posting, commenting, reacting, and so on) and any tool the server cannot identify. Private writes still pay the general gap, count toward the per-minute cap and are refused during a cooldown.
+- **Previews are reads.** A write tool called with `confirm=false` (`confirm_send=false` for `send_message`) changes nothing on LinkedIn, so it is paced and counted as a read, not a write. Some previews still open the page to report its current state, which is why they stay paced.
+- **Failed calls that never reached LinkedIn are not counted.** A call that fails before its first request to LinkedIn, for example because the browser could not launch or the session was refused before any navigation, is left out of every counter and does not start a gap. A call that reached LinkedIn counts even if it then failed.
+- **Rolling caps.** Calls per minute, reads per hour, public writes per hour and per day, and private writes per hour and per day. A call over an hourly or daily cap fails at once with an error naming the limit and when it frees up. Nothing is queued or slept on for minutes.
 - **Cooldown.** When LinkedIn answers with HTTP 429 or redirects to a checkpoint, challenge or authwall page, every LinkedIn call is refused for a cooldown that starts at 30 minutes and doubles each time it happens again within a day (at most 24 hours). Detection uses status codes and URL routes, not page text. An ordinary expired-session redirect to `/login` does not start one.
 - **Persistence.** Counters and cooldown live in `pacing-state.json` beside the browser profile (`~/.linkedin-mcp/` by default), so restarting the server or the container does not reset them. A missing or corrupt file starts fresh with a warning.
 
-`get_pacing_status` reports the counters, the next allowed read and write, and any cooldown without touching LinkedIn or waiting for the browser. `close_session` is not paced.
+`get_pacing_status` reports the counters (calls in the last minute, reads, public and private writes), the next allowed read, public write and private write, any cooldown, and every effective setting, without touching LinkedIn or waiting for the browser. `close_session` is not paced.
+
+The defaults below were chosen by this fork's account owner on 2026-09-17. The write limits are looser than the original ones (6 public writes an hour, 20 a day, 90 seconds apart), which raises the risk of a restriction.
 
 | Variable | CLI flag | Default | Meaning |
 |----------|----------|---------|---------|
 | `PACING_ENABLED` | `--pacing` / `--no-pacing` | `true` | Turn all pacing, caps and the cooldown on or off |
 | `PACING_MIN_INTERVAL_SECONDS` | `--pacing-min-interval` | `8` | Gap after any LinkedIn call, in seconds |
 | `PACING_JITTER_SECONDS` | `--pacing-jitter` | `7` | Random extra (0 to this) added to every gap |
-| `PACING_WRITE_MIN_INTERVAL_SECONDS` | `--pacing-write-min-interval` | `90` | Gap after a write before the next write |
-| `PACING_MAX_READS_PER_HOUR` | `--pacing-max-reads-per-hour` | `40` | Read calls allowed in any 60 minutes |
-| `PACING_MAX_WRITES_PER_HOUR` | `--pacing-max-writes-per-hour` | `6` | Write calls allowed in any 60 minutes |
-| `PACING_MAX_WRITES_PER_DAY` | `--pacing-max-writes-per-day` | `20` | Write calls allowed in any 24 hours |
+| `PACING_MAX_CALLS_PER_MINUTE` | `--pacing-max-calls-per-minute` | `20` | Calls of any kind that reach LinkedIn in any 60 seconds |
+| `PACING_MAX_READS_PER_HOUR` | `--pacing-max-reads-per-hour` | `60` | Read calls (previews included) allowed in any 60 minutes |
+| `PACING_WRITE_MIN_INTERVAL_SECONDS` | `--pacing-write-min-interval` | `35` | Gap after a public write before the next public write |
+| `PACING_WRITE_JITTER_SECONDS` | `--pacing-write-jitter` | `25` | Random extra (0 to this) added to every public write gap |
+| `PACING_MAX_WRITES_PER_HOUR` | `--pacing-max-writes-per-hour` | `40` | Public write calls allowed in any 60 minutes |
+| `PACING_MAX_WRITES_PER_DAY` | `--pacing-max-writes-per-day` | `50` | Public write calls allowed in any 24 hours |
+| `PACING_PRIVATE_WRITE_MIN_INTERVAL_SECONDS` | `--pacing-private-write-min-interval` | `10` | Gap after a private write before the next private write |
+| `PACING_PRIVATE_WRITE_JITTER_SECONDS` | `--pacing-private-write-jitter` | `10` | Random extra (0 to this) added to every private write gap |
+| `PACING_MAX_PRIVATE_WRITES_PER_HOUR` | `--pacing-max-private-writes-per-hour` | `60` | Private write calls allowed in any 60 minutes |
+| `PACING_MAX_PRIVATE_WRITES_PER_DAY` | `--pacing-max-private-writes-per-day` | `300` | Private write calls allowed in any 24 hours |
 | `PACING_COOLDOWN_BASE_SECONDS` | `--pacing-cooldown-base` | `1800` | First cooldown after a 429 or checkpoint |
 
 For every number, `0` switches that limit off. An unreadable value stops the server at startup rather than silently falling back.
