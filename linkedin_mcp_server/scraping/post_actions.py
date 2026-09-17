@@ -32,9 +32,11 @@ from linkedin_mcp_server.scraping.session import ScrapingSession
 
 logger = logging.getLogger(__name__)
 
-# Shared locator, prepended to every program below so each one re-derives
-# the same elements from the live DOM instead of holding a handle across
-# evaluate calls.
+# The post's own control menu, shared with ``post_composer.py`` (whose
+# delete_post/edit_post open the same menu). Prepended to every program
+# that needs it, so each one re-derives the elements from the live DOM
+# instead of holding a handle across evaluate calls. ``postMenu(main)``
+# takes the page's <main>, found by the caller.
 #
 # The opener (measured 2026-09-17). A post page holds dozens of
 # ``button[aria-expanded]`` (46 on the captured one): the post's menu
@@ -44,27 +46,30 @@ logger = logging.getLogger(__name__)
 #   * it precedes the post's first social-action control in document
 #     order. Those controls carry LinkedIn's ``data-finite-scroll-hotkey``
 #     hook, the post's own row renders first, and everything belonging to
-#     comments (sort control, per-comment menus) renders after it;
+#     comments (sort control, per-comment menus) renders after it. That
+#     first control must itself sit outside every comment: a post whose
+#     own action row is missing would otherwise hand the anchor to the
+#     first comment's row and let the comment sort control qualify;
 #   * its next element sibling is the dropdown panel it controls, which
 #     carries ``aria-hidden`` while collapsed. That excludes the reactor
 #     facepile's "see more" control, the one other aria-expanded button
-#     above the action row, which has no sibling at all.
+#     above the action row, which has no sibling at all;
+#   * neither it nor its panel is, or holds, a comment (an element whose
+#     ``data-id``/``data-urn``/``data-entity-urn`` names a comment URN, the
+#     hook ``comments.py`` reads).
 # Exactly one such button, or nothing.
 #
 # The menu counts as open only when the opener reports
 # aria-expanded="true", its panel is no longer aria-hidden="true", and the
-# panel holds at least one actionable item.
-#
-# The save item is the one item holding a ``bookmark-*`` icon hook: an
-# outline glyph reads as "not saved", a fill glyph as "saved". Any other
-# bookmark glyph, or more than one such item, is refused.
-_POST_MENU_LOCATOR_JS = r"""
-  const ITEM = '[role="button"], [role="menuitem"], button, a[href]';
-  function postMenu() {
-    const main = document.querySelector('main');
+# panel holds at least one actionable item and still no comment.
+POST_MENU_JS = r"""
+  const MENU_ITEM = '[role="button"], [role="menuitem"], button, a[href]';
+  const COMMENT_UNIT = ['data-id', 'data-urn', 'data-entity-urn']
+    .map(name => `[${name}*="comment:("]`).join(', ');
+  function postMenu(main) {
     if (!main) return null;
     const firstAction = main.querySelector('[data-finite-scroll-hotkey]');
-    if (!firstAction) return null;
+    if (!firstAction || firstAction.closest(COMMENT_UNIT)) return null;
     const openers = Array.from(
       main.querySelectorAll('button[aria-expanded]')
     ).filter(button => {
@@ -79,20 +84,30 @@ _POST_MENU_LOCATOR_JS = r"""
     if (openers.length !== 1) return null;
     const opener = openers[0];
     const panel = opener.nextElementSibling;
+    if (opener.closest(COMMENT_UNIT) || panel.querySelector(COMMENT_UNIT)) {
+      return null;
+    }
     const open = opener.getAttribute('aria-expanded') === 'true'
       && panel.getAttribute('aria-hidden') !== 'true'
-      && panel.querySelector(ITEM) !== null;
+      && panel.querySelector(MENU_ITEM) !== null;
     return { opener, panel, open };
   }
+"""
+
+# The save item is the one item holding a ``bookmark-*`` icon hook: an
+# outline glyph reads as "not saved", a fill glyph as "saved". Any other
+# bookmark glyph, or more than one such item, is refused.
+_SAVE_ITEM_JS = r"""
+  const pagePostMenu = () => postMenu(document.querySelector('main'));
   function saveItem() {
-    const menu = postMenu();
+    const menu = pagePostMenu();
     if (!menu || !menu.open) return null;
     const icons = menu.panel.querySelectorAll(
       'svg[data-test-icon^="bookmark-"], use[href^="#bookmark-"]'
     );
     const items = new Map();
     for (const icon of icons) {
-      const item = icon.closest(ITEM);
+      const item = icon.closest(MENU_ITEM);
       if (!item || !menu.panel.contains(item)) return null;
       const name = icon.getAttribute('data-test-icon')
         || (icon.getAttribute('href') || '').slice(1);
@@ -110,13 +125,13 @@ _POST_MENU_LOCATOR_JS = r"""
 
 
 def _post_menu_program(body: str) -> str:
-    return "() => {" + _POST_MENU_LOCATOR_JS + body + "}"
+    return "() => {" + POST_MENU_JS + _SAVE_ITEM_JS + body + "}"
 
 
 # Clicks the post's menu opener; an already-open menu is left as it is.
 _OPEN_POST_OVERFLOW_MENU_JS = _post_menu_program(
     r"""
-  const menu = postMenu();
+  const menu = pagePostMenu();
   if (!menu) return false;
   if (!menu.open) menu.opener.click();
   return true;
@@ -125,7 +140,7 @@ _OPEN_POST_OVERFLOW_MENU_JS = _post_menu_program(
 
 _POST_MENU_OPEN_JS = _post_menu_program(
     r"""
-  const menu = postMenu();
+  const menu = pagePostMenu();
   return menu !== null && menu.open;
 """
 )
