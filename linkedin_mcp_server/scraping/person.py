@@ -477,12 +477,17 @@ class PersonScraper:
         candidates when a query is ambiguous.
 
         Returns:
-            {query, candidates: [{name, geo_urn_id}, ...], ambiguous: bool}.
-            ``candidates`` has zero entries for no match, exactly one for an
-            unambiguous name, and more than one when LinkedIn's own
-            typeahead offered several places for the query -- each entry's
-            id independently confirmed by selecting that specific
-            suggestion, never guessed from its position or label text.
+            {query, candidates: [{name, geo_urn_id}, ...], ambiguous: bool,
+            cached: bool}. ``candidates`` has zero entries for no match,
+            exactly one for an unambiguous name, and more than one when
+            LinkedIn's own typeahead offered several places for the query --
+            each entry's id independently confirmed by selecting that
+            specific suggestion, never guessed from its position or label
+            text. ``cached`` is true when the answer came from the
+            persisted geo resolution cache (``geo_resolver.GeoResolutionCache``)
+            rather than a fresh drive of LinkedIn's typeahead -- always
+            false for an ambiguous or no-match result, since only an
+            unambiguous resolution is ever cached.
         """
         resolution = await self._geo_resolver.resolve(query)
         candidates = resolution.candidates or (
@@ -494,6 +499,7 @@ class PersonScraper:
                 {"name": c.name, "geo_urn_id": c.geo_urn_id} for c in candidates
             ],
             "ambiguous": resolution.is_ambiguous,
+            "cached": resolution.cached,
         }
 
     async def _resolve_location(self, location: str | None) -> str | None:
