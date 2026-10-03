@@ -46,13 +46,14 @@ jobs:
       # stack webhook repulls :latest and recreates only containers whose image changed.
       # Loud on purpose: a green build with a stale container is the failure this step exists to end.
       # 404 = the stack lost its webhook (a Portainer stack update that omits "Webhook" clears it).
-      # 409 = a deploy of this stack is already running (two merges close together): wait and retry.
+      # 409 = a deploy is already running (this stack or another one on the NAS): wait and retry.
       - name: Redeploy the Portainer stack
         run: |
           if [ -z "${{ secrets.PORTAINER_WEBHOOK_URL }}" ]; then
             echo "PORTAINER_WEBHOOK_URL is not set: image pushed but NOT deployed"; exit 1
           fi
-          for i in 1 2 3 4 5 6 7 8 9 10; do
+          for i in $(seq 1 24); do                     # ~12 min: Portainer runs one deploy at a time, and three
+                                                     # apps pushed together queue behind each other's image pulls
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 300 -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}")
             echo "portainer redeploy -> $code (try $i)"
             if [ "$code" = "204" ] || [ "$code" = "200" ]; then exit 0; fi
