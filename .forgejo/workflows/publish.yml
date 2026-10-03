@@ -42,12 +42,21 @@ jobs:
             || echo curl-failed)
           echo "link linkedin-mcp-server -> linkedin-mcp-server : $code"
 
-      # Tell the Portainer stack to repull :latest and recreate only if the
-      # digest changed. Non-fatal, and a no-op until the repo secret exists.
-      - name: Redeploy via Portainer webhook
+      # Push alone does not deploy: the stack keeps running the image it already pulled. The Portainer
+      # stack webhook repulls :latest and recreates only containers whose image changed.
+      # Loud on purpose: a green build with a stale container is the failure this step exists to end.
+      # 404 = the stack lost its webhook (a Portainer stack update that omits "Webhook" clears it).
+      # 409 = a deploy of this stack is already running (two merges close together): wait and retry.
+      - name: Redeploy the Portainer stack
         run: |
           if [ -z "${{ secrets.PORTAINER_WEBHOOK_URL }}" ]; then
-            echo "PORTAINER_WEBHOOK_URL not set — skipping redeploy"
-          else
-            curl -s -o /dev/null -w 'redeploy webhook status: %{http_code}\n' -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}" || true
+            echo "PORTAINER_WEBHOOK_URL is not set: image pushed but NOT deployed"; exit 1
           fi
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -m 300 -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}")
+            echo "portainer redeploy -> $code (try $i)"
+            if [ "$code" = "204" ] || [ "$code" = "200" ]; then exit 0; fi
+            [ "$code" = "409" ] || exit 1
+            sleep 30
+          done
+          exit 1
