@@ -27,7 +27,7 @@ jobs:
       - name: Build and push image
         run: |
           REG=git.khaled.synology.me/khaledmostafame-dev
-          docker build -t $REG/linkedin-mcp-server:latest -t $REG/linkedin-mcp-server:${{ steps.vars.outputs.short_sha }} .
+          docker build --label org.opencontainers.image.revision=${{ github.sha }} -t $REG/linkedin-mcp-server:latest -t $REG/linkedin-mcp-server:${{ steps.vars.outputs.short_sha }} .
           docker push $REG/linkedin-mcp-server:latest
           docker push $REG/linkedin-mcp-server:${{ steps.vars.outputs.short_sha }}
 
